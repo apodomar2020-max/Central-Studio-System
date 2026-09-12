@@ -2602,29 +2602,55 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/MyAttendanceResponse" }
 
-  # ─── Unified Editorial CMS Wave 1 — Admin-only, additive ──────────────────
-  # ADMIN ONLY BY DESIGN: there is no public editorial path in this wave.
-  # The public website keeps reading /website/news and /website/performances
-  # (unchanged above); nothing here replaces or re-points those. Every path
-  # below requires the existing admin auth middleware plus the new
-  # `website.posts` permission family — publish/archive/restore specifically
-  # require website.posts:publish, everything else view/create/edit/delete.
+  # ─── Unified Editorial CMS Wave 1.1 — Admin-only, additive ────────────────
+  # ADMIN ONLY BY DESIGN: there is no public editorial path in this wave
+  # either. The public website keeps reading /website/news and
+  # /website/performances (unchanged above); nothing here replaces or
+  # re-points those, and no public cutover happens in Wave 1.1.
+  #
+  # THE MODEL: one logical POST (channel + byline + feature image URL +
+  # topics + recommendations) with MANY language TRANSLATIONS, each with its
+  # own independent lifecycle. Publish/archive/restore are therefore
+  # TRANSLATION operations, nested under
+  # /admin/editorial/posts/{id}/translations/{languageCode}/... — a post has
+  # no status of its own.
+  #
+  # `languageCode` (not a numeric id) is the translation path param: a
+  # locale tag is what an editor and a URL both naturally carry, and string
+  # path params already have precedent in this spec
+  # (/website/backgrounds/{sectionKey}, /website/news/{slug}).
+  #
+  # PERMISSIONS. Editorial CONTENT — posts, translations, authors, topics,
+  # recommendations, placements, revisions — requires the `website.posts`
+  # family; every transition that changes what the public would see
+  # (publish/archive/restore, revision restore) requires the extra
+  # `website.posts:publish` action. WEBSITE SETTINGS — Languages and
+  # Links — requires the separate, least-privilege `website.settings`
+  # family (view/edit). The two are deliberately NOT the same grant: a
+  # copy editor should be able to write and publish prose without being
+  # able to retire a language or repoint an app-store link.
   /admin/editorial/posts:
     get:
       operationId: listEditorialPosts
       tags: [editorial]
-      summary: List editorial posts (filterable, paginated) — requires website.posts:view
+      summary: List editorial posts with their translation summaries (filterable, paginated) — requires website.posts:view
       parameters:
         - { name: channel, in: query, schema: { type: string, enum: [news, experience] } }
-        - { name: status, in: query, schema: { type: string, enum: [draft, published, archived] } }
+        # Filters on the status of a TRANSLATION, not of the post (a post
+        # has no status). Combined with languageCode it means "posts whose
+        # <languageCode> translation is <translationStatus>"; alone it means
+        # "posts with ANY translation in that status".
+        - { name: translationStatus, in: query, schema: { type: string, enum: [draft, published, archived] } }
+        - { name: languageCode, in: query, schema: { type: string } }
         - { name: authorId, in: query, schema: { type: integer } }
         - { name: topicId, in: query, schema: { type: integer } }
+        # Matches any translation's title or slug, in any language.
         - { name: search, in: query, schema: { type: string } }
         - { name: page, in: query, schema: { type: integer, minimum: 1 } }
         - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100 } }
       responses:
         "200":
-          description: Matching posts, newest first
+          description: Matching posts, most recently updated first, each with its translation summaries
           content:
             application/json:
               schema: { $ref: "#/components/schemas/EditorialPostListResponse" }
@@ -2636,7 +2662,7 @@ paths:
     post:
       operationId: createEditorialPost
       tags: [editorial]
-      summary: Create a DRAFT editorial post — requires website.posts:create
+      summary: Create a post (shared spine), optionally with its first DRAFT translation — requires website.posts:create
       requestBody:
         required: true
         content:
@@ -2644,12 +2670,12 @@ paths:
             schema: { $ref: "#/components/schemas/CreateEditorialPostBody" }
       responses:
         "201":
-          description: Created (always status=draft)
+          description: Created. Any translation is always status=draft.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/EditorialPost" }
+              schema: { $ref: "#/components/schemas/EditorialPostWithTranslation" }
         "400":
-          description: Invalid body, body-block violation, or media URL rejected
+          description: Invalid body, body-block violation, media URL rejected, author channel mismatch, inactive language, or an unusable slug
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -2659,7 +2685,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
         "409":
-          description: Slug already in use for this channel
+          description: A manually supplied slug is already in use for this channel and language
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -2668,7 +2694,7 @@ paths:
     get:
       operationId: getEditorialPost
       tags: [editorial]
-      summary: Get one editorial post with its topics and recommendations
+      summary: Get one post with every translation, its topics, and its recommendations
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
       responses:
@@ -2688,24 +2714,27 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
     patch:
-      operationId: updateEditorialPost
+      operationId: updateEditorialPostShared
       tags: [editorial]
-      summary: Edit a post's content — requires website.posts:edit. Editing a PUBLISHED post writes a revision in the same transaction.
+      summary: >-
+        Change a post's SHARED fields (byline, feature image URL) — requires website.posts:edit.
+        Channel is immutable. Prose lives on translations, not here. When the post has at least one
+        published translation a shared revision is written in the same transaction.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/UpdateEditorialPostBody" }
+            schema: { $ref: "#/components/schemas/UpdateEditorialPostSharedBody" }
       responses:
         "200":
-          description: Updated
+          description: Updated post spine
           content:
             application/json:
               schema: { $ref: "#/components/schemas/EditorialPost" }
         "400":
-          description: Invalid body, body-block violation, or media URL rejected
+          description: Media URL rejected, or the author belongs to a different channel
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -2715,31 +2744,167 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
         "404":
-          description: Unknown post
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-        "409":
-          description: Slug already in use for this channel
+          description: Unknown post or author
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
 
-  /admin/editorial/posts/{id}/publish:
-    post:
-      operationId: publishEditorialPost
+  /admin/editorial/posts/{id}/translations:
+    get:
+      operationId: listEditorialPostTranslations
       tags: [editorial]
-      summary: draft -> published — requires website.posts:publish. Fails unless the post passes the full readiness gate.
+      summary: Every translation of this post, in language display order — requires website.posts:view
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: The post's translations
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EditorialPostTranslation" }
+        "403":
+          description: Missing website.posts:view
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: Unknown post
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+    post:
+      operationId: createEditorialPostTranslation
+      tags: [editorial]
+      summary: >-
+        Add a language to this post — requires website.posts:create. Always created as a DRAFT.
+        The language must be ACTIVE. Slug is generated from the title when omitted (Unicode-safe,
+        no transliteration) and deterministically suffixed -2/-3 on collision; a slug supplied
+        explicitly is never silently altered and a collision is a 409.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateEditorialTranslationBody" }
+      responses:
+        "201":
+          description: Created (always status=draft)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EditorialPostTranslation" }
+        "400":
+          description: Invalid body, body-block violation, media URL rejected, inactive language, or an unusable slug
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "403":
+          description: Missing website.posts:create
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: Unknown post or unregistered language
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "409":
+          description: This post already has a translation in that language, or the supplied slug is taken
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /admin/editorial/posts/{id}/translations/{languageCode}:
+    get:
+      operationId: getEditorialPostTranslation
+      tags: [editorial]
+      summary: One language's translation of this post — requires website.posts:view
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: languageCode, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The translation
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EditorialPostTranslation" }
+        "403":
+          description: Missing website.posts:view
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: Unknown post, unregistered language, or no translation in that language
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+    patch:
+      operationId: updateEditorialPostTranslation
+      tags: [editorial]
+      summary: >-
+        Edit ONE language's content — requires website.posts:edit. Never touches another
+        translation. Editing a PUBLISHED translation writes a revision of that translation's own
+        prior state, in the same transaction, before the mutation. The slug is editable only
+        before this translation's first publish. publishedAt is never written here.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: languageCode, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateEditorialTranslationBody" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EditorialPostTranslation" }
+        "400":
+          description: Invalid body, body-block violation, media URL rejected, or an unusable slug
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "403":
+          description: Missing website.posts:edit
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: Unknown post, unregistered language, or no translation in that language
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "409":
+          description: The slug is taken in this channel and language, or is immutable because the translation has been published
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /admin/editorial/posts/{id}/translations/{languageCode}/publish:
+    post:
+      operationId: publishEditorialPostTranslation
+      tags: [editorial]
+      summary: >-
+        draft|archived -> published for ONE translation — requires website.posts:publish.
+        Fails unless that translation passes the full readiness gate (title, non-empty body,
+        localized feature-image alt, alt on every image block, the post's shared feature image
+        and an active author WITH a biography, every media URL re-validated, and an ACTIVE
+        language). publishedAt is stamped once on this translation's own first publish and never
+        affects a sibling translation.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: languageCode, in: path, required: true, schema: { type: string } }
       responses:
         "200":
           description: Published
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/EditorialPost" }
+              schema: { $ref: "#/components/schemas/EditorialPostTranslation" }
         "400":
-          description: Publish readiness gate failed (missing title/body/feature image/alt/author biography, or a rejected media URL)
+          description: A readiness rule failed (the message names which)
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -2749,70 +2914,78 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
         "404":
-          description: Unknown post
+          description: Unknown post, unregistered language, or no translation in that language
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
         "409":
-          description: Illegal transition from the post's current status
+          description: Already published
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
 
-  /admin/editorial/posts/{id}/archive:
+  /admin/editorial/posts/{id}/translations/{languageCode}/archive:
     post:
-      operationId: archiveEditorialPost
+      operationId: archiveEditorialPostTranslation
       tags: [editorial]
-      summary: draft|published -> archived — requires website.posts:publish
+      summary: >-
+        draft|published -> archived for ONE translation — requires website.posts:publish.
+        Leaving published writes a revision of that translation. Sibling translations are
+        untouched and stay published if they are.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: languageCode, in: path, required: true, schema: { type: string } }
       responses:
         "200":
           description: Archived
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/EditorialPost" }
+              schema: { $ref: "#/components/schemas/EditorialPostTranslation" }
         "403":
           description: Missing website.posts:publish
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
         "404":
-          description: Unknown post
+          description: Unknown post, unregistered language, or no translation in that language
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
         "409":
-          description: Illegal transition from the post's current status
+          description: Already archived
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
 
-  /admin/editorial/posts/{id}/restore:
+  /admin/editorial/posts/{id}/translations/{languageCode}/restore:
     post:
-      operationId: restoreEditorialPost
+      operationId: restoreEditorialPostTranslation
       tags: [editorial]
-      summary: archived -> draft — requires website.posts:publish. published -> draft is never allowed.
+      summary: >-
+        archived -> draft for ONE translation — requires website.posts:publish. published -> draft
+        directly is NOT allowed (409): unpublishing goes through archive so there is always an
+        explicit audited "taken off the site" event. publishedAt is preserved, never cleared.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: languageCode, in: path, required: true, schema: { type: string } }
       responses:
         "200":
           description: Restored to draft
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/EditorialPost" }
+              schema: { $ref: "#/components/schemas/EditorialPostTranslation" }
         "403":
           description: Missing website.posts:publish
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
         "404":
-          description: Unknown post
+          description: Unknown post, unregistered language, or no translation in that language
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
         "409":
-          description: Illegal transition (e.g. published -> draft)
+          description: Illegal transition — notably published -> draft
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -2821,7 +2994,7 @@ paths:
     get:
       operationId: listEditorialPostTopics
       tags: [editorial]
-      summary: List a post's assigned topics
+      summary: Topics assigned to a post — shared by every translation. Requires website.posts:view
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
       responses:
@@ -2845,7 +3018,10 @@ paths:
     put:
       operationId: replaceEditorialPostTopics
       tags: [editorial]
-      summary: Replace a post's topic set — requires website.posts:edit. Topics must match the post's channel.
+      summary: >-
+        Replace a post's topics — requires website.posts:edit. Topics are classification of the
+        logical story and are NOT localized. All topics must be in the post's channel and active.
+        When the post has at least one published translation a shared revision is written.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
       requestBody:
@@ -2862,7 +3038,7 @@ paths:
                 type: array
                 items: { $ref: "#/components/schemas/EditorialTopic" }
         "400":
-          description: Channel mismatch, archived topic, duplicate, or unknown topic
+          description: Channel mismatch, archived topic, or duplicate id
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -2881,7 +3057,7 @@ paths:
     get:
       operationId: listEditorialPostRecommendations
       tags: [editorial]
-      summary: List a post's recommended posts, in editor order
+      summary: A post's recommended posts, in editor order — requires website.posts:view
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
       responses:
@@ -2905,7 +3081,10 @@ paths:
     put:
       operationId: replaceEditorialPostRecommendations
       tags: [editorial]
-      summary: Replace a post's recommendations — requires website.posts:edit. Same channel only, no self-reference, no duplicates.
+      summary: >-
+        Replace a post's recommendations — requires website.posts:edit. Post-to-post, not
+        translation-to-translation: the website resolves each target into the reader's language.
+        No self-reference, no duplicates, same channel only.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
       requestBody:
@@ -2932,7 +3111,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
         "404":
-          description: Unknown post or target
+          description: Unknown post
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -2941,12 +3120,16 @@ paths:
     get:
       operationId: listEditorialPostRevisions
       tags: [editorial]
-      summary: List a post's revisions, newest first (metadata only — no snapshot payload)
+      summary: >-
+        A post's revision history, newest first — requires website.posts:view. Metadata only.
+        Each entry is either TRANSLATION-scoped (translationId set) or SHARED/post-scoped
+        (translationId null). Filter by languageCode for one language's history.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: languageCode, in: query, schema: { type: string } }
       responses:
         "200":
-          description: Revision list
+          description: Revision metadata
           content:
             application/json:
               schema:
@@ -2967,7 +3150,7 @@ paths:
     get:
       operationId: getEditorialPostRevision
       tags: [editorial]
-      summary: Read one revision including its full snapshot
+      summary: One revision including its full snapshot — requires website.posts:view
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
         - { name: revisionId, in: path, required: true, schema: { type: integer } }
@@ -2992,16 +3175,26 @@ paths:
     post:
       operationId: restoreEditorialPostRevision
       tags: [editorial]
-      summary: Restore a post's content from a revision — requires website.posts:publish. Writes a new 'restore' revision of the pre-restore state first, in the same transaction.
+      summary: >-
+        Restore ONE translation's content from a translation-scoped revision — requires
+        website.posts:publish. The revision names its own translation, so restoring the Arabic
+        history cannot touch English. A new revision of the pre-restore state is written first, so
+        restoring is undoable. Restores CONTENT only — never status, publishedAt, or slug. A
+        shared/post-scoped revision has no translation to restore and is rejected with 400.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
         - { name: revisionId, in: path, required: true, schema: { type: integer } }
       responses:
         "200":
-          description: Restored post
+          description: The restored translation
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/EditorialPost" }
+              schema: { $ref: "#/components/schemas/EditorialPostTranslation" }
+        "400":
+          description: That revision records a shared post change, not one language's content
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
         "403":
           description: Missing website.posts:publish
           content:
@@ -3017,7 +3210,7 @@ paths:
     get:
       operationId: listEditorialTopics
       tags: [editorial]
-      summary: List topics (optionally filtered by channel/status)
+      summary: List topics — requires website.posts:view
       parameters:
         - { name: channel, in: query, schema: { type: string, enum: [news, experience] } }
         - { name: status, in: query, schema: { type: string, enum: [active, archived] } }
@@ -3037,7 +3230,7 @@ paths:
     post:
       operationId: createEditorialTopic
       tags: [editorial]
-      summary: Create a topic — requires website.posts:create
+      summary: Create a channel-scoped topic — requires website.posts:create
       requestBody:
         required: true
         content:
@@ -3050,7 +3243,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/EditorialTopic" }
         "400":
-          description: Invalid body
+          description: Invalid slug or body
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -3060,7 +3253,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
         "409":
-          description: Slug already in use for this channel
+          description: Slug already in use on this channel
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -3069,7 +3262,7 @@ paths:
     get:
       operationId: getEditorialTopic
       tags: [editorial]
-      summary: Get one topic
+      summary: Get one topic — requires website.posts:view
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
       responses:
@@ -3106,7 +3299,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/EditorialTopic" }
         "400":
-          description: Invalid body
+          description: Invalid slug or body
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -3121,7 +3314,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
         "409":
-          description: Slug already in use for this channel
+          description: Slug already in use on this channel
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -3130,8 +3323,9 @@ paths:
     get:
       operationId: listEditorialAuthors
       tags: [editorial]
-      summary: List authors (optionally filtered by status)
+      summary: List authors — requires website.posts:view. Authors are CHANNEL-SCOPED.
       parameters:
+        - { name: channel, in: query, schema: { type: string, enum: [news, experience] } }
         - { name: status, in: query, schema: { type: string, enum: [active, archived] } }
       responses:
         "200":
@@ -3149,7 +3343,10 @@ paths:
     post:
       operationId: createEditorialAuthor
       tags: [editorial]
-      summary: Create an author — requires website.posts:create
+      summary: >-
+        Create an author — requires website.posts:create. `channel` is REQUIRED: an author belongs
+        to exactly one editorial channel and can only be the byline of a post in that channel. The
+        same person writing for both surfaces is two author rows, deliberately.
       requestBody:
         required: true
         content:
@@ -3162,7 +3359,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/EditorialAuthor" }
         "400":
-          description: Invalid body or rejected avatar URL
+          description: Invalid body, or an avatar URL that is not on the approved image list
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -3176,7 +3373,7 @@ paths:
     get:
       operationId: getEditorialAuthor
       tags: [editorial]
-      summary: Get one author
+      summary: Get one author — requires website.posts:view
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
       responses:
@@ -3198,7 +3395,10 @@ paths:
     patch:
       operationId: updateEditorialAuthor
       tags: [editorial]
-      summary: Edit an author — requires website.posts:edit. Never rewrites a published post's frozen author snapshot.
+      summary: >-
+        Edit an author entity — requires website.posts:edit. `channel` is NOT editable here: it
+        would break the author-channel-match invariant for every post already carrying the byline.
+        This never rewrites a published translation's frozen author_snapshot.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
       requestBody:
@@ -3213,7 +3413,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/EditorialAuthor" }
         "400":
-          description: Invalid body or rejected avatar URL
+          description: Invalid body, or an avatar URL that is not on the approved image list
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -3232,19 +3432,19 @@ paths:
     get:
       operationId: getEditorialPlacement
       tags: [editorial]
-      summary: Read one named placement's ordered entries
+      summary: Read one named placement's entries in order — requires website.posts:view
       parameters:
         - { name: key, in: query, required: true, schema: { type: string } }
       responses:
         "200":
-          description: Placement entries, position ASC
+          description: Placement entries
           content:
             application/json:
               schema:
                 type: array
                 items: { $ref: "#/components/schemas/EditorialPlacementEntry" }
         "400":
-          description: Missing key
+          description: Missing placement key
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -3284,6 +3484,279 @@ paths:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
         "404":
           description: Unknown post
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  # ─── Website Settings (Wave 1.1) — Admin-only ──────────────────────────────
+  # Behind `website.settings` (view/edit), NOT `website.posts` and NOT
+  # `website.backgrounds`. Languages and Links are configuration of the
+  # website itself, not editorial prose: retiring a language or repointing
+  # an app-store badge is a different blast radius from writing a post, and
+  # reusing the Background CMS's grant just because both are "Website"
+  # would hand background-media editors control of both.
+  /admin/editorial/settings/languages:
+    get:
+      operationId: listEditorialLanguages
+      tags: [editorial]
+      summary: >-
+        Every registered website language in display order, with per-language translation counts
+        — requires website.settings:view. Inactive languages are RETAINED and returned (they are
+        excluded from new-translation pickers and from publishing, never deleted).
+      parameters:
+        - { name: activeOnly, in: query, schema: { type: boolean } }
+      responses:
+        "200":
+          description: Languages
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EditorialLanguageWithUsage" }
+        "403":
+          description: Missing website.settings:view
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+    post:
+      operationId: createEditorialLanguage
+      tags: [editorial]
+      summary: >-
+        Register a language — requires website.settings:edit. `code` is a BCP-47 locale tag
+        ("en", "ar", "en-GB", "zh-Hant-TW"), canonicalized and UNIQUE. Creating one as the
+        default atomically demotes the incumbent.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateEditorialLanguageBody" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EditorialLanguage" }
+        "400":
+          description: Invalid locale tag, or a default language marked inactive
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "403":
+          description: Missing website.settings:edit
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "409":
+          description: That language code is already registered
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /admin/editorial/settings/languages/{id}:
+    get:
+      operationId: getEditorialLanguage
+      tags: [editorial]
+      summary: Get one language — requires website.settings:view
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: The language
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EditorialLanguage" }
+        "403":
+          description: Missing website.settings:view
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: Unknown language
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+    patch:
+      operationId: updateEditorialLanguage
+      tags: [editorial]
+      summary: >-
+        Edit a language's presentation — requires website.settings:edit. `code` is NOT editable
+        (it is the identity every stored translation is keyed to), and isActive / isDefault are
+        NOT editable here either — they are lifecycle transitions with their own invariants and
+        their own audit events, under /activate, /deactivate and /default.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateEditorialLanguageBody" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EditorialLanguage" }
+        "400":
+          description: Invalid body
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "403":
+          description: Missing website.settings:edit
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: Unknown language
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /admin/editorial/settings/languages/{id}/activate:
+    post:
+      operationId: activateEditorialLanguage
+      tags: [editorial]
+      summary: >-
+        Make a language active again — requires website.settings:edit. Touches only the language
+        row: no translation's stored status is read or written, so reactivating never resurrects
+        or alters content.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Activated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EditorialLanguage" }
+        "403":
+          description: Missing website.settings:edit
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: Unknown language
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "409":
+          description: Already active
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /admin/editorial/settings/languages/{id}/deactivate:
+    post:
+      operationId: deactivateEditorialLanguage
+      tags: [editorial]
+      summary: >-
+        Retire a language — requires website.settings:edit. Languages are never deleted. The
+        CURRENT DEFAULT cannot be deactivated (409): promote another ACTIVE language to default
+        first. The last remaining active language cannot be deactivated either. Existing
+        translations keep their stored status; the language is simply excluded from
+        new-translation pickers and from publishing.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Deactivated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EditorialLanguage" }
+        "403":
+          description: Missing website.settings:edit
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: Unknown language
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "409":
+          description: Already inactive, the current default, or the only active language
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /admin/editorial/settings/languages/{id}/default:
+    post:
+      operationId: setDefaultEditorialLanguage
+      tags: [editorial]
+      summary: >-
+        Make this the default website language — requires website.settings:edit. Demotes the
+        incumbent and promotes the successor in ONE transaction under row locks; a partial unique
+        index guarantees at most one default even under concurrency. The target must be ACTIVE.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: The new default language
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EditorialLanguage" }
+        "400":
+          description: The target language is inactive
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "403":
+          description: Missing website.settings:edit
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: Unknown language
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "409":
+          description: Already the default
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /admin/editorial/settings/links:
+    get:
+      operationId: getEditorialWebsiteLinks
+      tags: [editorial]
+      summary: The website's app-store links — requires website.settings:view
+      responses:
+        "200":
+          description: Current links (null means "not configured")
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EditorialWebsiteLinks" }
+        "403":
+          description: Missing website.settings:view
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+    patch:
+      operationId: updateEditorialWebsiteLinks
+      tags: [editorial]
+      summary: >-
+        Update the app-store links — requires website.settings:edit. Partial: an omitted field is
+        left alone, an explicit null or "" clears it. A non-empty value must be a valid absolute
+        HTTPS URL with no whitespace or markup characters. One audit row is written per field that
+        actually changed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateEditorialWebsiteLinksBody" }
+      responses:
+        "200":
+          description: Updated links
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EditorialWebsiteLinks" }
+        "400":
+          description: A link is not https, not a valid URL, or contains disallowed characters
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "403":
+          description: Missing website.settings:edit
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -5782,9 +6255,15 @@ components:
           items: { type: integer }
         createdAt: { type: string }
 
-    # ─── Unified Editorial CMS Wave 1 ────────────────────────────────────────
-    # Net-new schemas. None of the Website News / Performance schemas above
-    # are referenced, extended, or modified by anything here.
+    # ─── Unified Editorial CMS Wave 1 + 1.1 ──────────────────────────────────
+    # Net-new schemas. None of the Website News / Performance / Background
+    # schemas above are referenced, extended, or modified by anything here.
+    #
+    # WAVE 1.1 SPLIT THE POST IN TWO. `EditorialPost` is now the SHARED
+    # spine (channel, byline, one feature image URL, provenance) and
+    # `EditorialPostTranslation` carries everything a reader reads, one row
+    # per language with its own lifecycle. A post has no status, title or
+    # slug of its own — its translations do.
 
     # Flat, discriminated body block model — deliberately NOT the nested
     # WebsiteNewsContent { leadParagraph, sections[] } shape, so every block
@@ -5810,7 +6289,7 @@ components:
       required: [type, url, alt]
       properties:
         type: { type: string, enum: [image] }
-        url: { type: string }
+        url: { type: string, minLength: 1 }
         alt: { type: string, minLength: 1, maxLength: 200 }
         caption: { type: string, maxLength: 300 }
 
@@ -5841,8 +6320,6 @@ components:
           maxItems: 250
           items: { $ref: "#/components/schemas/EditorialBodyBlock" }
 
-    # Frozen byline, captured at publish time. Editing the author ENTITY
-    # never rewrites an already-frozen snapshot.
     EditorialAuthorSnapshot:
       type: object
       required: [name, role, avatarUrl, biography]
@@ -5852,13 +6329,107 @@ components:
         avatarUrl: { type: ["string", "null"] }
         biography: { type: ["string", "null"] }
 
+    # ─── Languages (Website Settings) ────────────────────────────────────────
+
+    EditorialLanguage:
+      type: object
+      required:
+        [id, code, name, nativeName, direction, isActive, isDefault,
+         displayOrder, createdAt, updatedAt, updatedByAdminId]
+      properties:
+        id: { type: integer }
+        # BCP-47 locale tag, canonicalized and unique: "en", "ar", "en-GB",
+        # "zh-Hant-TW". Not a hardcoded English/Arabic enum.
+        code: { type: string }
+        name: { type: string }
+        nativeName: { type: string }
+        direction: { type: string, enum: [ltr, rtl] }
+        # Inactive languages are RETAINED, never deleted: excluded from
+        # new-translation pickers and from publishing, but existing
+        # translations keep their stored status.
+        isActive: { type: boolean }
+        # At most one language has isDefault=true, guaranteed by a partial
+        # unique index rather than by application ordering.
+        isDefault: { type: boolean }
+        displayOrder: { type: integer }
+        createdAt: { type: string }
+        updatedAt: { type: string }
+        updatedByAdminId: { type: ["integer", "null"] }
+
+    EditorialLanguageWithUsage:
+      allOf:
+        - { $ref: "#/components/schemas/EditorialLanguage" }
+        - type: object
+          required: [translationCounts]
+          properties:
+            # How much content exists in this language, so an editor can see
+            # what deactivating would take out of circulation first.
+            translationCounts:
+              type: object
+              required: [draft, published, archived]
+              properties:
+                draft: { type: integer }
+                published: { type: integer }
+                archived: { type: integer }
+
+    CreateEditorialLanguageBody:
+      type: object
+      required: [code, name, nativeName, direction]
+      properties:
+        code: { type: string, minLength: 2, maxLength: 15 }
+        name: { type: string, minLength: 1, maxLength: 100 }
+        nativeName: { type: string, minLength: 1, maxLength: 100 }
+        direction: { type: string, enum: [ltr, rtl] }
+        displayOrder: { type: integer, minimum: 0 }
+        isActive: { type: boolean }
+        # Creating a language as the default atomically demotes the incumbent.
+        isDefault: { type: boolean }
+
+    UpdateEditorialLanguageBody:
+      type: object
+      description: >-
+        Presentation only. `code` is immutable (every stored translation is keyed to it), and
+        isActive / isDefault are changed through /activate, /deactivate and /default so their
+        invariants and audit events cannot be bypassed by a generic patch.
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        nativeName: { type: string, minLength: 1, maxLength: 100 }
+        direction: { type: string, enum: [ltr, rtl] }
+        displayOrder: { type: integer, minimum: 0 }
+
+    # ─── Links (Website Settings) ────────────────────────────────────────────
+
+    EditorialWebsiteLinks:
+      type: object
+      required: [id, googlePlayUrl, appStoreUrl, updatedAt, updatedByAdminId]
+      properties:
+        id: { type: integer }
+        # null = "not configured". The website hides the badge rather than
+        # rendering a dead link.
+        googlePlayUrl: { type: ["string", "null"] }
+        appStoreUrl: { type: ["string", "null"] }
+        updatedAt: { type: ["string", "null"] }
+        updatedByAdminId: { type: ["integer", "null"] }
+
+    UpdateEditorialWebsiteLinksBody:
+      type: object
+      description: Partial. An omitted field is left alone; an explicit null or "" clears it. Non-empty values must be absolute HTTPS URLs.
+      properties:
+        googlePlayUrl: { type: ["string", "null"], maxLength: 2000 }
+        appStoreUrl: { type: ["string", "null"], maxLength: 2000 }
+
+    # ─── Authors (CHANNEL-SCOPED) ────────────────────────────────────────────
+
     EditorialAuthor:
       type: object
       required:
-        [id, publicName, role, biography, avatarUrl, systemUserId, status,
-         createdAt, updatedAt]
+        [id, channel, publicName, role, biography, avatarUrl, systemUserId,
+         status, createdAt, updatedAt]
       properties:
         id: { type: integer }
+        # An author belongs to exactly one channel and can only be the
+        # byline of a post in that same channel.
+        channel: { type: string, enum: [news, experience] }
         publicName: { type: string }
         role: { type: string }
         biography: { type: ["string", "null"] }
@@ -5870,8 +6441,9 @@ components:
 
     CreateEditorialAuthorBody:
       type: object
-      required: [publicName, role]
+      required: [channel, publicName, role]
       properties:
+        channel: { type: string, enum: [news, experience] }
         publicName: { type: string, minLength: 1, maxLength: 200 }
         role: { type: string, minLength: 1, maxLength: 200 }
         biography: { type: ["string", "null"] }
@@ -5881,7 +6453,7 @@ components:
 
     UpdateEditorialAuthorBody:
       type: object
-      description: Partial update.
+      description: Partial update. `channel` is deliberately absent — changing it would break the author-channel-match invariant for every post already carrying the byline.
       properties:
         publicName: { type: string, minLength: 1, maxLength: 200 }
         role: { type: string, minLength: 1, maxLength: 200 }
@@ -5889,6 +6461,8 @@ components:
         avatarUrl: { type: ["string", "null"] }
         systemUserId: { type: ["integer", "null"] }
         status: { type: string, enum: [active, archived] }
+
+    # ─── Topics (shared across translations, NOT localized) ──────────────────
 
     EditorialTopic:
       type: object
@@ -5907,61 +6481,184 @@ components:
       required: [channel, name, slug]
       properties:
         channel: { type: string, enum: [news, experience] }
-        name: { type: string, minLength: 1, maxLength: 200 }
-        slug: { type: string, minLength: 1, maxLength: 200 }
+        name: { type: string, minLength: 1, maxLength: 120 }
+        slug: { type: string, minLength: 1, maxLength: 120 }
         status: { type: string, enum: [active, archived] }
 
     UpdateEditorialTopicBody:
       type: object
-      description: Partial update. Channel is immutable and is not accepted here.
+      description: Partial update. Channel is immutable.
       properties:
-        name: { type: string, minLength: 1, maxLength: 200 }
-        slug: { type: string, minLength: 1, maxLength: 200 }
+        name: { type: string, minLength: 1, maxLength: 120 }
+        slug: { type: string, minLength: 1, maxLength: 120 }
         status: { type: string, enum: [active, archived] }
+
+    # ─── Post (SHARED spine) ─────────────────────────────────────────────────
 
     EditorialPost:
       type: object
+      description: >-
+        The shared spine of a logical post. Carries NO title, slug, body, status or publishedAt —
+        those are per-translation. `featureImageUrl` is shared by every language; its ALT TEXT is
+        per-translation, because alt text is prose.
       required:
-        [id, channel, slug, status, title, deck, contextLabel, body,
-         bodyVersion, featureImageUrl, featureImageAlt, authorId,
-         authorSnapshot, readingTimeOverrideMinutes, publishedAt,
-         migrationSourceTable, migrationSourceId, seoTitle, seoDescription,
-         ogImageUrl, createdAt, updatedAt, updatedByAdminId]
+        [id, channel, authorId, featureImageUrl, migrationSourceTable,
+         migrationSourceId, createdAt, updatedAt, updatedByAdminId]
       properties:
         id: { type: integer }
+        # Immutable after creation — a database trigger enforces it, which
+        # is what makes the denormalized channel copy on each translation
+        # (and the (channel, language, slug) UNIQUE keyed on it) sound.
         channel: { type: string, enum: [news, experience] }
-        slug: { type: string }
-        status: { type: string, enum: [draft, published, archived] }
-        title: { type: string }
-        deck: { type: ["string", "null"] }
-        contextLabel: { type: ["string", "null"] }
-        body: { $ref: "#/components/schemas/EditorialBody" }
-        bodyVersion: { type: integer }
-        featureImageUrl: { type: ["string", "null"] }
-        featureImageAlt: { type: ["string", "null"] }
         authorId: { type: ["integer", "null"] }
-        authorSnapshot:
-          oneOf:
-            - { $ref: "#/components/schemas/EditorialAuthorSnapshot" }
-            - { type: "null" }
-        readingTimeOverrideMinutes: { type: ["integer", "null"] }
-        publishedAt: { type: ["string", "null"] }
+        featureImageUrl: { type: ["string", "null"] }
         # Inert provenance placeholders reserved for a LATER wave's content
-        # migration. Nothing in Wave 1 writes them.
+        # migration. Nothing in Wave 1 or 1.1 writes them.
         migrationSourceTable: { type: ["string", "null"] }
         migrationSourceId: { type: ["integer", "null"] }
-        seoTitle: { type: ["string", "null"] }
-        seoDescription: { type: ["string", "null"] }
-        ogImageUrl: { type: ["string", "null"] }
         createdAt: { type: string }
         updatedAt: { type: string }
         updatedByAdminId: { type: ["integer", "null"] }
 
-    EditorialPostDetail:
+    UpdateEditorialPostSharedBody:
       type: object
-      required: [post, topics, recommendations]
+      description: >-
+        Partial update of the SHARED fields only. Channel is immutable. Prose belongs to
+        translations. A feature-image change deliberately does NOT clear any translation's
+        localized alt text.
+      properties:
+        authorId: { type: ["integer", "null"] }
+        featureImageUrl: { type: ["string", "null"] }
+
+    # ─── Translation (one language, own lifecycle) ───────────────────────────
+
+    EditorialPostTranslation:
+      type: object
+      description: One language's rendering of a post, with its own independent lifecycle.
+      required:
+        [id, postId, languageId, languageCode, channel, title, slug, deck,
+         contextLabel, featureImageAlt, body, bodyVersion, status,
+         publishedAt, readingTimeOverrideMinutes, seoTitle, seoDescription,
+         ogImageUrl, authorSnapshot, createdAt, updatedAt, updatedByAdminId]
+      properties:
+        id: { type: integer }
+        postId: { type: integer }
+        languageId: { type: integer }
+        languageCode: { type: string }
+        languageName: { type: string }
+        languageDirection: { type: string, enum: [ltr, rtl] }
+        languageIsActive: { type: boolean }
+        # DERIVED copy of the parent post's channel, maintained by a
+        # database trigger solely to carry the
+        # (channel, languageId, slug) UNIQUE. Read-only.
+        channel: { type: string, enum: [news, experience] }
+        title: { type: string }
+        # Unique per (channel, language). Letters or numbers from ANY script
+        # separated by single hyphens — an Arabic title yields an Arabic
+        # slug; there is no transliteration. Immutable after this
+        # translation's first publish.
+        slug: { type: string }
+        deck: { type: ["string", "null"] }
+        contextLabel: { type: ["string", "null"] }
+        # Localized alt text for the POST's shared feature image.
+        featureImageAlt: { type: ["string", "null"] }
+        body: { $ref: "#/components/schemas/EditorialBody" }
+        bodyVersion: { type: integer }
+        status: { type: string, enum: [draft, published, archived] }
+        # Stamped once, on THIS translation's own first publish. Never
+        # changed by an edit, and never affected by a sibling translation.
+        publishedAt: { type: ["string", "null"] }
+        # Per-translation: the same story is not the same length in every
+        # language, so a shared override would be wrong.
+        readingTimeOverrideMinutes: { type: ["integer", "null"] }
+        seoTitle: { type: ["string", "null"] }
+        seoDescription: { type: ["string", "null"] }
+        ogImageUrl: { type: ["string", "null"] }
+        # Byline FROZEN at this translation's publish moment. Its source is
+        # the shared parent author; the freeze is per-translation because
+        # publishing is.
+        authorSnapshot:
+          oneOf:
+            - { $ref: "#/components/schemas/EditorialAuthorSnapshot" }
+            - { type: "null" }
+        createdAt: { type: string }
+        updatedAt: { type: string }
+        updatedByAdminId: { type: ["integer", "null"] }
+
+    EditorialTranslationSummary:
+      type: object
+      description: Enough of a translation to render a post list row without its body.
+      required: [id, languageId, languageCode, title, slug, status, publishedAt, updatedAt]
+      properties:
+        id: { type: integer }
+        languageId: { type: integer }
+        languageCode: { type: string }
+        languageDirection: { type: string, enum: [ltr, rtl] }
+        title: { type: string }
+        slug: { type: string }
+        status: { type: string, enum: [draft, published, archived] }
+        publishedAt: { type: ["string", "null"] }
+        updatedAt: { type: string }
+
+    CreateEditorialTranslationBody:
+      type: object
+      description: >-
+        Always creates a DRAFT. Status is not accepted here — use the publish/archive/restore
+        endpoints. `slug` is optional: omit it to have one generated from the title (Unicode-safe,
+        deterministically suffixed on collision); supply it to choose one, in which case a
+        collision is a 409 rather than a silent rename.
+      required: [languageCode, title, body]
+      properties:
+        languageCode: { type: string, minLength: 2, maxLength: 15 }
+        title: { type: string, minLength: 1, maxLength: 300 }
+        slug: { type: ["string", "null"], maxLength: 120 }
+        deck: { type: ["string", "null"] }
+        contextLabel: { type: ["string", "null"] }
+        featureImageAlt: { type: ["string", "null"] }
+        body: { $ref: "#/components/schemas/EditorialBody" }
+        readingTimeOverrideMinutes: { type: ["integer", "null"] }
+        seoTitle: { type: ["string", "null"] }
+        seoDescription: { type: ["string", "null"] }
+        ogImageUrl: { type: ["string", "null"] }
+
+    UpdateEditorialTranslationBody:
+      type: object
+      description: >-
+        Partial update of ONE language's content. Status changes go through
+        publish/archive/restore. The slug is editable only before this translation's first
+        publish. Nothing here can reach another translation.
+      properties:
+        title: { type: string, minLength: 1, maxLength: 300 }
+        slug: { type: string, minLength: 1, maxLength: 120 }
+        deck: { type: ["string", "null"] }
+        contextLabel: { type: ["string", "null"] }
+        featureImageAlt: { type: ["string", "null"] }
+        body: { $ref: "#/components/schemas/EditorialBody" }
+        readingTimeOverrideMinutes: { type: ["integer", "null"] }
+        seoTitle: { type: ["string", "null"] }
+        seoDescription: { type: ["string", "null"] }
+        ogImageUrl: { type: ["string", "null"] }
+
+    # ─── Composed responses ──────────────────────────────────────────────────
+
+    EditorialPostWithTranslation:
+      type: object
+      required: [post, translation]
       properties:
         post: { $ref: "#/components/schemas/EditorialPost" }
+        translation:
+          oneOf:
+            - { $ref: "#/components/schemas/EditorialPostTranslation" }
+            - { type: "null" }
+
+    EditorialPostDetail:
+      type: object
+      required: [post, translations, topics, recommendations]
+      properties:
+        post: { $ref: "#/components/schemas/EditorialPost" }
+        translations:
+          type: array
+          items: { $ref: "#/components/schemas/EditorialPostTranslation" }
         topics:
           type: array
           items: { $ref: "#/components/schemas/EditorialTopic" }
@@ -5969,52 +6666,38 @@ components:
           type: array
           items: { $ref: "#/components/schemas/EditorialRecommendation" }
 
+    EditorialPostListItem:
+      type: object
+      required: [post, translations]
+      properties:
+        post: { $ref: "#/components/schemas/EditorialPost" }
+        translations:
+          type: array
+          items: { $ref: "#/components/schemas/EditorialTranslationSummary" }
+
     EditorialPostListResponse:
       type: object
       required: [items, page, limit, total]
       properties:
         items:
           type: array
-          items: { $ref: "#/components/schemas/EditorialPost" }
+          items: { $ref: "#/components/schemas/EditorialPostListItem" }
         page: { type: integer }
         limit: { type: integer }
         total: { type: integer }
 
     CreateEditorialPostBody:
       type: object
-      description: Always creates a DRAFT. Status is not accepted here — use the publish/archive/restore endpoints.
-      required: [channel, slug, title, body]
+      description: >-
+        Creates the shared post spine, and optionally its first translation in the same
+        transaction. Any translation is always a DRAFT. The author must belong to the post's
+        channel.
+      required: [channel]
       properties:
         channel: { type: string, enum: [news, experience] }
-        slug: { type: string, minLength: 1, maxLength: 200 }
-        title: { type: string, minLength: 1, maxLength: 300 }
-        deck: { type: ["string", "null"] }
-        contextLabel: { type: ["string", "null"] }
-        body: { $ref: "#/components/schemas/EditorialBody" }
-        featureImageUrl: { type: ["string", "null"] }
-        featureImageAlt: { type: ["string", "null"] }
         authorId: { type: ["integer", "null"] }
-        readingTimeOverrideMinutes: { type: ["integer", "null"] }
-        seoTitle: { type: ["string", "null"] }
-        seoDescription: { type: ["string", "null"] }
-        ogImageUrl: { type: ["string", "null"] }
-
-    UpdateEditorialPostBody:
-      type: object
-      description: Partial update. Channel and status are immutable here — status changes go through publish/archive/restore.
-      properties:
-        slug: { type: string, minLength: 1, maxLength: 200 }
-        title: { type: string, minLength: 1, maxLength: 300 }
-        deck: { type: ["string", "null"] }
-        contextLabel: { type: ["string", "null"] }
-        body: { $ref: "#/components/schemas/EditorialBody" }
         featureImageUrl: { type: ["string", "null"] }
-        featureImageAlt: { type: ["string", "null"] }
-        authorId: { type: ["integer", "null"] }
-        readingTimeOverrideMinutes: { type: ["integer", "null"] }
-        seoTitle: { type: ["string", "null"] }
-        seoDescription: { type: ["string", "null"] }
-        ogImageUrl: { type: ["string", "null"] }
+        translation: { $ref: "#/components/schemas/CreateEditorialTranslationBody" }
 
     ReplaceEditorialPostTopicsBody:
       type: object
@@ -6027,13 +6710,17 @@ components:
 
     EditorialRecommendation:
       type: object
-      required: [targetPostId, position, targetTitle, targetStatus, targetSlug]
+      description: >-
+        A post-to-post pointer. `targetTitle` / `targetSlug` are rendered from the target's
+        DEFAULT-language translation (falling back to any translation) purely so the Admin list is
+        readable; the relation itself is language-agnostic.
+      required: [targetPostId, position, targetTitle, targetSlug]
       properties:
         targetPostId: { type: integer }
         position: { type: integer }
         targetTitle: { type: string }
         targetSlug: { type: string }
-        targetStatus: { type: string, enum: [draft, published, archived] }
+        targetLanguageCode: { type: ["string", "null"] }
 
     ReplaceEditorialPostRecommendationsBody:
       type: object
@@ -6051,7 +6738,7 @@ components:
 
     EditorialPlacementEntry:
       type: object
-      required: [id, key, channel, postId, position, startAt, endAt, postTitle, postStatus]
+      required: [id, key, channel, postId, position, startAt, endAt, postTitle]
       properties:
         id: { type: integer }
         key: { type: string }
@@ -6060,8 +6747,10 @@ components:
         position: { type: integer }
         startAt: { type: ["string", "null"] }
         endAt: { type: ["string", "null"] }
+        # Same rationale as EditorialRecommendation.targetTitle — a readable
+        # label from the default-language translation, not part of the model.
         postTitle: { type: string }
-        postStatus: { type: string, enum: [draft, published, archived] }
+        postLanguageCode: { type: ["string", "null"] }
 
     ReplaceEditorialPlacementBody:
       type: object
@@ -6080,57 +6769,90 @@ components:
               startAt: { type: ["string", "null"] }
               endAt: { type: ["string", "null"] }
 
+    # ─── Revisions (two scopes) ──────────────────────────────────────────────
+    # Every revision is either TRANSLATION-scoped (translationId set;
+    # published_edit / restore / translation_status_change) or SHARED /
+    # post-scoped (translationId null; author_change / topics_change /
+    # shared_field_change). A database CHECK makes a mis-scoped row
+    # impossible, and a composite FK makes a cross-post translation
+    # reference impossible — which is what makes translation isolation
+    # structural rather than conventional.
+
     EditorialRevisionSummary:
       type: object
-      required: [id, postId, revisionNumber, eventType, createdAt, createdByAdminId]
+      required: [id, postId, translationId, revisionNumber, eventType, createdAt, createdByAdminId]
       properties:
         id: { type: integer }
         postId: { type: integer }
+        # null => this revision records a SHARED post change, not one
+        # language's content.
+        translationId: { type: ["integer", "null"] }
+        languageCode: { type: ["string", "null"] }
         revisionNumber: { type: integer }
         eventType:
           type: string
-          enum: [published_edit, restore, author_change, topics_change]
+          enum: [published_edit, restore, translation_status_change, author_change, topics_change, shared_field_change]
         createdAt: { type: string }
         createdByAdminId: { type: ["integer", "null"] }
 
-    EditorialRevisionSnapshot:
+    EditorialTranslationRevisionSnapshot:
       type: object
+      description: The prior state of ONE translation. Holds nothing belonging to a sibling translation, which is why restoring it cannot touch one.
       required:
-        [title, deck, contextLabel, body, bodyVersion, featureImageUrl,
-         featureImageAlt, authorId, authorSnapshot, topics, seoTitle,
-         seoDescription, ogImageUrl, status, publishedAt]
+        [scope, languageId, languageCode, title, slug, deck, contextLabel,
+         body, bodyVersion, featureImageAlt, authorSnapshot,
+         readingTimeOverrideMinutes, seoTitle, seoDescription, ogImageUrl,
+         status, publishedAt]
       properties:
+        scope: { type: string, enum: [translation] }
+        languageId: { type: integer }
+        languageCode: { type: string }
         title: { type: string }
+        slug: { type: string }
         deck: { type: ["string", "null"] }
         contextLabel: { type: ["string", "null"] }
         body: { $ref: "#/components/schemas/EditorialBody" }
         bodyVersion: { type: integer }
-        featureImageUrl: { type: ["string", "null"] }
         featureImageAlt: { type: ["string", "null"] }
-        authorId: { type: ["integer", "null"] }
         authorSnapshot:
           oneOf:
             - { $ref: "#/components/schemas/EditorialAuthorSnapshot" }
             - { type: "null" }
-        topics:
-          type: array
-          items: { type: integer }
+        readingTimeOverrideMinutes: { type: ["integer", "null"] }
         seoTitle: { type: ["string", "null"] }
         seoDescription: { type: ["string", "null"] }
         ogImageUrl: { type: ["string", "null"] }
         status: { type: string, enum: [draft, published, archived] }
         publishedAt: { type: ["string", "null"] }
 
+    EditorialSharedRevisionSnapshot:
+      type: object
+      description: The prior state of the SHARED post spine. Deliberately holds no prose, so restoring or reading it cannot affect any language's content.
+      required: [scope, authorId, featureImageUrl, topics]
+      properties:
+        scope: { type: string, enum: [shared] }
+        authorId: { type: ["integer", "null"] }
+        featureImageUrl: { type: ["string", "null"] }
+        topics:
+          type: array
+          items: { type: integer }
+
+    EditorialRevisionSnapshot:
+      oneOf:
+        - { $ref: "#/components/schemas/EditorialTranslationRevisionSnapshot" }
+        - { $ref: "#/components/schemas/EditorialSharedRevisionSnapshot" }
+
     EditorialRevision:
       type: object
-      required: [id, postId, revisionNumber, eventType, snapshot, createdAt, createdByAdminId]
+      required: [id, postId, translationId, revisionNumber, eventType, snapshot, createdAt, createdByAdminId]
       properties:
         id: { type: integer }
         postId: { type: integer }
+        translationId: { type: ["integer", "null"] }
         revisionNumber: { type: integer }
         eventType:
           type: string
-          enum: [published_edit, restore, author_change, topics_change]
+          enum: [published_edit, restore, translation_status_change, author_change, topics_change, shared_field_change]
         snapshot: { $ref: "#/components/schemas/EditorialRevisionSnapshot" }
         createdAt: { type: string }
         createdByAdminId: { type: ["integer", "null"] }

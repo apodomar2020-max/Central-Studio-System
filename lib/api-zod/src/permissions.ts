@@ -230,9 +230,51 @@ const permissionCatalog = [
   {
     key: "website.posts",
     label: "Website Editorial Posts",
-    description: "Unified editorial posts (news + experience channels), authors, topics, recommendations, and placements.",
+    description: "Unified editorial posts and their language translations (news + experience channels), authors, topics, recommendations, and placements.",
     group: "Content & Engagement",
     actions: actions(["view", "View"], ["create", "Create"], ["edit", "Edit"], ["delete", "Delete"], ["publish", "Publish"]),
+  },
+  // Website Settings (Wave 1.1) — content Languages + app-store Links.
+  //
+  // A SEPARATE, least-privilege family rather than an extension of
+  // website.posts or a reuse of website.backgrounds. The scope was
+  // investigated before choosing:
+  //
+  //   * website.posts is CONTENT. Translations are content and stay under
+  //     it — a translation is a post's prose in one language, and its
+  //     publish transition is exactly the `publish` action that family
+  //     already gates, so no new key or action was needed for them.
+  //     Languages are NOT content: a language is the registry content is
+  //     filed against, and retiring one pulls a whole locale out of
+  //     circulation. A copy editor who should be able to write and publish
+  //     prose should not thereby be able to retire Arabic or repoint an
+  //     app-store link.
+  //   * website.backgrounds was deliberately NOT reused. It is the
+  //     Background CMS's grant over eight approved media slots; reusing it
+  //     merely because both concern "the website" would hand
+  //     background-media editors the language registry, and would hand
+  //     these settings to anyone holding background edit. Different blast
+  //     radius, different grant.
+  //   * There is no existing website-wide settings permission to extend —
+  //     the generic `settings` key covers SYSTEM settings, not
+  //     public-website configuration.
+  //
+  // Only view/edit: these are settings, not a create/delete lifecycle.
+  // Languages are never deleted (archive-not-delete, enforced by an
+  // ON DELETE RESTRICT foreign key) and the Links row is a seeded
+  // singleton, so `create` and `delete` would be dead grants.
+  //
+  // ADDITIVE: a brand-new module key. No existing catalog entry is touched
+  // and no role grant or default-role JSON is modified anywhere — a role
+  // must be granted website.settings explicitly in the role editor. Same
+  // "Content & Engagement" group as the other website.* modules because
+  // PERMISSION_GROUPS is a closed list the role editor iterates strictly.
+  {
+    key: "website.settings",
+    label: "Website Settings",
+    description: "Public-website configuration: content languages (including the default language) and app-store download links.",
+    group: "Content & Engagement",
+    actions: actions(["view", "View"], ["edit", "Edit"]),
   },
   {
     key: "ballet.applications",

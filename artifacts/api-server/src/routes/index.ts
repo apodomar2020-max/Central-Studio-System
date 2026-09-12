@@ -60,6 +60,7 @@ import websiteBackgroundsRouter from "./websiteBackgrounds";
 import websiteNewsRouter from "./websiteNews";
 import websitePerformancesRouter from "./websitePerformances";
 import adminEditorialRouter from "./adminEditorial";
+import adminEditorialSettingsRouter from "./adminEditorialSettings";
 import websiteBranchesRouter from "./websiteBranches";
 
 const router: IRouter = Router();
@@ -129,6 +130,9 @@ router.use(websitePerformancesRouter);
 // placements/revisions. Additive: does not touch the News/Performance
 // routers above, and registers no public route.
 router.use(adminEditorialRouter);
+// Website Settings (Languages + Links) — behind the separate
+// `website.settings` permission family, not `website.posts`.
+router.use(adminEditorialSettingsRouter);
 // Public Website branch directory (footer) — unauthenticated read.
 router.use(websiteBranchesRouter);
 // Finance Department (Phase 1) — read-only aggregation over the existing
