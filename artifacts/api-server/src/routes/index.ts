@@ -59,6 +59,7 @@ import adminRoomReservationsRouter from "./adminRoomReservations";
 import websiteBackgroundsRouter from "./websiteBackgrounds";
 import websiteNewsRouter from "./websiteNews";
 import websitePerformancesRouter from "./websitePerformances";
+import adminEditorialRouter from "./adminEditorial";
 import websiteBranchesRouter from "./websiteBranches";
 
 const router: IRouter = Router();
@@ -124,6 +125,10 @@ router.use(websiteBackgroundsRouter);
 router.use(websiteNewsRouter);
 // Website CMS Wave 3 — Performance.
 router.use(websitePerformancesRouter);
+// Unified Editorial CMS Wave 1 — Admin-only editorial posts/authors/topics/
+// placements/revisions. Additive: does not touch the News/Performance
+// routers above, and registers no public route.
+router.use(adminEditorialRouter);
 // Public Website branch directory (footer) — unauthenticated read.
 router.use(websiteBranchesRouter);
 // Finance Department (Phase 1) — read-only aggregation over the existing
