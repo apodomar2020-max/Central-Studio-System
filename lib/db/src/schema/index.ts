@@ -101,3 +101,13 @@ export * from "./studentDeletionWorkflows";
 export * from "./studentLegacyIdentityResolutions";
 // Security-01B2 — social account linking OTP-ownership challenges (migration 0120)
 export * from "./socialLinkChallenges";
+// Unified Editorial CMS Wave 1 — additive backend foundation (migration 0126).
+// Net-new domain: does NOT read, write, or replace website_news_posts /
+// website_performances, which remain the live public-website sources.
+export * from "./editorialAuthors";
+export * from "./editorialTopics";
+export * from "./editorialPosts";
+export * from "./editorialPostTopics";
+export * from "./editorialPostRelations";
+export * from "./editorialPlacements";
+export * from "./editorialPostRevisions";
