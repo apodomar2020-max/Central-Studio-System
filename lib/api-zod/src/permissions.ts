@@ -212,6 +212,28 @@ const permissionCatalog = [
     group: "Content & Engagement",
     actions: actions(["view", "View"], ["create", "Create"], ["edit", "Edit"], ["delete", "Delete"]),
   },
+  // Unified Editorial CMS Wave 1 — the new channel-agnostic post domain
+  // (editorial_posts + authors/topics/relations/placements/revisions).
+  // ADDITIVE: a brand-new module key alongside website.news /
+  // website.performance, which keep their own keys, labels, and actions
+  // exactly as they are — this entry grants nothing on those modules and
+  // changes no existing role's grants (no role JSON is edited here; a role
+  // must be granted website.posts explicitly in the role editor).
+  //
+  // Same "Content & Engagement" group as the other website.* modules
+  // because PERMISSION_GROUPS is a closed list the role editor iterates
+  // strictly. Same view < create/edit < delete hierarchy as website.news,
+  // plus one extra action: `publish`, which gates every state transition
+  // that changes what the public would see (publish, archive, restore) —
+  // deliberately NOT folded into `edit`, so an editor can be allowed to
+  // write drafts without being allowed to put them live.
+  {
+    key: "website.posts",
+    label: "Website Editorial Posts",
+    description: "Unified editorial posts (news + experience channels), authors, topics, recommendations, and placements.",
+    group: "Content & Engagement",
+    actions: actions(["view", "View"], ["create", "Create"], ["edit", "Edit"], ["delete", "Delete"], ["publish", "Publish"]),
+  },
   {
     key: "ballet.applications",
     label: "Ballet Applications",

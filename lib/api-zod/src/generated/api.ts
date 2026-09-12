@@ -5367,3 +5367,1582 @@ export const GetMyAttendanceResponse = zod.object({
   page: zod.number(),
   limit: zod.number(),
 });
+
+/**
+ * @summary List editorial posts (filterable, paginated) — requires website.posts:view
+ */
+
+export const listEditorialPostsQueryLimitMax = 100;
+
+export const ListEditorialPostsQueryParams = zod.object({
+  channel: zod.enum(["news", "experience"]).optional(),
+  status: zod.enum(["draft", "published", "archived"]).optional(),
+  authorId: zod.coerce.number().optional(),
+  topicId: zod.coerce.number().optional(),
+  search: zod.coerce.string().optional(),
+  page: zod.coerce.number().min(1).optional(),
+  limit: zod.coerce
+    .number()
+    .min(1)
+    .max(listEditorialPostsQueryLimitMax)
+    .optional(),
+});
+
+export const listEditorialPostsResponseItemsItemBodyBlocksItemOneTextMax = 5000;
+
+export const listEditorialPostsResponseItemsItemBodyBlocksItemTwoTextMax = 150;
+
+export const listEditorialPostsResponseItemsItemBodyBlocksItemThreeAltMax = 200;
+
+export const listEditorialPostsResponseItemsItemBodyBlocksItemThreeCaptionMax = 300;
+
+export const listEditorialPostsResponseItemsItemBodyBlocksItemFourItemsItemMax = 300;
+
+export const listEditorialPostsResponseItemsItemBodyBlocksItemFourItemsMin = 2;
+export const listEditorialPostsResponseItemsItemBodyBlocksItemFourItemsMax = 30;
+
+export const listEditorialPostsResponseItemsItemBodyBlocksMax = 250;
+
+export const ListEditorialPostsResponse = zod.object({
+  items: zod.array(
+    zod.object({
+      id: zod.number(),
+      channel: zod.enum(["news", "experience"]),
+      slug: zod.string(),
+      status: zod.enum(["draft", "published", "archived"]),
+      title: zod.string(),
+      deck: zod.string().nullable(),
+      contextLabel: zod.string().nullable(),
+      body: zod.object({
+        blocks: zod
+          .array(
+            zod.union([
+              zod.object({
+                type: zod.enum(["paragraph"]),
+                text: zod
+                  .string()
+                  .min(1)
+                  .max(
+                    listEditorialPostsResponseItemsItemBodyBlocksItemOneTextMax,
+                  ),
+              }),
+              zod.object({
+                type: zod.enum(["heading"]),
+                level: zod.union([zod.literal(2), zod.literal(3)]),
+                text: zod
+                  .string()
+                  .min(1)
+                  .max(
+                    listEditorialPostsResponseItemsItemBodyBlocksItemTwoTextMax,
+                  ),
+              }),
+              zod.object({
+                type: zod.enum(["image"]),
+                url: zod.string(),
+                alt: zod
+                  .string()
+                  .min(1)
+                  .max(
+                    listEditorialPostsResponseItemsItemBodyBlocksItemThreeAltMax,
+                  ),
+                caption: zod
+                  .string()
+                  .max(
+                    listEditorialPostsResponseItemsItemBodyBlocksItemThreeCaptionMax,
+                  )
+                  .optional(),
+              }),
+              zod.object({
+                type: zod.enum(["bulleted-list"]),
+                items: zod
+                  .array(
+                    zod
+                      .string()
+                      .min(1)
+                      .max(
+                        listEditorialPostsResponseItemsItemBodyBlocksItemFourItemsItemMax,
+                      ),
+                  )
+                  .min(
+                    listEditorialPostsResponseItemsItemBodyBlocksItemFourItemsMin,
+                  )
+                  .max(
+                    listEditorialPostsResponseItemsItemBodyBlocksItemFourItemsMax,
+                  ),
+              }),
+            ]),
+          )
+          .max(listEditorialPostsResponseItemsItemBodyBlocksMax),
+      }),
+      bodyVersion: zod.number(),
+      featureImageUrl: zod.string().nullable(),
+      featureImageAlt: zod.string().nullable(),
+      authorId: zod.number().nullable(),
+      authorSnapshot: zod.union([
+        zod.object({
+          name: zod.string(),
+          role: zod.string(),
+          avatarUrl: zod.string().nullable(),
+          biography: zod.string().nullable(),
+        }),
+        zod.null(),
+      ]),
+      readingTimeOverrideMinutes: zod.number().nullable(),
+      publishedAt: zod.string().nullable(),
+      migrationSourceTable: zod.string().nullable(),
+      migrationSourceId: zod.number().nullable(),
+      seoTitle: zod.string().nullable(),
+      seoDescription: zod.string().nullable(),
+      ogImageUrl: zod.string().nullable(),
+      createdAt: zod.string(),
+      updatedAt: zod.string(),
+      updatedByAdminId: zod.number().nullable(),
+    }),
+  ),
+  page: zod.number(),
+  limit: zod.number(),
+  total: zod.number(),
+});
+
+/**
+ * @summary Create a DRAFT editorial post — requires website.posts:create
+ */
+export const createEditorialPostBodySlugMax = 200;
+
+export const createEditorialPostBodyTitleMax = 300;
+
+export const createEditorialPostBodyBodyBlocksItemOneTextMax = 5000;
+
+export const createEditorialPostBodyBodyBlocksItemTwoTextMax = 150;
+
+export const createEditorialPostBodyBodyBlocksItemThreeAltMax = 200;
+
+export const createEditorialPostBodyBodyBlocksItemThreeCaptionMax = 300;
+
+export const createEditorialPostBodyBodyBlocksItemFourItemsItemMax = 300;
+
+export const createEditorialPostBodyBodyBlocksItemFourItemsMin = 2;
+export const createEditorialPostBodyBodyBlocksItemFourItemsMax = 30;
+
+export const createEditorialPostBodyBodyBlocksMax = 250;
+
+export const CreateEditorialPostBody = zod
+  .object({
+    channel: zod.enum(["news", "experience"]),
+    slug: zod.string().min(1).max(createEditorialPostBodySlugMax),
+    title: zod.string().min(1).max(createEditorialPostBodyTitleMax),
+    deck: zod.string().nullish(),
+    contextLabel: zod.string().nullish(),
+    body: zod.object({
+      blocks: zod
+        .array(
+          zod.union([
+            zod.object({
+              type: zod.enum(["paragraph"]),
+              text: zod
+                .string()
+                .min(1)
+                .max(createEditorialPostBodyBodyBlocksItemOneTextMax),
+            }),
+            zod.object({
+              type: zod.enum(["heading"]),
+              level: zod.union([zod.literal(2), zod.literal(3)]),
+              text: zod
+                .string()
+                .min(1)
+                .max(createEditorialPostBodyBodyBlocksItemTwoTextMax),
+            }),
+            zod.object({
+              type: zod.enum(["image"]),
+              url: zod.string(),
+              alt: zod
+                .string()
+                .min(1)
+                .max(createEditorialPostBodyBodyBlocksItemThreeAltMax),
+              caption: zod
+                .string()
+                .max(createEditorialPostBodyBodyBlocksItemThreeCaptionMax)
+                .optional(),
+            }),
+            zod.object({
+              type: zod.enum(["bulleted-list"]),
+              items: zod
+                .array(
+                  zod
+                    .string()
+                    .min(1)
+                    .max(createEditorialPostBodyBodyBlocksItemFourItemsItemMax),
+                )
+                .min(createEditorialPostBodyBodyBlocksItemFourItemsMin)
+                .max(createEditorialPostBodyBodyBlocksItemFourItemsMax),
+            }),
+          ]),
+        )
+        .max(createEditorialPostBodyBodyBlocksMax),
+    }),
+    featureImageUrl: zod.string().nullish(),
+    featureImageAlt: zod.string().nullish(),
+    authorId: zod.number().nullish(),
+    readingTimeOverrideMinutes: zod.number().nullish(),
+    seoTitle: zod.string().nullish(),
+    seoDescription: zod.string().nullish(),
+    ogImageUrl: zod.string().nullish(),
+  })
+  .describe(
+    "Always creates a DRAFT. Status is not accepted here — use the publish\/archive\/restore endpoints.",
+  );
+
+export const createEditorialPostResponseBodyBlocksItemOneTextMax = 5000;
+
+export const createEditorialPostResponseBodyBlocksItemTwoTextMax = 150;
+
+export const createEditorialPostResponseBodyBlocksItemThreeAltMax = 200;
+
+export const createEditorialPostResponseBodyBlocksItemThreeCaptionMax = 300;
+
+export const createEditorialPostResponseBodyBlocksItemFourItemsItemMax = 300;
+
+export const createEditorialPostResponseBodyBlocksItemFourItemsMin = 2;
+export const createEditorialPostResponseBodyBlocksItemFourItemsMax = 30;
+
+export const createEditorialPostResponseBodyBlocksMax = 250;
+
+export const CreateEditorialPostResponse = zod.object({
+  id: zod.number(),
+  channel: zod.enum(["news", "experience"]),
+  slug: zod.string(),
+  status: zod.enum(["draft", "published", "archived"]),
+  title: zod.string(),
+  deck: zod.string().nullable(),
+  contextLabel: zod.string().nullable(),
+  body: zod.object({
+    blocks: zod
+      .array(
+        zod.union([
+          zod.object({
+            type: zod.enum(["paragraph"]),
+            text: zod
+              .string()
+              .min(1)
+              .max(createEditorialPostResponseBodyBlocksItemOneTextMax),
+          }),
+          zod.object({
+            type: zod.enum(["heading"]),
+            level: zod.union([zod.literal(2), zod.literal(3)]),
+            text: zod
+              .string()
+              .min(1)
+              .max(createEditorialPostResponseBodyBlocksItemTwoTextMax),
+          }),
+          zod.object({
+            type: zod.enum(["image"]),
+            url: zod.string(),
+            alt: zod
+              .string()
+              .min(1)
+              .max(createEditorialPostResponseBodyBlocksItemThreeAltMax),
+            caption: zod
+              .string()
+              .max(createEditorialPostResponseBodyBlocksItemThreeCaptionMax)
+              .optional(),
+          }),
+          zod.object({
+            type: zod.enum(["bulleted-list"]),
+            items: zod
+              .array(
+                zod
+                  .string()
+                  .min(1)
+                  .max(
+                    createEditorialPostResponseBodyBlocksItemFourItemsItemMax,
+                  ),
+              )
+              .min(createEditorialPostResponseBodyBlocksItemFourItemsMin)
+              .max(createEditorialPostResponseBodyBlocksItemFourItemsMax),
+          }),
+        ]),
+      )
+      .max(createEditorialPostResponseBodyBlocksMax),
+  }),
+  bodyVersion: zod.number(),
+  featureImageUrl: zod.string().nullable(),
+  featureImageAlt: zod.string().nullable(),
+  authorId: zod.number().nullable(),
+  authorSnapshot: zod.union([
+    zod.object({
+      name: zod.string(),
+      role: zod.string(),
+      avatarUrl: zod.string().nullable(),
+      biography: zod.string().nullable(),
+    }),
+    zod.null(),
+  ]),
+  readingTimeOverrideMinutes: zod.number().nullable(),
+  publishedAt: zod.string().nullable(),
+  migrationSourceTable: zod.string().nullable(),
+  migrationSourceId: zod.number().nullable(),
+  seoTitle: zod.string().nullable(),
+  seoDescription: zod.string().nullable(),
+  ogImageUrl: zod.string().nullable(),
+  createdAt: zod.string(),
+  updatedAt: zod.string(),
+  updatedByAdminId: zod.number().nullable(),
+});
+
+/**
+ * @summary Get one editorial post with its topics and recommendations
+ */
+export const GetEditorialPostParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const getEditorialPostResponsePostBodyBlocksItemOneTextMax = 5000;
+
+export const getEditorialPostResponsePostBodyBlocksItemTwoTextMax = 150;
+
+export const getEditorialPostResponsePostBodyBlocksItemThreeAltMax = 200;
+
+export const getEditorialPostResponsePostBodyBlocksItemThreeCaptionMax = 300;
+
+export const getEditorialPostResponsePostBodyBlocksItemFourItemsItemMax = 300;
+
+export const getEditorialPostResponsePostBodyBlocksItemFourItemsMin = 2;
+export const getEditorialPostResponsePostBodyBlocksItemFourItemsMax = 30;
+
+export const getEditorialPostResponsePostBodyBlocksMax = 250;
+
+export const GetEditorialPostResponse = zod.object({
+  post: zod.object({
+    id: zod.number(),
+    channel: zod.enum(["news", "experience"]),
+    slug: zod.string(),
+    status: zod.enum(["draft", "published", "archived"]),
+    title: zod.string(),
+    deck: zod.string().nullable(),
+    contextLabel: zod.string().nullable(),
+    body: zod.object({
+      blocks: zod
+        .array(
+          zod.union([
+            zod.object({
+              type: zod.enum(["paragraph"]),
+              text: zod
+                .string()
+                .min(1)
+                .max(getEditorialPostResponsePostBodyBlocksItemOneTextMax),
+            }),
+            zod.object({
+              type: zod.enum(["heading"]),
+              level: zod.union([zod.literal(2), zod.literal(3)]),
+              text: zod
+                .string()
+                .min(1)
+                .max(getEditorialPostResponsePostBodyBlocksItemTwoTextMax),
+            }),
+            zod.object({
+              type: zod.enum(["image"]),
+              url: zod.string(),
+              alt: zod
+                .string()
+                .min(1)
+                .max(getEditorialPostResponsePostBodyBlocksItemThreeAltMax),
+              caption: zod
+                .string()
+                .max(getEditorialPostResponsePostBodyBlocksItemThreeCaptionMax)
+                .optional(),
+            }),
+            zod.object({
+              type: zod.enum(["bulleted-list"]),
+              items: zod
+                .array(
+                  zod
+                    .string()
+                    .min(1)
+                    .max(
+                      getEditorialPostResponsePostBodyBlocksItemFourItemsItemMax,
+                    ),
+                )
+                .min(getEditorialPostResponsePostBodyBlocksItemFourItemsMin)
+                .max(getEditorialPostResponsePostBodyBlocksItemFourItemsMax),
+            }),
+          ]),
+        )
+        .max(getEditorialPostResponsePostBodyBlocksMax),
+    }),
+    bodyVersion: zod.number(),
+    featureImageUrl: zod.string().nullable(),
+    featureImageAlt: zod.string().nullable(),
+    authorId: zod.number().nullable(),
+    authorSnapshot: zod.union([
+      zod.object({
+        name: zod.string(),
+        role: zod.string(),
+        avatarUrl: zod.string().nullable(),
+        biography: zod.string().nullable(),
+      }),
+      zod.null(),
+    ]),
+    readingTimeOverrideMinutes: zod.number().nullable(),
+    publishedAt: zod.string().nullable(),
+    migrationSourceTable: zod.string().nullable(),
+    migrationSourceId: zod.number().nullable(),
+    seoTitle: zod.string().nullable(),
+    seoDescription: zod.string().nullable(),
+    ogImageUrl: zod.string().nullable(),
+    createdAt: zod.string(),
+    updatedAt: zod.string(),
+    updatedByAdminId: zod.number().nullable(),
+  }),
+  topics: zod.array(
+    zod.object({
+      id: zod.number(),
+      channel: zod.enum(["news", "experience"]),
+      name: zod.string(),
+      slug: zod.string(),
+      status: zod.enum(["active", "archived"]),
+      createdAt: zod.string(),
+      updatedAt: zod.string(),
+    }),
+  ),
+  recommendations: zod.array(
+    zod.object({
+      targetPostId: zod.number(),
+      position: zod.number(),
+      targetTitle: zod.string(),
+      targetSlug: zod.string(),
+      targetStatus: zod.enum(["draft", "published", "archived"]),
+    }),
+  ),
+});
+
+/**
+ * @summary Edit a post's content — requires website.posts:edit. Editing a PUBLISHED post writes a revision in the same transaction.
+ */
+export const UpdateEditorialPostParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const updateEditorialPostBodySlugMax = 200;
+
+export const updateEditorialPostBodyTitleMax = 300;
+
+export const updateEditorialPostBodyBodyBlocksItemOneTextMax = 5000;
+
+export const updateEditorialPostBodyBodyBlocksItemTwoTextMax = 150;
+
+export const updateEditorialPostBodyBodyBlocksItemThreeAltMax = 200;
+
+export const updateEditorialPostBodyBodyBlocksItemThreeCaptionMax = 300;
+
+export const updateEditorialPostBodyBodyBlocksItemFourItemsItemMax = 300;
+
+export const updateEditorialPostBodyBodyBlocksItemFourItemsMin = 2;
+export const updateEditorialPostBodyBodyBlocksItemFourItemsMax = 30;
+
+export const updateEditorialPostBodyBodyBlocksMax = 250;
+
+export const UpdateEditorialPostBody = zod
+  .object({
+    slug: zod.string().min(1).max(updateEditorialPostBodySlugMax).optional(),
+    title: zod.string().min(1).max(updateEditorialPostBodyTitleMax).optional(),
+    deck: zod.string().nullish(),
+    contextLabel: zod.string().nullish(),
+    body: zod
+      .object({
+        blocks: zod
+          .array(
+            zod.union([
+              zod.object({
+                type: zod.enum(["paragraph"]),
+                text: zod
+                  .string()
+                  .min(1)
+                  .max(updateEditorialPostBodyBodyBlocksItemOneTextMax),
+              }),
+              zod.object({
+                type: zod.enum(["heading"]),
+                level: zod.union([zod.literal(2), zod.literal(3)]),
+                text: zod
+                  .string()
+                  .min(1)
+                  .max(updateEditorialPostBodyBodyBlocksItemTwoTextMax),
+              }),
+              zod.object({
+                type: zod.enum(["image"]),
+                url: zod.string(),
+                alt: zod
+                  .string()
+                  .min(1)
+                  .max(updateEditorialPostBodyBodyBlocksItemThreeAltMax),
+                caption: zod
+                  .string()
+                  .max(updateEditorialPostBodyBodyBlocksItemThreeCaptionMax)
+                  .optional(),
+              }),
+              zod.object({
+                type: zod.enum(["bulleted-list"]),
+                items: zod
+                  .array(
+                    zod
+                      .string()
+                      .min(1)
+                      .max(
+                        updateEditorialPostBodyBodyBlocksItemFourItemsItemMax,
+                      ),
+                  )
+                  .min(updateEditorialPostBodyBodyBlocksItemFourItemsMin)
+                  .max(updateEditorialPostBodyBodyBlocksItemFourItemsMax),
+              }),
+            ]),
+          )
+          .max(updateEditorialPostBodyBodyBlocksMax),
+      })
+      .optional(),
+    featureImageUrl: zod.string().nullish(),
+    featureImageAlt: zod.string().nullish(),
+    authorId: zod.number().nullish(),
+    readingTimeOverrideMinutes: zod.number().nullish(),
+    seoTitle: zod.string().nullish(),
+    seoDescription: zod.string().nullish(),
+    ogImageUrl: zod.string().nullish(),
+  })
+  .describe(
+    "Partial update. Channel and status are immutable here — status changes go through publish\/archive\/restore.",
+  );
+
+export const updateEditorialPostResponseBodyBlocksItemOneTextMax = 5000;
+
+export const updateEditorialPostResponseBodyBlocksItemTwoTextMax = 150;
+
+export const updateEditorialPostResponseBodyBlocksItemThreeAltMax = 200;
+
+export const updateEditorialPostResponseBodyBlocksItemThreeCaptionMax = 300;
+
+export const updateEditorialPostResponseBodyBlocksItemFourItemsItemMax = 300;
+
+export const updateEditorialPostResponseBodyBlocksItemFourItemsMin = 2;
+export const updateEditorialPostResponseBodyBlocksItemFourItemsMax = 30;
+
+export const updateEditorialPostResponseBodyBlocksMax = 250;
+
+export const UpdateEditorialPostResponse = zod.object({
+  id: zod.number(),
+  channel: zod.enum(["news", "experience"]),
+  slug: zod.string(),
+  status: zod.enum(["draft", "published", "archived"]),
+  title: zod.string(),
+  deck: zod.string().nullable(),
+  contextLabel: zod.string().nullable(),
+  body: zod.object({
+    blocks: zod
+      .array(
+        zod.union([
+          zod.object({
+            type: zod.enum(["paragraph"]),
+            text: zod
+              .string()
+              .min(1)
+              .max(updateEditorialPostResponseBodyBlocksItemOneTextMax),
+          }),
+          zod.object({
+            type: zod.enum(["heading"]),
+            level: zod.union([zod.literal(2), zod.literal(3)]),
+            text: zod
+              .string()
+              .min(1)
+              .max(updateEditorialPostResponseBodyBlocksItemTwoTextMax),
+          }),
+          zod.object({
+            type: zod.enum(["image"]),
+            url: zod.string(),
+            alt: zod
+              .string()
+              .min(1)
+              .max(updateEditorialPostResponseBodyBlocksItemThreeAltMax),
+            caption: zod
+              .string()
+              .max(updateEditorialPostResponseBodyBlocksItemThreeCaptionMax)
+              .optional(),
+          }),
+          zod.object({
+            type: zod.enum(["bulleted-list"]),
+            items: zod
+              .array(
+                zod
+                  .string()
+                  .min(1)
+                  .max(
+                    updateEditorialPostResponseBodyBlocksItemFourItemsItemMax,
+                  ),
+              )
+              .min(updateEditorialPostResponseBodyBlocksItemFourItemsMin)
+              .max(updateEditorialPostResponseBodyBlocksItemFourItemsMax),
+          }),
+        ]),
+      )
+      .max(updateEditorialPostResponseBodyBlocksMax),
+  }),
+  bodyVersion: zod.number(),
+  featureImageUrl: zod.string().nullable(),
+  featureImageAlt: zod.string().nullable(),
+  authorId: zod.number().nullable(),
+  authorSnapshot: zod.union([
+    zod.object({
+      name: zod.string(),
+      role: zod.string(),
+      avatarUrl: zod.string().nullable(),
+      biography: zod.string().nullable(),
+    }),
+    zod.null(),
+  ]),
+  readingTimeOverrideMinutes: zod.number().nullable(),
+  publishedAt: zod.string().nullable(),
+  migrationSourceTable: zod.string().nullable(),
+  migrationSourceId: zod.number().nullable(),
+  seoTitle: zod.string().nullable(),
+  seoDescription: zod.string().nullable(),
+  ogImageUrl: zod.string().nullable(),
+  createdAt: zod.string(),
+  updatedAt: zod.string(),
+  updatedByAdminId: zod.number().nullable(),
+});
+
+/**
+ * @summary draft -> published — requires website.posts:publish. Fails unless the post passes the full readiness gate.
+ */
+export const PublishEditorialPostParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const publishEditorialPostResponseBodyBlocksItemOneTextMax = 5000;
+
+export const publishEditorialPostResponseBodyBlocksItemTwoTextMax = 150;
+
+export const publishEditorialPostResponseBodyBlocksItemThreeAltMax = 200;
+
+export const publishEditorialPostResponseBodyBlocksItemThreeCaptionMax = 300;
+
+export const publishEditorialPostResponseBodyBlocksItemFourItemsItemMax = 300;
+
+export const publishEditorialPostResponseBodyBlocksItemFourItemsMin = 2;
+export const publishEditorialPostResponseBodyBlocksItemFourItemsMax = 30;
+
+export const publishEditorialPostResponseBodyBlocksMax = 250;
+
+export const PublishEditorialPostResponse = zod.object({
+  id: zod.number(),
+  channel: zod.enum(["news", "experience"]),
+  slug: zod.string(),
+  status: zod.enum(["draft", "published", "archived"]),
+  title: zod.string(),
+  deck: zod.string().nullable(),
+  contextLabel: zod.string().nullable(),
+  body: zod.object({
+    blocks: zod
+      .array(
+        zod.union([
+          zod.object({
+            type: zod.enum(["paragraph"]),
+            text: zod
+              .string()
+              .min(1)
+              .max(publishEditorialPostResponseBodyBlocksItemOneTextMax),
+          }),
+          zod.object({
+            type: zod.enum(["heading"]),
+            level: zod.union([zod.literal(2), zod.literal(3)]),
+            text: zod
+              .string()
+              .min(1)
+              .max(publishEditorialPostResponseBodyBlocksItemTwoTextMax),
+          }),
+          zod.object({
+            type: zod.enum(["image"]),
+            url: zod.string(),
+            alt: zod
+              .string()
+              .min(1)
+              .max(publishEditorialPostResponseBodyBlocksItemThreeAltMax),
+            caption: zod
+              .string()
+              .max(publishEditorialPostResponseBodyBlocksItemThreeCaptionMax)
+              .optional(),
+          }),
+          zod.object({
+            type: zod.enum(["bulleted-list"]),
+            items: zod
+              .array(
+                zod
+                  .string()
+                  .min(1)
+                  .max(
+                    publishEditorialPostResponseBodyBlocksItemFourItemsItemMax,
+                  ),
+              )
+              .min(publishEditorialPostResponseBodyBlocksItemFourItemsMin)
+              .max(publishEditorialPostResponseBodyBlocksItemFourItemsMax),
+          }),
+        ]),
+      )
+      .max(publishEditorialPostResponseBodyBlocksMax),
+  }),
+  bodyVersion: zod.number(),
+  featureImageUrl: zod.string().nullable(),
+  featureImageAlt: zod.string().nullable(),
+  authorId: zod.number().nullable(),
+  authorSnapshot: zod.union([
+    zod.object({
+      name: zod.string(),
+      role: zod.string(),
+      avatarUrl: zod.string().nullable(),
+      biography: zod.string().nullable(),
+    }),
+    zod.null(),
+  ]),
+  readingTimeOverrideMinutes: zod.number().nullable(),
+  publishedAt: zod.string().nullable(),
+  migrationSourceTable: zod.string().nullable(),
+  migrationSourceId: zod.number().nullable(),
+  seoTitle: zod.string().nullable(),
+  seoDescription: zod.string().nullable(),
+  ogImageUrl: zod.string().nullable(),
+  createdAt: zod.string(),
+  updatedAt: zod.string(),
+  updatedByAdminId: zod.number().nullable(),
+});
+
+/**
+ * @summary draft|published -> archived — requires website.posts:publish
+ */
+export const ArchiveEditorialPostParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const archiveEditorialPostResponseBodyBlocksItemOneTextMax = 5000;
+
+export const archiveEditorialPostResponseBodyBlocksItemTwoTextMax = 150;
+
+export const archiveEditorialPostResponseBodyBlocksItemThreeAltMax = 200;
+
+export const archiveEditorialPostResponseBodyBlocksItemThreeCaptionMax = 300;
+
+export const archiveEditorialPostResponseBodyBlocksItemFourItemsItemMax = 300;
+
+export const archiveEditorialPostResponseBodyBlocksItemFourItemsMin = 2;
+export const archiveEditorialPostResponseBodyBlocksItemFourItemsMax = 30;
+
+export const archiveEditorialPostResponseBodyBlocksMax = 250;
+
+export const ArchiveEditorialPostResponse = zod.object({
+  id: zod.number(),
+  channel: zod.enum(["news", "experience"]),
+  slug: zod.string(),
+  status: zod.enum(["draft", "published", "archived"]),
+  title: zod.string(),
+  deck: zod.string().nullable(),
+  contextLabel: zod.string().nullable(),
+  body: zod.object({
+    blocks: zod
+      .array(
+        zod.union([
+          zod.object({
+            type: zod.enum(["paragraph"]),
+            text: zod
+              .string()
+              .min(1)
+              .max(archiveEditorialPostResponseBodyBlocksItemOneTextMax),
+          }),
+          zod.object({
+            type: zod.enum(["heading"]),
+            level: zod.union([zod.literal(2), zod.literal(3)]),
+            text: zod
+              .string()
+              .min(1)
+              .max(archiveEditorialPostResponseBodyBlocksItemTwoTextMax),
+          }),
+          zod.object({
+            type: zod.enum(["image"]),
+            url: zod.string(),
+            alt: zod
+              .string()
+              .min(1)
+              .max(archiveEditorialPostResponseBodyBlocksItemThreeAltMax),
+            caption: zod
+              .string()
+              .max(archiveEditorialPostResponseBodyBlocksItemThreeCaptionMax)
+              .optional(),
+          }),
+          zod.object({
+            type: zod.enum(["bulleted-list"]),
+            items: zod
+              .array(
+                zod
+                  .string()
+                  .min(1)
+                  .max(
+                    archiveEditorialPostResponseBodyBlocksItemFourItemsItemMax,
+                  ),
+              )
+              .min(archiveEditorialPostResponseBodyBlocksItemFourItemsMin)
+              .max(archiveEditorialPostResponseBodyBlocksItemFourItemsMax),
+          }),
+        ]),
+      )
+      .max(archiveEditorialPostResponseBodyBlocksMax),
+  }),
+  bodyVersion: zod.number(),
+  featureImageUrl: zod.string().nullable(),
+  featureImageAlt: zod.string().nullable(),
+  authorId: zod.number().nullable(),
+  authorSnapshot: zod.union([
+    zod.object({
+      name: zod.string(),
+      role: zod.string(),
+      avatarUrl: zod.string().nullable(),
+      biography: zod.string().nullable(),
+    }),
+    zod.null(),
+  ]),
+  readingTimeOverrideMinutes: zod.number().nullable(),
+  publishedAt: zod.string().nullable(),
+  migrationSourceTable: zod.string().nullable(),
+  migrationSourceId: zod.number().nullable(),
+  seoTitle: zod.string().nullable(),
+  seoDescription: zod.string().nullable(),
+  ogImageUrl: zod.string().nullable(),
+  createdAt: zod.string(),
+  updatedAt: zod.string(),
+  updatedByAdminId: zod.number().nullable(),
+});
+
+/**
+ * @summary archived -> draft — requires website.posts:publish. published -> draft is never allowed.
+ */
+export const RestoreEditorialPostParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const restoreEditorialPostResponseBodyBlocksItemOneTextMax = 5000;
+
+export const restoreEditorialPostResponseBodyBlocksItemTwoTextMax = 150;
+
+export const restoreEditorialPostResponseBodyBlocksItemThreeAltMax = 200;
+
+export const restoreEditorialPostResponseBodyBlocksItemThreeCaptionMax = 300;
+
+export const restoreEditorialPostResponseBodyBlocksItemFourItemsItemMax = 300;
+
+export const restoreEditorialPostResponseBodyBlocksItemFourItemsMin = 2;
+export const restoreEditorialPostResponseBodyBlocksItemFourItemsMax = 30;
+
+export const restoreEditorialPostResponseBodyBlocksMax = 250;
+
+export const RestoreEditorialPostResponse = zod.object({
+  id: zod.number(),
+  channel: zod.enum(["news", "experience"]),
+  slug: zod.string(),
+  status: zod.enum(["draft", "published", "archived"]),
+  title: zod.string(),
+  deck: zod.string().nullable(),
+  contextLabel: zod.string().nullable(),
+  body: zod.object({
+    blocks: zod
+      .array(
+        zod.union([
+          zod.object({
+            type: zod.enum(["paragraph"]),
+            text: zod
+              .string()
+              .min(1)
+              .max(restoreEditorialPostResponseBodyBlocksItemOneTextMax),
+          }),
+          zod.object({
+            type: zod.enum(["heading"]),
+            level: zod.union([zod.literal(2), zod.literal(3)]),
+            text: zod
+              .string()
+              .min(1)
+              .max(restoreEditorialPostResponseBodyBlocksItemTwoTextMax),
+          }),
+          zod.object({
+            type: zod.enum(["image"]),
+            url: zod.string(),
+            alt: zod
+              .string()
+              .min(1)
+              .max(restoreEditorialPostResponseBodyBlocksItemThreeAltMax),
+            caption: zod
+              .string()
+              .max(restoreEditorialPostResponseBodyBlocksItemThreeCaptionMax)
+              .optional(),
+          }),
+          zod.object({
+            type: zod.enum(["bulleted-list"]),
+            items: zod
+              .array(
+                zod
+                  .string()
+                  .min(1)
+                  .max(
+                    restoreEditorialPostResponseBodyBlocksItemFourItemsItemMax,
+                  ),
+              )
+              .min(restoreEditorialPostResponseBodyBlocksItemFourItemsMin)
+              .max(restoreEditorialPostResponseBodyBlocksItemFourItemsMax),
+          }),
+        ]),
+      )
+      .max(restoreEditorialPostResponseBodyBlocksMax),
+  }),
+  bodyVersion: zod.number(),
+  featureImageUrl: zod.string().nullable(),
+  featureImageAlt: zod.string().nullable(),
+  authorId: zod.number().nullable(),
+  authorSnapshot: zod.union([
+    zod.object({
+      name: zod.string(),
+      role: zod.string(),
+      avatarUrl: zod.string().nullable(),
+      biography: zod.string().nullable(),
+    }),
+    zod.null(),
+  ]),
+  readingTimeOverrideMinutes: zod.number().nullable(),
+  publishedAt: zod.string().nullable(),
+  migrationSourceTable: zod.string().nullable(),
+  migrationSourceId: zod.number().nullable(),
+  seoTitle: zod.string().nullable(),
+  seoDescription: zod.string().nullable(),
+  ogImageUrl: zod.string().nullable(),
+  createdAt: zod.string(),
+  updatedAt: zod.string(),
+  updatedByAdminId: zod.number().nullable(),
+});
+
+/**
+ * @summary List a post's assigned topics
+ */
+export const ListEditorialPostTopicsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ListEditorialPostTopicsResponseItem = zod.object({
+  id: zod.number(),
+  channel: zod.enum(["news", "experience"]),
+  name: zod.string(),
+  slug: zod.string(),
+  status: zod.enum(["active", "archived"]),
+  createdAt: zod.string(),
+  updatedAt: zod.string(),
+});
+export const ListEditorialPostTopicsResponse = zod.array(
+  ListEditorialPostTopicsResponseItem,
+);
+
+/**
+ * @summary Replace a post's topic set — requires website.posts:edit. Topics must match the post's channel.
+ */
+export const ReplaceEditorialPostTopicsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const replaceEditorialPostTopicsBodyTopicIdsMax = 50;
+
+export const ReplaceEditorialPostTopicsBody = zod.object({
+  topicIds: zod
+    .array(zod.number())
+    .max(replaceEditorialPostTopicsBodyTopicIdsMax),
+});
+
+export const ReplaceEditorialPostTopicsResponseItem = zod.object({
+  id: zod.number(),
+  channel: zod.enum(["news", "experience"]),
+  name: zod.string(),
+  slug: zod.string(),
+  status: zod.enum(["active", "archived"]),
+  createdAt: zod.string(),
+  updatedAt: zod.string(),
+});
+export const ReplaceEditorialPostTopicsResponse = zod.array(
+  ReplaceEditorialPostTopicsResponseItem,
+);
+
+/**
+ * @summary List a post's recommended posts, in editor order
+ */
+export const ListEditorialPostRecommendationsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ListEditorialPostRecommendationsResponseItem = zod.object({
+  targetPostId: zod.number(),
+  position: zod.number(),
+  targetTitle: zod.string(),
+  targetSlug: zod.string(),
+  targetStatus: zod.enum(["draft", "published", "archived"]),
+});
+export const ListEditorialPostRecommendationsResponse = zod.array(
+  ListEditorialPostRecommendationsResponseItem,
+);
+
+/**
+ * @summary Replace a post's recommendations — requires website.posts:edit. Same channel only, no self-reference, no duplicates.
+ */
+export const ReplaceEditorialPostRecommendationsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const replaceEditorialPostRecommendationsBodyItemsItemPositionMin = 0;
+
+export const replaceEditorialPostRecommendationsBodyItemsMax = 20;
+
+export const ReplaceEditorialPostRecommendationsBody = zod.object({
+  items: zod
+    .array(
+      zod.object({
+        targetPostId: zod.number(),
+        position: zod
+          .number()
+          .min(replaceEditorialPostRecommendationsBodyItemsItemPositionMin)
+          .optional(),
+      }),
+    )
+    .max(replaceEditorialPostRecommendationsBodyItemsMax),
+});
+
+export const ReplaceEditorialPostRecommendationsResponseItem = zod.object({
+  targetPostId: zod.number(),
+  position: zod.number(),
+  targetTitle: zod.string(),
+  targetSlug: zod.string(),
+  targetStatus: zod.enum(["draft", "published", "archived"]),
+});
+export const ReplaceEditorialPostRecommendationsResponse = zod.array(
+  ReplaceEditorialPostRecommendationsResponseItem,
+);
+
+/**
+ * @summary List a post's revisions, newest first (metadata only — no snapshot payload)
+ */
+export const ListEditorialPostRevisionsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ListEditorialPostRevisionsResponseItem = zod.object({
+  id: zod.number(),
+  postId: zod.number(),
+  revisionNumber: zod.number(),
+  eventType: zod.enum([
+    "published_edit",
+    "restore",
+    "author_change",
+    "topics_change",
+  ]),
+  createdAt: zod.string(),
+  createdByAdminId: zod.number().nullable(),
+});
+export const ListEditorialPostRevisionsResponse = zod.array(
+  ListEditorialPostRevisionsResponseItem,
+);
+
+/**
+ * @summary Read one revision including its full snapshot
+ */
+export const GetEditorialPostRevisionParams = zod.object({
+  id: zod.coerce.number(),
+  revisionId: zod.coerce.number(),
+});
+
+export const getEditorialPostRevisionResponseSnapshotBodyBlocksItemOneTextMax = 5000;
+
+export const getEditorialPostRevisionResponseSnapshotBodyBlocksItemTwoTextMax = 150;
+
+export const getEditorialPostRevisionResponseSnapshotBodyBlocksItemThreeAltMax = 200;
+
+export const getEditorialPostRevisionResponseSnapshotBodyBlocksItemThreeCaptionMax = 300;
+
+export const getEditorialPostRevisionResponseSnapshotBodyBlocksItemFourItemsItemMax = 300;
+
+export const getEditorialPostRevisionResponseSnapshotBodyBlocksItemFourItemsMin = 2;
+export const getEditorialPostRevisionResponseSnapshotBodyBlocksItemFourItemsMax = 30;
+
+export const getEditorialPostRevisionResponseSnapshotBodyBlocksMax = 250;
+
+export const GetEditorialPostRevisionResponse = zod.object({
+  id: zod.number(),
+  postId: zod.number(),
+  revisionNumber: zod.number(),
+  eventType: zod.enum([
+    "published_edit",
+    "restore",
+    "author_change",
+    "topics_change",
+  ]),
+  snapshot: zod.object({
+    title: zod.string(),
+    deck: zod.string().nullable(),
+    contextLabel: zod.string().nullable(),
+    body: zod.object({
+      blocks: zod
+        .array(
+          zod.union([
+            zod.object({
+              type: zod.enum(["paragraph"]),
+              text: zod
+                .string()
+                .min(1)
+                .max(
+                  getEditorialPostRevisionResponseSnapshotBodyBlocksItemOneTextMax,
+                ),
+            }),
+            zod.object({
+              type: zod.enum(["heading"]),
+              level: zod.union([zod.literal(2), zod.literal(3)]),
+              text: zod
+                .string()
+                .min(1)
+                .max(
+                  getEditorialPostRevisionResponseSnapshotBodyBlocksItemTwoTextMax,
+                ),
+            }),
+            zod.object({
+              type: zod.enum(["image"]),
+              url: zod.string(),
+              alt: zod
+                .string()
+                .min(1)
+                .max(
+                  getEditorialPostRevisionResponseSnapshotBodyBlocksItemThreeAltMax,
+                ),
+              caption: zod
+                .string()
+                .max(
+                  getEditorialPostRevisionResponseSnapshotBodyBlocksItemThreeCaptionMax,
+                )
+                .optional(),
+            }),
+            zod.object({
+              type: zod.enum(["bulleted-list"]),
+              items: zod
+                .array(
+                  zod
+                    .string()
+                    .min(1)
+                    .max(
+                      getEditorialPostRevisionResponseSnapshotBodyBlocksItemFourItemsItemMax,
+                    ),
+                )
+                .min(
+                  getEditorialPostRevisionResponseSnapshotBodyBlocksItemFourItemsMin,
+                )
+                .max(
+                  getEditorialPostRevisionResponseSnapshotBodyBlocksItemFourItemsMax,
+                ),
+            }),
+          ]),
+        )
+        .max(getEditorialPostRevisionResponseSnapshotBodyBlocksMax),
+    }),
+    bodyVersion: zod.number(),
+    featureImageUrl: zod.string().nullable(),
+    featureImageAlt: zod.string().nullable(),
+    authorId: zod.number().nullable(),
+    authorSnapshot: zod.union([
+      zod.object({
+        name: zod.string(),
+        role: zod.string(),
+        avatarUrl: zod.string().nullable(),
+        biography: zod.string().nullable(),
+      }),
+      zod.null(),
+    ]),
+    topics: zod.array(zod.number()),
+    seoTitle: zod.string().nullable(),
+    seoDescription: zod.string().nullable(),
+    ogImageUrl: zod.string().nullable(),
+    status: zod.enum(["draft", "published", "archived"]),
+    publishedAt: zod.string().nullable(),
+  }),
+  createdAt: zod.string(),
+  createdByAdminId: zod.number().nullable(),
+});
+
+/**
+ * @summary Restore a post's content from a revision — requires website.posts:publish. Writes a new 'restore' revision of the pre-restore state first, in the same transaction.
+ */
+export const RestoreEditorialPostRevisionParams = zod.object({
+  id: zod.coerce.number(),
+  revisionId: zod.coerce.number(),
+});
+
+export const restoreEditorialPostRevisionResponseBodyBlocksItemOneTextMax = 5000;
+
+export const restoreEditorialPostRevisionResponseBodyBlocksItemTwoTextMax = 150;
+
+export const restoreEditorialPostRevisionResponseBodyBlocksItemThreeAltMax = 200;
+
+export const restoreEditorialPostRevisionResponseBodyBlocksItemThreeCaptionMax = 300;
+
+export const restoreEditorialPostRevisionResponseBodyBlocksItemFourItemsItemMax = 300;
+
+export const restoreEditorialPostRevisionResponseBodyBlocksItemFourItemsMin = 2;
+export const restoreEditorialPostRevisionResponseBodyBlocksItemFourItemsMax = 30;
+
+export const restoreEditorialPostRevisionResponseBodyBlocksMax = 250;
+
+export const RestoreEditorialPostRevisionResponse = zod.object({
+  id: zod.number(),
+  channel: zod.enum(["news", "experience"]),
+  slug: zod.string(),
+  status: zod.enum(["draft", "published", "archived"]),
+  title: zod.string(),
+  deck: zod.string().nullable(),
+  contextLabel: zod.string().nullable(),
+  body: zod.object({
+    blocks: zod
+      .array(
+        zod.union([
+          zod.object({
+            type: zod.enum(["paragraph"]),
+            text: zod
+              .string()
+              .min(1)
+              .max(
+                restoreEditorialPostRevisionResponseBodyBlocksItemOneTextMax,
+              ),
+          }),
+          zod.object({
+            type: zod.enum(["heading"]),
+            level: zod.union([zod.literal(2), zod.literal(3)]),
+            text: zod
+              .string()
+              .min(1)
+              .max(
+                restoreEditorialPostRevisionResponseBodyBlocksItemTwoTextMax,
+              ),
+          }),
+          zod.object({
+            type: zod.enum(["image"]),
+            url: zod.string(),
+            alt: zod
+              .string()
+              .min(1)
+              .max(
+                restoreEditorialPostRevisionResponseBodyBlocksItemThreeAltMax,
+              ),
+            caption: zod
+              .string()
+              .max(
+                restoreEditorialPostRevisionResponseBodyBlocksItemThreeCaptionMax,
+              )
+              .optional(),
+          }),
+          zod.object({
+            type: zod.enum(["bulleted-list"]),
+            items: zod
+              .array(
+                zod
+                  .string()
+                  .min(1)
+                  .max(
+                    restoreEditorialPostRevisionResponseBodyBlocksItemFourItemsItemMax,
+                  ),
+              )
+              .min(
+                restoreEditorialPostRevisionResponseBodyBlocksItemFourItemsMin,
+              )
+              .max(
+                restoreEditorialPostRevisionResponseBodyBlocksItemFourItemsMax,
+              ),
+          }),
+        ]),
+      )
+      .max(restoreEditorialPostRevisionResponseBodyBlocksMax),
+  }),
+  bodyVersion: zod.number(),
+  featureImageUrl: zod.string().nullable(),
+  featureImageAlt: zod.string().nullable(),
+  authorId: zod.number().nullable(),
+  authorSnapshot: zod.union([
+    zod.object({
+      name: zod.string(),
+      role: zod.string(),
+      avatarUrl: zod.string().nullable(),
+      biography: zod.string().nullable(),
+    }),
+    zod.null(),
+  ]),
+  readingTimeOverrideMinutes: zod.number().nullable(),
+  publishedAt: zod.string().nullable(),
+  migrationSourceTable: zod.string().nullable(),
+  migrationSourceId: zod.number().nullable(),
+  seoTitle: zod.string().nullable(),
+  seoDescription: zod.string().nullable(),
+  ogImageUrl: zod.string().nullable(),
+  createdAt: zod.string(),
+  updatedAt: zod.string(),
+  updatedByAdminId: zod.number().nullable(),
+});
+
+/**
+ * @summary List topics (optionally filtered by channel/status)
+ */
+export const ListEditorialTopicsQueryParams = zod.object({
+  channel: zod.enum(["news", "experience"]).optional(),
+  status: zod.enum(["active", "archived"]).optional(),
+});
+
+export const ListEditorialTopicsResponseItem = zod.object({
+  id: zod.number(),
+  channel: zod.enum(["news", "experience"]),
+  name: zod.string(),
+  slug: zod.string(),
+  status: zod.enum(["active", "archived"]),
+  createdAt: zod.string(),
+  updatedAt: zod.string(),
+});
+export const ListEditorialTopicsResponse = zod.array(
+  ListEditorialTopicsResponseItem,
+);
+
+/**
+ * @summary Create a topic — requires website.posts:create
+ */
+export const createEditorialTopicBodyNameMax = 200;
+
+export const createEditorialTopicBodySlugMax = 200;
+
+export const CreateEditorialTopicBody = zod.object({
+  channel: zod.enum(["news", "experience"]),
+  name: zod.string().min(1).max(createEditorialTopicBodyNameMax),
+  slug: zod.string().min(1).max(createEditorialTopicBodySlugMax),
+  status: zod.enum(["active", "archived"]).optional(),
+});
+
+export const CreateEditorialTopicResponse = zod.object({
+  id: zod.number(),
+  channel: zod.enum(["news", "experience"]),
+  name: zod.string(),
+  slug: zod.string(),
+  status: zod.enum(["active", "archived"]),
+  createdAt: zod.string(),
+  updatedAt: zod.string(),
+});
+
+/**
+ * @summary Get one topic
+ */
+export const GetEditorialTopicParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetEditorialTopicResponse = zod.object({
+  id: zod.number(),
+  channel: zod.enum(["news", "experience"]),
+  name: zod.string(),
+  slug: zod.string(),
+  status: zod.enum(["active", "archived"]),
+  createdAt: zod.string(),
+  updatedAt: zod.string(),
+});
+
+/**
+ * @summary Edit a topic — requires website.posts:edit. Channel is immutable.
+ */
+export const UpdateEditorialTopicParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const updateEditorialTopicBodyNameMax = 200;
+
+export const updateEditorialTopicBodySlugMax = 200;
+
+export const UpdateEditorialTopicBody = zod
+  .object({
+    name: zod.string().min(1).max(updateEditorialTopicBodyNameMax).optional(),
+    slug: zod.string().min(1).max(updateEditorialTopicBodySlugMax).optional(),
+    status: zod.enum(["active", "archived"]).optional(),
+  })
+  .describe("Partial update. Channel is immutable and is not accepted here.");
+
+export const UpdateEditorialTopicResponse = zod.object({
+  id: zod.number(),
+  channel: zod.enum(["news", "experience"]),
+  name: zod.string(),
+  slug: zod.string(),
+  status: zod.enum(["active", "archived"]),
+  createdAt: zod.string(),
+  updatedAt: zod.string(),
+});
+
+/**
+ * @summary List authors (optionally filtered by status)
+ */
+export const ListEditorialAuthorsQueryParams = zod.object({
+  status: zod.enum(["active", "archived"]).optional(),
+});
+
+export const ListEditorialAuthorsResponseItem = zod.object({
+  id: zod.number(),
+  publicName: zod.string(),
+  role: zod.string(),
+  biography: zod.string().nullable(),
+  avatarUrl: zod.string().nullable(),
+  systemUserId: zod.number().nullable(),
+  status: zod.enum(["active", "archived"]),
+  createdAt: zod.string(),
+  updatedAt: zod.string(),
+});
+export const ListEditorialAuthorsResponse = zod.array(
+  ListEditorialAuthorsResponseItem,
+);
+
+/**
+ * @summary Create an author — requires website.posts:create
+ */
+export const createEditorialAuthorBodyPublicNameMax = 200;
+
+export const createEditorialAuthorBodyRoleMax = 200;
+
+export const CreateEditorialAuthorBody = zod.object({
+  publicName: zod.string().min(1).max(createEditorialAuthorBodyPublicNameMax),
+  role: zod.string().min(1).max(createEditorialAuthorBodyRoleMax),
+  biography: zod.string().nullish(),
+  avatarUrl: zod.string().nullish(),
+  systemUserId: zod.number().nullish(),
+  status: zod.enum(["active", "archived"]).optional(),
+});
+
+export const CreateEditorialAuthorResponse = zod.object({
+  id: zod.number(),
+  publicName: zod.string(),
+  role: zod.string(),
+  biography: zod.string().nullable(),
+  avatarUrl: zod.string().nullable(),
+  systemUserId: zod.number().nullable(),
+  status: zod.enum(["active", "archived"]),
+  createdAt: zod.string(),
+  updatedAt: zod.string(),
+});
+
+/**
+ * @summary Get one author
+ */
+export const GetEditorialAuthorParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetEditorialAuthorResponse = zod.object({
+  id: zod.number(),
+  publicName: zod.string(),
+  role: zod.string(),
+  biography: zod.string().nullable(),
+  avatarUrl: zod.string().nullable(),
+  systemUserId: zod.number().nullable(),
+  status: zod.enum(["active", "archived"]),
+  createdAt: zod.string(),
+  updatedAt: zod.string(),
+});
+
+/**
+ * @summary Edit an author — requires website.posts:edit. Never rewrites a published post's frozen author snapshot.
+ */
+export const UpdateEditorialAuthorParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const updateEditorialAuthorBodyPublicNameMax = 200;
+
+export const updateEditorialAuthorBodyRoleMax = 200;
+
+export const UpdateEditorialAuthorBody = zod
+  .object({
+    publicName: zod
+      .string()
+      .min(1)
+      .max(updateEditorialAuthorBodyPublicNameMax)
+      .optional(),
+    role: zod.string().min(1).max(updateEditorialAuthorBodyRoleMax).optional(),
+    biography: zod.string().nullish(),
+    avatarUrl: zod.string().nullish(),
+    systemUserId: zod.number().nullish(),
+    status: zod.enum(["active", "archived"]).optional(),
+  })
+  .describe("Partial update.");
+
+export const UpdateEditorialAuthorResponse = zod.object({
+  id: zod.number(),
+  publicName: zod.string(),
+  role: zod.string(),
+  biography: zod.string().nullable(),
+  avatarUrl: zod.string().nullable(),
+  systemUserId: zod.number().nullable(),
+  status: zod.enum(["active", "archived"]),
+  createdAt: zod.string(),
+  updatedAt: zod.string(),
+});
+
+/**
+ * @summary Read one named placement's ordered entries
+ */
+export const GetEditorialPlacementQueryParams = zod.object({
+  key: zod.coerce.string(),
+});
+
+export const GetEditorialPlacementResponseItem = zod.object({
+  id: zod.number(),
+  key: zod.string(),
+  channel: zod.enum(["news", "experience"]),
+  postId: zod.number(),
+  position: zod.number(),
+  startAt: zod.string().nullable(),
+  endAt: zod.string().nullable(),
+  postTitle: zod.string(),
+  postStatus: zod.enum(["draft", "published", "archived"]),
+});
+export const GetEditorialPlacementResponse = zod.array(
+  GetEditorialPlacementResponseItem,
+);
+
+/**
+ * @summary Replace a named placement's entries — requires website.posts:edit. All posts must match the placement channel; a post appears at most once.
+ */
+export const ReplaceEditorialPlacementQueryParams = zod.object({
+  key: zod.coerce.string(),
+});
+
+export const replaceEditorialPlacementBodyItemsItemPositionMin = 0;
+
+export const replaceEditorialPlacementBodyItemsMax = 50;
+
+export const ReplaceEditorialPlacementBody = zod.object({
+  channel: zod.enum(["news", "experience"]),
+  items: zod
+    .array(
+      zod.object({
+        postId: zod.number(),
+        position: zod
+          .number()
+          .min(replaceEditorialPlacementBodyItemsItemPositionMin)
+          .optional(),
+        startAt: zod.string().nullish(),
+        endAt: zod.string().nullish(),
+      }),
+    )
+    .max(replaceEditorialPlacementBodyItemsMax),
+});
+
+export const ReplaceEditorialPlacementResponseItem = zod.object({
+  id: zod.number(),
+  key: zod.string(),
+  channel: zod.enum(["news", "experience"]),
+  postId: zod.number(),
+  position: zod.number(),
+  startAt: zod.string().nullable(),
+  endAt: zod.string().nullable(),
+  postTitle: zod.string(),
+  postStatus: zod.enum(["draft", "published", "archived"]),
+});
+export const ReplaceEditorialPlacementResponse = zod.array(
+  ReplaceEditorialPlacementResponseItem,
+);

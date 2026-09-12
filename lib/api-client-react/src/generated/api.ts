@@ -44,6 +44,9 @@ import type {
   CreateCampaignBody,
   CreateClassBody,
   CreateDanceTypeBody,
+  CreateEditorialAuthorBody,
+  CreateEditorialPostBody,
+  CreateEditorialTopicBody,
   CreateHeroItemBody,
   CreateInstructorBody,
   CreateNotificationBody,
@@ -59,11 +62,21 @@ import type {
   DashboardAnalytics,
   DashboardSummary,
   DeactivateStudentBody,
+  EditorialAuthor,
+  EditorialPlacementEntry,
+  EditorialPost,
+  EditorialPostDetail,
+  EditorialPostListResponse,
+  EditorialRecommendation,
+  EditorialRevision,
+  EditorialRevisionSummary,
+  EditorialTopic,
   ErrorResponse,
   GetAdminCalendarOccurrenceRosterParams,
   GetAdminCalendarResourceViewParams,
   GetAttendanceStatsParams,
   GetBookingParticipantCandidatesParams,
+  GetEditorialPlacementParams,
   GetMyAttendanceParams,
   GetMyCreditsParams,
   HealthStatus,
@@ -76,6 +89,9 @@ import type {
   ListBookingsResponse,
   ListCreditTransactionsParams,
   ListCreditTransactionsResponse,
+  ListEditorialAuthorsParams,
+  ListEditorialPostsParams,
+  ListEditorialTopicsParams,
   ListPackageOrdersParams,
   ListRoomReservationsParams,
   ListSchedulesParams,
@@ -101,6 +117,10 @@ import type {
   PublicWebsitePerformanceFeatured,
   PublicWebsitePerformanceListItem,
   RecordStudentDeletionManualResolutionRequest,
+  ReplaceEditorialPlacementBody,
+  ReplaceEditorialPlacementParams,
+  ReplaceEditorialPostRecommendationsBody,
+  ReplaceEditorialPostTopicsBody,
   Room,
   RoomListResponse,
   RoomReservation,
@@ -124,6 +144,9 @@ import type {
   UpdateCampaignBody,
   UpdateClassBody,
   UpdateDanceTypeBody,
+  UpdateEditorialAuthorBody,
+  UpdateEditorialPostBody,
+  UpdateEditorialTopicBody,
   UpdateHeroItemBody,
   UpdateInstructorBody,
   UpdateNotificationBody,
@@ -10848,3 +10871,2226 @@ export function useGetMyAttendance<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+export const getListEditorialPostsUrl = (params?: ListEditorialPostsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/admin/editorial/posts?${stringifiedParams}`
+    : `/api/admin/editorial/posts`;
+};
+
+/**
+ * @summary List editorial posts (filterable, paginated) — requires website.posts:view
+ */
+export const listEditorialPosts = async (
+  params?: ListEditorialPostsParams,
+  options?: RequestInit,
+): Promise<EditorialPostListResponse> => {
+  return customFetch<EditorialPostListResponse>(
+    getListEditorialPostsUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListEditorialPostsQueryKey = (
+  params?: ListEditorialPostsParams,
+) => {
+  return [`/api/admin/editorial/posts`, ...(params ? [params] : [])] as const;
+};
+
+export const getListEditorialPostsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listEditorialPosts>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params?: ListEditorialPostsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listEditorialPosts>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListEditorialPostsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listEditorialPosts>>
+  > = ({ signal }) => listEditorialPosts(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listEditorialPosts>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListEditorialPostsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listEditorialPosts>>
+>;
+export type ListEditorialPostsQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary List editorial posts (filterable, paginated) — requires website.posts:view
+ */
+
+export function useListEditorialPosts<
+  TData = Awaited<ReturnType<typeof listEditorialPosts>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params?: ListEditorialPostsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listEditorialPosts>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListEditorialPostsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getCreateEditorialPostUrl = () => {
+  return `/api/admin/editorial/posts`;
+};
+
+/**
+ * @summary Create a DRAFT editorial post — requires website.posts:create
+ */
+export const createEditorialPost = async (
+  createEditorialPostBody: CreateEditorialPostBody,
+  options?: RequestInit,
+): Promise<EditorialPost> => {
+  return customFetch<EditorialPost>(getCreateEditorialPostUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createEditorialPostBody),
+  });
+};
+
+export const getCreateEditorialPostMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createEditorialPost>>,
+    TError,
+    { data: BodyType<CreateEditorialPostBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createEditorialPost>>,
+  TError,
+  { data: BodyType<CreateEditorialPostBody> },
+  TContext
+> => {
+  const mutationKey = ["createEditorialPost"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createEditorialPost>>,
+    { data: BodyType<CreateEditorialPostBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createEditorialPost(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateEditorialPostMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createEditorialPost>>
+>;
+export type CreateEditorialPostMutationBody = BodyType<CreateEditorialPostBody>;
+export type CreateEditorialPostMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Create a DRAFT editorial post — requires website.posts:create
+ */
+export const useCreateEditorialPost = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createEditorialPost>>,
+    TError,
+    { data: BodyType<CreateEditorialPostBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createEditorialPost>>,
+  TError,
+  { data: BodyType<CreateEditorialPostBody> },
+  TContext
+> => {
+  return useMutation(getCreateEditorialPostMutationOptions(options));
+};
+
+export const getGetEditorialPostUrl = (id: number) => {
+  return `/api/admin/editorial/posts/${id}`;
+};
+
+/**
+ * @summary Get one editorial post with its topics and recommendations
+ */
+export const getEditorialPost = async (
+  id: number,
+  options?: RequestInit,
+): Promise<EditorialPostDetail> => {
+  return customFetch<EditorialPostDetail>(getGetEditorialPostUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetEditorialPostQueryKey = (id: number) => {
+  return [`/api/admin/editorial/posts/${id}`] as const;
+};
+
+export const getGetEditorialPostQueryOptions = <
+  TData = Awaited<ReturnType<typeof getEditorialPost>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getEditorialPost>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetEditorialPostQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getEditorialPost>>
+  > = ({ signal }) => getEditorialPost(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getEditorialPost>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetEditorialPostQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getEditorialPost>>
+>;
+export type GetEditorialPostQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Get one editorial post with its topics and recommendations
+ */
+
+export function useGetEditorialPost<
+  TData = Awaited<ReturnType<typeof getEditorialPost>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getEditorialPost>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetEditorialPostQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getUpdateEditorialPostUrl = (id: number) => {
+  return `/api/admin/editorial/posts/${id}`;
+};
+
+/**
+ * @summary Edit a post's content — requires website.posts:edit. Editing a PUBLISHED post writes a revision in the same transaction.
+ */
+export const updateEditorialPost = async (
+  id: number,
+  updateEditorialPostBody: UpdateEditorialPostBody,
+  options?: RequestInit,
+): Promise<EditorialPost> => {
+  return customFetch<EditorialPost>(getUpdateEditorialPostUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateEditorialPostBody),
+  });
+};
+
+export const getUpdateEditorialPostMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateEditorialPost>>,
+    TError,
+    { id: number; data: BodyType<UpdateEditorialPostBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateEditorialPost>>,
+  TError,
+  { id: number; data: BodyType<UpdateEditorialPostBody> },
+  TContext
+> => {
+  const mutationKey = ["updateEditorialPost"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateEditorialPost>>,
+    { id: number; data: BodyType<UpdateEditorialPostBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateEditorialPost(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateEditorialPostMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateEditorialPost>>
+>;
+export type UpdateEditorialPostMutationBody = BodyType<UpdateEditorialPostBody>;
+export type UpdateEditorialPostMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Edit a post's content — requires website.posts:edit. Editing a PUBLISHED post writes a revision in the same transaction.
+ */
+export const useUpdateEditorialPost = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateEditorialPost>>,
+    TError,
+    { id: number; data: BodyType<UpdateEditorialPostBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateEditorialPost>>,
+  TError,
+  { id: number; data: BodyType<UpdateEditorialPostBody> },
+  TContext
+> => {
+  return useMutation(getUpdateEditorialPostMutationOptions(options));
+};
+
+export const getPublishEditorialPostUrl = (id: number) => {
+  return `/api/admin/editorial/posts/${id}/publish`;
+};
+
+/**
+ * @summary draft -> published — requires website.posts:publish. Fails unless the post passes the full readiness gate.
+ */
+export const publishEditorialPost = async (
+  id: number,
+  options?: RequestInit,
+): Promise<EditorialPost> => {
+  return customFetch<EditorialPost>(getPublishEditorialPostUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getPublishEditorialPostMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof publishEditorialPost>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof publishEditorialPost>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["publishEditorialPost"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof publishEditorialPost>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return publishEditorialPost(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PublishEditorialPostMutationResult = NonNullable<
+  Awaited<ReturnType<typeof publishEditorialPost>>
+>;
+
+export type PublishEditorialPostMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary draft -> published — requires website.posts:publish. Fails unless the post passes the full readiness gate.
+ */
+export const usePublishEditorialPost = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof publishEditorialPost>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof publishEditorialPost>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getPublishEditorialPostMutationOptions(options));
+};
+
+export const getArchiveEditorialPostUrl = (id: number) => {
+  return `/api/admin/editorial/posts/${id}/archive`;
+};
+
+/**
+ * @summary draft|published -> archived — requires website.posts:publish
+ */
+export const archiveEditorialPost = async (
+  id: number,
+  options?: RequestInit,
+): Promise<EditorialPost> => {
+  return customFetch<EditorialPost>(getArchiveEditorialPostUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getArchiveEditorialPostMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof archiveEditorialPost>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof archiveEditorialPost>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["archiveEditorialPost"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof archiveEditorialPost>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return archiveEditorialPost(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ArchiveEditorialPostMutationResult = NonNullable<
+  Awaited<ReturnType<typeof archiveEditorialPost>>
+>;
+
+export type ArchiveEditorialPostMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary draft|published -> archived — requires website.posts:publish
+ */
+export const useArchiveEditorialPost = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof archiveEditorialPost>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof archiveEditorialPost>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getArchiveEditorialPostMutationOptions(options));
+};
+
+export const getRestoreEditorialPostUrl = (id: number) => {
+  return `/api/admin/editorial/posts/${id}/restore`;
+};
+
+/**
+ * @summary archived -> draft — requires website.posts:publish. published -> draft is never allowed.
+ */
+export const restoreEditorialPost = async (
+  id: number,
+  options?: RequestInit,
+): Promise<EditorialPost> => {
+  return customFetch<EditorialPost>(getRestoreEditorialPostUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getRestoreEditorialPostMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof restoreEditorialPost>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof restoreEditorialPost>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["restoreEditorialPost"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof restoreEditorialPost>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return restoreEditorialPost(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RestoreEditorialPostMutationResult = NonNullable<
+  Awaited<ReturnType<typeof restoreEditorialPost>>
+>;
+
+export type RestoreEditorialPostMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary archived -> draft — requires website.posts:publish. published -> draft is never allowed.
+ */
+export const useRestoreEditorialPost = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof restoreEditorialPost>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof restoreEditorialPost>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getRestoreEditorialPostMutationOptions(options));
+};
+
+export const getListEditorialPostTopicsUrl = (id: number) => {
+  return `/api/admin/editorial/posts/${id}/topics`;
+};
+
+/**
+ * @summary List a post's assigned topics
+ */
+export const listEditorialPostTopics = async (
+  id: number,
+  options?: RequestInit,
+): Promise<EditorialTopic[]> => {
+  return customFetch<EditorialTopic[]>(getListEditorialPostTopicsUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListEditorialPostTopicsQueryKey = (id: number) => {
+  return [`/api/admin/editorial/posts/${id}/topics`] as const;
+};
+
+export const getListEditorialPostTopicsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listEditorialPostTopics>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listEditorialPostTopics>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListEditorialPostTopicsQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listEditorialPostTopics>>
+  > = ({ signal }) =>
+    listEditorialPostTopics(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listEditorialPostTopics>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListEditorialPostTopicsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listEditorialPostTopics>>
+>;
+export type ListEditorialPostTopicsQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary List a post's assigned topics
+ */
+
+export function useListEditorialPostTopics<
+  TData = Awaited<ReturnType<typeof listEditorialPostTopics>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listEditorialPostTopics>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListEditorialPostTopicsQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getReplaceEditorialPostTopicsUrl = (id: number) => {
+  return `/api/admin/editorial/posts/${id}/topics`;
+};
+
+/**
+ * @summary Replace a post's topic set — requires website.posts:edit. Topics must match the post's channel.
+ */
+export const replaceEditorialPostTopics = async (
+  id: number,
+  replaceEditorialPostTopicsBody: ReplaceEditorialPostTopicsBody,
+  options?: RequestInit,
+): Promise<EditorialTopic[]> => {
+  return customFetch<EditorialTopic[]>(getReplaceEditorialPostTopicsUrl(id), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(replaceEditorialPostTopicsBody),
+  });
+};
+
+export const getReplaceEditorialPostTopicsMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof replaceEditorialPostTopics>>,
+    TError,
+    { id: number; data: BodyType<ReplaceEditorialPostTopicsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof replaceEditorialPostTopics>>,
+  TError,
+  { id: number; data: BodyType<ReplaceEditorialPostTopicsBody> },
+  TContext
+> => {
+  const mutationKey = ["replaceEditorialPostTopics"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof replaceEditorialPostTopics>>,
+    { id: number; data: BodyType<ReplaceEditorialPostTopicsBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return replaceEditorialPostTopics(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ReplaceEditorialPostTopicsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof replaceEditorialPostTopics>>
+>;
+export type ReplaceEditorialPostTopicsMutationBody =
+  BodyType<ReplaceEditorialPostTopicsBody>;
+export type ReplaceEditorialPostTopicsMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Replace a post's topic set — requires website.posts:edit. Topics must match the post's channel.
+ */
+export const useReplaceEditorialPostTopics = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof replaceEditorialPostTopics>>,
+    TError,
+    { id: number; data: BodyType<ReplaceEditorialPostTopicsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof replaceEditorialPostTopics>>,
+  TError,
+  { id: number; data: BodyType<ReplaceEditorialPostTopicsBody> },
+  TContext
+> => {
+  return useMutation(getReplaceEditorialPostTopicsMutationOptions(options));
+};
+
+export const getListEditorialPostRecommendationsUrl = (id: number) => {
+  return `/api/admin/editorial/posts/${id}/recommendations`;
+};
+
+/**
+ * @summary List a post's recommended posts, in editor order
+ */
+export const listEditorialPostRecommendations = async (
+  id: number,
+  options?: RequestInit,
+): Promise<EditorialRecommendation[]> => {
+  return customFetch<EditorialRecommendation[]>(
+    getListEditorialPostRecommendationsUrl(id),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListEditorialPostRecommendationsQueryKey = (id: number) => {
+  return [`/api/admin/editorial/posts/${id}/recommendations`] as const;
+};
+
+export const getListEditorialPostRecommendationsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listEditorialPostRecommendations>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listEditorialPostRecommendations>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListEditorialPostRecommendationsQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listEditorialPostRecommendations>>
+  > = ({ signal }) =>
+    listEditorialPostRecommendations(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listEditorialPostRecommendations>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListEditorialPostRecommendationsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listEditorialPostRecommendations>>
+>;
+export type ListEditorialPostRecommendationsQueryError =
+  ErrorType<ErrorResponse>;
+
+/**
+ * @summary List a post's recommended posts, in editor order
+ */
+
+export function useListEditorialPostRecommendations<
+  TData = Awaited<ReturnType<typeof listEditorialPostRecommendations>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listEditorialPostRecommendations>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListEditorialPostRecommendationsQueryOptions(
+    id,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getReplaceEditorialPostRecommendationsUrl = (id: number) => {
+  return `/api/admin/editorial/posts/${id}/recommendations`;
+};
+
+/**
+ * @summary Replace a post's recommendations — requires website.posts:edit. Same channel only, no self-reference, no duplicates.
+ */
+export const replaceEditorialPostRecommendations = async (
+  id: number,
+  replaceEditorialPostRecommendationsBody: ReplaceEditorialPostRecommendationsBody,
+  options?: RequestInit,
+): Promise<EditorialRecommendation[]> => {
+  return customFetch<EditorialRecommendation[]>(
+    getReplaceEditorialPostRecommendationsUrl(id),
+    {
+      ...options,
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(replaceEditorialPostRecommendationsBody),
+    },
+  );
+};
+
+export const getReplaceEditorialPostRecommendationsMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof replaceEditorialPostRecommendations>>,
+    TError,
+    { id: number; data: BodyType<ReplaceEditorialPostRecommendationsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof replaceEditorialPostRecommendations>>,
+  TError,
+  { id: number; data: BodyType<ReplaceEditorialPostRecommendationsBody> },
+  TContext
+> => {
+  const mutationKey = ["replaceEditorialPostRecommendations"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof replaceEditorialPostRecommendations>>,
+    { id: number; data: BodyType<ReplaceEditorialPostRecommendationsBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return replaceEditorialPostRecommendations(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ReplaceEditorialPostRecommendationsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof replaceEditorialPostRecommendations>>
+>;
+export type ReplaceEditorialPostRecommendationsMutationBody =
+  BodyType<ReplaceEditorialPostRecommendationsBody>;
+export type ReplaceEditorialPostRecommendationsMutationError =
+  ErrorType<ErrorResponse>;
+
+/**
+ * @summary Replace a post's recommendations — requires website.posts:edit. Same channel only, no self-reference, no duplicates.
+ */
+export const useReplaceEditorialPostRecommendations = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof replaceEditorialPostRecommendations>>,
+    TError,
+    { id: number; data: BodyType<ReplaceEditorialPostRecommendationsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof replaceEditorialPostRecommendations>>,
+  TError,
+  { id: number; data: BodyType<ReplaceEditorialPostRecommendationsBody> },
+  TContext
+> => {
+  return useMutation(
+    getReplaceEditorialPostRecommendationsMutationOptions(options),
+  );
+};
+
+export const getListEditorialPostRevisionsUrl = (id: number) => {
+  return `/api/admin/editorial/posts/${id}/revisions`;
+};
+
+/**
+ * @summary List a post's revisions, newest first (metadata only — no snapshot payload)
+ */
+export const listEditorialPostRevisions = async (
+  id: number,
+  options?: RequestInit,
+): Promise<EditorialRevisionSummary[]> => {
+  return customFetch<EditorialRevisionSummary[]>(
+    getListEditorialPostRevisionsUrl(id),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListEditorialPostRevisionsQueryKey = (id: number) => {
+  return [`/api/admin/editorial/posts/${id}/revisions`] as const;
+};
+
+export const getListEditorialPostRevisionsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listEditorialPostRevisions>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listEditorialPostRevisions>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListEditorialPostRevisionsQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listEditorialPostRevisions>>
+  > = ({ signal }) =>
+    listEditorialPostRevisions(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listEditorialPostRevisions>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListEditorialPostRevisionsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listEditorialPostRevisions>>
+>;
+export type ListEditorialPostRevisionsQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary List a post's revisions, newest first (metadata only — no snapshot payload)
+ */
+
+export function useListEditorialPostRevisions<
+  TData = Awaited<ReturnType<typeof listEditorialPostRevisions>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listEditorialPostRevisions>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListEditorialPostRevisionsQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getGetEditorialPostRevisionUrl = (
+  id: number,
+  revisionId: number,
+) => {
+  return `/api/admin/editorial/posts/${id}/revisions/${revisionId}`;
+};
+
+/**
+ * @summary Read one revision including its full snapshot
+ */
+export const getEditorialPostRevision = async (
+  id: number,
+  revisionId: number,
+  options?: RequestInit,
+): Promise<EditorialRevision> => {
+  return customFetch<EditorialRevision>(
+    getGetEditorialPostRevisionUrl(id, revisionId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetEditorialPostRevisionQueryKey = (
+  id: number,
+  revisionId: number,
+) => {
+  return [`/api/admin/editorial/posts/${id}/revisions/${revisionId}`] as const;
+};
+
+export const getGetEditorialPostRevisionQueryOptions = <
+  TData = Awaited<ReturnType<typeof getEditorialPostRevision>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  revisionId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getEditorialPostRevision>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getGetEditorialPostRevisionQueryKey(id, revisionId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getEditorialPostRevision>>
+  > = ({ signal }) =>
+    getEditorialPostRevision(id, revisionId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled:
+      id !== null &&
+      id !== undefined &&
+      revisionId !== null &&
+      revisionId !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getEditorialPostRevision>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetEditorialPostRevisionQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getEditorialPostRevision>>
+>;
+export type GetEditorialPostRevisionQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Read one revision including its full snapshot
+ */
+
+export function useGetEditorialPostRevision<
+  TData = Awaited<ReturnType<typeof getEditorialPostRevision>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  revisionId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getEditorialPostRevision>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetEditorialPostRevisionQueryOptions(
+    id,
+    revisionId,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getRestoreEditorialPostRevisionUrl = (
+  id: number,
+  revisionId: number,
+) => {
+  return `/api/admin/editorial/posts/${id}/revisions/${revisionId}/restore`;
+};
+
+/**
+ * @summary Restore a post's content from a revision — requires website.posts:publish. Writes a new 'restore' revision of the pre-restore state first, in the same transaction.
+ */
+export const restoreEditorialPostRevision = async (
+  id: number,
+  revisionId: number,
+  options?: RequestInit,
+): Promise<EditorialPost> => {
+  return customFetch<EditorialPost>(
+    getRestoreEditorialPostRevisionUrl(id, revisionId),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getRestoreEditorialPostRevisionMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof restoreEditorialPostRevision>>,
+    TError,
+    { id: number; revisionId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof restoreEditorialPostRevision>>,
+  TError,
+  { id: number; revisionId: number },
+  TContext
+> => {
+  const mutationKey = ["restoreEditorialPostRevision"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof restoreEditorialPostRevision>>,
+    { id: number; revisionId: number }
+  > = (props) => {
+    const { id, revisionId } = props ?? {};
+
+    return restoreEditorialPostRevision(id, revisionId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RestoreEditorialPostRevisionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof restoreEditorialPostRevision>>
+>;
+
+export type RestoreEditorialPostRevisionMutationError =
+  ErrorType<ErrorResponse>;
+
+/**
+ * @summary Restore a post's content from a revision — requires website.posts:publish. Writes a new 'restore' revision of the pre-restore state first, in the same transaction.
+ */
+export const useRestoreEditorialPostRevision = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof restoreEditorialPostRevision>>,
+    TError,
+    { id: number; revisionId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof restoreEditorialPostRevision>>,
+  TError,
+  { id: number; revisionId: number },
+  TContext
+> => {
+  return useMutation(getRestoreEditorialPostRevisionMutationOptions(options));
+};
+
+export const getListEditorialTopicsUrl = (
+  params?: ListEditorialTopicsParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/admin/editorial/topics?${stringifiedParams}`
+    : `/api/admin/editorial/topics`;
+};
+
+/**
+ * @summary List topics (optionally filtered by channel/status)
+ */
+export const listEditorialTopics = async (
+  params?: ListEditorialTopicsParams,
+  options?: RequestInit,
+): Promise<EditorialTopic[]> => {
+  return customFetch<EditorialTopic[]>(getListEditorialTopicsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListEditorialTopicsQueryKey = (
+  params?: ListEditorialTopicsParams,
+) => {
+  return [`/api/admin/editorial/topics`, ...(params ? [params] : [])] as const;
+};
+
+export const getListEditorialTopicsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listEditorialTopics>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params?: ListEditorialTopicsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listEditorialTopics>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListEditorialTopicsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listEditorialTopics>>
+  > = ({ signal }) =>
+    listEditorialTopics(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listEditorialTopics>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListEditorialTopicsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listEditorialTopics>>
+>;
+export type ListEditorialTopicsQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary List topics (optionally filtered by channel/status)
+ */
+
+export function useListEditorialTopics<
+  TData = Awaited<ReturnType<typeof listEditorialTopics>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params?: ListEditorialTopicsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listEditorialTopics>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListEditorialTopicsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getCreateEditorialTopicUrl = () => {
+  return `/api/admin/editorial/topics`;
+};
+
+/**
+ * @summary Create a topic — requires website.posts:create
+ */
+export const createEditorialTopic = async (
+  createEditorialTopicBody: CreateEditorialTopicBody,
+  options?: RequestInit,
+): Promise<EditorialTopic> => {
+  return customFetch<EditorialTopic>(getCreateEditorialTopicUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createEditorialTopicBody),
+  });
+};
+
+export const getCreateEditorialTopicMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createEditorialTopic>>,
+    TError,
+    { data: BodyType<CreateEditorialTopicBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createEditorialTopic>>,
+  TError,
+  { data: BodyType<CreateEditorialTopicBody> },
+  TContext
+> => {
+  const mutationKey = ["createEditorialTopic"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createEditorialTopic>>,
+    { data: BodyType<CreateEditorialTopicBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createEditorialTopic(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateEditorialTopicMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createEditorialTopic>>
+>;
+export type CreateEditorialTopicMutationBody =
+  BodyType<CreateEditorialTopicBody>;
+export type CreateEditorialTopicMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Create a topic — requires website.posts:create
+ */
+export const useCreateEditorialTopic = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createEditorialTopic>>,
+    TError,
+    { data: BodyType<CreateEditorialTopicBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createEditorialTopic>>,
+  TError,
+  { data: BodyType<CreateEditorialTopicBody> },
+  TContext
+> => {
+  return useMutation(getCreateEditorialTopicMutationOptions(options));
+};
+
+export const getGetEditorialTopicUrl = (id: number) => {
+  return `/api/admin/editorial/topics/${id}`;
+};
+
+/**
+ * @summary Get one topic
+ */
+export const getEditorialTopic = async (
+  id: number,
+  options?: RequestInit,
+): Promise<EditorialTopic> => {
+  return customFetch<EditorialTopic>(getGetEditorialTopicUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetEditorialTopicQueryKey = (id: number) => {
+  return [`/api/admin/editorial/topics/${id}`] as const;
+};
+
+export const getGetEditorialTopicQueryOptions = <
+  TData = Awaited<ReturnType<typeof getEditorialTopic>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getEditorialTopic>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetEditorialTopicQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getEditorialTopic>>
+  > = ({ signal }) => getEditorialTopic(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getEditorialTopic>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetEditorialTopicQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getEditorialTopic>>
+>;
+export type GetEditorialTopicQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Get one topic
+ */
+
+export function useGetEditorialTopic<
+  TData = Awaited<ReturnType<typeof getEditorialTopic>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getEditorialTopic>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetEditorialTopicQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getUpdateEditorialTopicUrl = (id: number) => {
+  return `/api/admin/editorial/topics/${id}`;
+};
+
+/**
+ * @summary Edit a topic — requires website.posts:edit. Channel is immutable.
+ */
+export const updateEditorialTopic = async (
+  id: number,
+  updateEditorialTopicBody: UpdateEditorialTopicBody,
+  options?: RequestInit,
+): Promise<EditorialTopic> => {
+  return customFetch<EditorialTopic>(getUpdateEditorialTopicUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateEditorialTopicBody),
+  });
+};
+
+export const getUpdateEditorialTopicMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateEditorialTopic>>,
+    TError,
+    { id: number; data: BodyType<UpdateEditorialTopicBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateEditorialTopic>>,
+  TError,
+  { id: number; data: BodyType<UpdateEditorialTopicBody> },
+  TContext
+> => {
+  const mutationKey = ["updateEditorialTopic"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateEditorialTopic>>,
+    { id: number; data: BodyType<UpdateEditorialTopicBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateEditorialTopic(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateEditorialTopicMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateEditorialTopic>>
+>;
+export type UpdateEditorialTopicMutationBody =
+  BodyType<UpdateEditorialTopicBody>;
+export type UpdateEditorialTopicMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Edit a topic — requires website.posts:edit. Channel is immutable.
+ */
+export const useUpdateEditorialTopic = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateEditorialTopic>>,
+    TError,
+    { id: number; data: BodyType<UpdateEditorialTopicBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateEditorialTopic>>,
+  TError,
+  { id: number; data: BodyType<UpdateEditorialTopicBody> },
+  TContext
+> => {
+  return useMutation(getUpdateEditorialTopicMutationOptions(options));
+};
+
+export const getListEditorialAuthorsUrl = (
+  params?: ListEditorialAuthorsParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/admin/editorial/authors?${stringifiedParams}`
+    : `/api/admin/editorial/authors`;
+};
+
+/**
+ * @summary List authors (optionally filtered by status)
+ */
+export const listEditorialAuthors = async (
+  params?: ListEditorialAuthorsParams,
+  options?: RequestInit,
+): Promise<EditorialAuthor[]> => {
+  return customFetch<EditorialAuthor[]>(getListEditorialAuthorsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListEditorialAuthorsQueryKey = (
+  params?: ListEditorialAuthorsParams,
+) => {
+  return [`/api/admin/editorial/authors`, ...(params ? [params] : [])] as const;
+};
+
+export const getListEditorialAuthorsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listEditorialAuthors>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params?: ListEditorialAuthorsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listEditorialAuthors>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListEditorialAuthorsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listEditorialAuthors>>
+  > = ({ signal }) =>
+    listEditorialAuthors(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listEditorialAuthors>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListEditorialAuthorsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listEditorialAuthors>>
+>;
+export type ListEditorialAuthorsQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary List authors (optionally filtered by status)
+ */
+
+export function useListEditorialAuthors<
+  TData = Awaited<ReturnType<typeof listEditorialAuthors>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params?: ListEditorialAuthorsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listEditorialAuthors>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListEditorialAuthorsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getCreateEditorialAuthorUrl = () => {
+  return `/api/admin/editorial/authors`;
+};
+
+/**
+ * @summary Create an author — requires website.posts:create
+ */
+export const createEditorialAuthor = async (
+  createEditorialAuthorBody: CreateEditorialAuthorBody,
+  options?: RequestInit,
+): Promise<EditorialAuthor> => {
+  return customFetch<EditorialAuthor>(getCreateEditorialAuthorUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createEditorialAuthorBody),
+  });
+};
+
+export const getCreateEditorialAuthorMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createEditorialAuthor>>,
+    TError,
+    { data: BodyType<CreateEditorialAuthorBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createEditorialAuthor>>,
+  TError,
+  { data: BodyType<CreateEditorialAuthorBody> },
+  TContext
+> => {
+  const mutationKey = ["createEditorialAuthor"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createEditorialAuthor>>,
+    { data: BodyType<CreateEditorialAuthorBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createEditorialAuthor(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateEditorialAuthorMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createEditorialAuthor>>
+>;
+export type CreateEditorialAuthorMutationBody =
+  BodyType<CreateEditorialAuthorBody>;
+export type CreateEditorialAuthorMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Create an author — requires website.posts:create
+ */
+export const useCreateEditorialAuthor = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createEditorialAuthor>>,
+    TError,
+    { data: BodyType<CreateEditorialAuthorBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createEditorialAuthor>>,
+  TError,
+  { data: BodyType<CreateEditorialAuthorBody> },
+  TContext
+> => {
+  return useMutation(getCreateEditorialAuthorMutationOptions(options));
+};
+
+export const getGetEditorialAuthorUrl = (id: number) => {
+  return `/api/admin/editorial/authors/${id}`;
+};
+
+/**
+ * @summary Get one author
+ */
+export const getEditorialAuthor = async (
+  id: number,
+  options?: RequestInit,
+): Promise<EditorialAuthor> => {
+  return customFetch<EditorialAuthor>(getGetEditorialAuthorUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetEditorialAuthorQueryKey = (id: number) => {
+  return [`/api/admin/editorial/authors/${id}`] as const;
+};
+
+export const getGetEditorialAuthorQueryOptions = <
+  TData = Awaited<ReturnType<typeof getEditorialAuthor>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getEditorialAuthor>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetEditorialAuthorQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getEditorialAuthor>>
+  > = ({ signal }) => getEditorialAuthor(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getEditorialAuthor>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetEditorialAuthorQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getEditorialAuthor>>
+>;
+export type GetEditorialAuthorQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Get one author
+ */
+
+export function useGetEditorialAuthor<
+  TData = Awaited<ReturnType<typeof getEditorialAuthor>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getEditorialAuthor>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetEditorialAuthorQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getUpdateEditorialAuthorUrl = (id: number) => {
+  return `/api/admin/editorial/authors/${id}`;
+};
+
+/**
+ * @summary Edit an author — requires website.posts:edit. Never rewrites a published post's frozen author snapshot.
+ */
+export const updateEditorialAuthor = async (
+  id: number,
+  updateEditorialAuthorBody: UpdateEditorialAuthorBody,
+  options?: RequestInit,
+): Promise<EditorialAuthor> => {
+  return customFetch<EditorialAuthor>(getUpdateEditorialAuthorUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateEditorialAuthorBody),
+  });
+};
+
+export const getUpdateEditorialAuthorMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateEditorialAuthor>>,
+    TError,
+    { id: number; data: BodyType<UpdateEditorialAuthorBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateEditorialAuthor>>,
+  TError,
+  { id: number; data: BodyType<UpdateEditorialAuthorBody> },
+  TContext
+> => {
+  const mutationKey = ["updateEditorialAuthor"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateEditorialAuthor>>,
+    { id: number; data: BodyType<UpdateEditorialAuthorBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateEditorialAuthor(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateEditorialAuthorMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateEditorialAuthor>>
+>;
+export type UpdateEditorialAuthorMutationBody =
+  BodyType<UpdateEditorialAuthorBody>;
+export type UpdateEditorialAuthorMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Edit an author — requires website.posts:edit. Never rewrites a published post's frozen author snapshot.
+ */
+export const useUpdateEditorialAuthor = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateEditorialAuthor>>,
+    TError,
+    { id: number; data: BodyType<UpdateEditorialAuthorBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateEditorialAuthor>>,
+  TError,
+  { id: number; data: BodyType<UpdateEditorialAuthorBody> },
+  TContext
+> => {
+  return useMutation(getUpdateEditorialAuthorMutationOptions(options));
+};
+
+export const getGetEditorialPlacementUrl = (
+  params: GetEditorialPlacementParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/admin/editorial/placements?${stringifiedParams}`
+    : `/api/admin/editorial/placements`;
+};
+
+/**
+ * @summary Read one named placement's ordered entries
+ */
+export const getEditorialPlacement = async (
+  params: GetEditorialPlacementParams,
+  options?: RequestInit,
+): Promise<EditorialPlacementEntry[]> => {
+  return customFetch<EditorialPlacementEntry[]>(
+    getGetEditorialPlacementUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetEditorialPlacementQueryKey = (
+  params?: GetEditorialPlacementParams,
+) => {
+  return [
+    `/api/admin/editorial/placements`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getGetEditorialPlacementQueryOptions = <
+  TData = Awaited<ReturnType<typeof getEditorialPlacement>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params: GetEditorialPlacementParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getEditorialPlacement>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetEditorialPlacementQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getEditorialPlacement>>
+  > = ({ signal }) =>
+    getEditorialPlacement(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getEditorialPlacement>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetEditorialPlacementQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getEditorialPlacement>>
+>;
+export type GetEditorialPlacementQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Read one named placement's ordered entries
+ */
+
+export function useGetEditorialPlacement<
+  TData = Awaited<ReturnType<typeof getEditorialPlacement>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params: GetEditorialPlacementParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getEditorialPlacement>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetEditorialPlacementQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getReplaceEditorialPlacementUrl = (
+  params: ReplaceEditorialPlacementParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/admin/editorial/placements?${stringifiedParams}`
+    : `/api/admin/editorial/placements`;
+};
+
+/**
+ * @summary Replace a named placement's entries — requires website.posts:edit. All posts must match the placement channel; a post appears at most once.
+ */
+export const replaceEditorialPlacement = async (
+  replaceEditorialPlacementBody: ReplaceEditorialPlacementBody,
+  params: ReplaceEditorialPlacementParams,
+  options?: RequestInit,
+): Promise<EditorialPlacementEntry[]> => {
+  return customFetch<EditorialPlacementEntry[]>(
+    getReplaceEditorialPlacementUrl(params),
+    {
+      ...options,
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(replaceEditorialPlacementBody),
+    },
+  );
+};
+
+export const getReplaceEditorialPlacementMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof replaceEditorialPlacement>>,
+    TError,
+    {
+      data: BodyType<ReplaceEditorialPlacementBody>;
+      params: ReplaceEditorialPlacementParams;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof replaceEditorialPlacement>>,
+  TError,
+  {
+    data: BodyType<ReplaceEditorialPlacementBody>;
+    params: ReplaceEditorialPlacementParams;
+  },
+  TContext
+> => {
+  const mutationKey = ["replaceEditorialPlacement"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof replaceEditorialPlacement>>,
+    {
+      data: BodyType<ReplaceEditorialPlacementBody>;
+      params: ReplaceEditorialPlacementParams;
+    }
+  > = (props) => {
+    const { data, params } = props ?? {};
+
+    return replaceEditorialPlacement(data, params, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ReplaceEditorialPlacementMutationResult = NonNullable<
+  Awaited<ReturnType<typeof replaceEditorialPlacement>>
+>;
+export type ReplaceEditorialPlacementMutationBody =
+  BodyType<ReplaceEditorialPlacementBody>;
+export type ReplaceEditorialPlacementMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Replace a named placement's entries — requires website.posts:edit. All posts must match the placement channel; a post appears at most once.
+ */
+export const useReplaceEditorialPlacement = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof replaceEditorialPlacement>>,
+    TError,
+    {
+      data: BodyType<ReplaceEditorialPlacementBody>;
+      params: ReplaceEditorialPlacementParams;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof replaceEditorialPlacement>>,
+  TError,
+  {
+    data: BodyType<ReplaceEditorialPlacementBody>;
+    params: ReplaceEditorialPlacementParams;
+  },
+  TContext
+> => {
+  return useMutation(getReplaceEditorialPlacementMutationOptions(options));
+};

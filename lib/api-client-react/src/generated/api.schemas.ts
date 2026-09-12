@@ -3228,6 +3228,581 @@ export interface Offer {
   createdAt: string;
 }
 
+export type EditorialParagraphBlockType =
+  (typeof EditorialParagraphBlockType)[keyof typeof EditorialParagraphBlockType];
+
+export const EditorialParagraphBlockType = {
+  paragraph: "paragraph",
+} as const;
+
+export interface EditorialParagraphBlock {
+  type: EditorialParagraphBlockType;
+  /**
+   * @minLength 1
+   * @maxLength 5000
+   */
+  text: string;
+}
+
+export type EditorialHeadingBlockType =
+  (typeof EditorialHeadingBlockType)[keyof typeof EditorialHeadingBlockType];
+
+export const EditorialHeadingBlockType = {
+  heading: "heading",
+} as const;
+
+export type EditorialHeadingBlockLevel =
+  (typeof EditorialHeadingBlockLevel)[keyof typeof EditorialHeadingBlockLevel];
+
+export const EditorialHeadingBlockLevel = {
+  NUMBER_2: 2,
+  NUMBER_3: 3,
+} as const;
+
+export interface EditorialHeadingBlock {
+  type: EditorialHeadingBlockType;
+  level: EditorialHeadingBlockLevel;
+  /**
+   * @minLength 1
+   * @maxLength 150
+   */
+  text: string;
+}
+
+export type EditorialImageBlockType =
+  (typeof EditorialImageBlockType)[keyof typeof EditorialImageBlockType];
+
+export const EditorialImageBlockType = {
+  image: "image",
+} as const;
+
+export interface EditorialImageBlock {
+  type: EditorialImageBlockType;
+  url: string;
+  /**
+   * @minLength 1
+   * @maxLength 200
+   */
+  alt: string;
+  /** @maxLength 300 */
+  caption?: string;
+}
+
+export type EditorialBulletedListBlockType =
+  (typeof EditorialBulletedListBlockType)[keyof typeof EditorialBulletedListBlockType];
+
+export const EditorialBulletedListBlockType = {
+  "bulleted-list": "bulleted-list",
+} as const;
+
+export interface EditorialBulletedListBlock {
+  type: EditorialBulletedListBlockType;
+  /**
+   * @minItems 2
+   * @maxItems 30
+   * @items.minLength 1
+   * @items.maxLength 300
+   */
+  items: string[];
+}
+
+export type EditorialBodyBlock =
+  | EditorialParagraphBlock
+  | EditorialHeadingBlock
+  | EditorialImageBlock
+  | EditorialBulletedListBlock;
+
+export interface EditorialBody {
+  /** @maxItems 250 */
+  blocks: EditorialBodyBlock[];
+}
+
+export interface EditorialAuthorSnapshot {
+  name: string;
+  role: string;
+  /** @nullable */
+  avatarUrl: string | null;
+  /** @nullable */
+  biography: string | null;
+}
+
+export type EditorialAuthorStatus =
+  (typeof EditorialAuthorStatus)[keyof typeof EditorialAuthorStatus];
+
+export const EditorialAuthorStatus = {
+  active: "active",
+  archived: "archived",
+} as const;
+
+export interface EditorialAuthor {
+  id: number;
+  publicName: string;
+  role: string;
+  /** @nullable */
+  biography: string | null;
+  /** @nullable */
+  avatarUrl: string | null;
+  /** @nullable */
+  systemUserId: number | null;
+  status: EditorialAuthorStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type CreateEditorialAuthorBodyStatus =
+  (typeof CreateEditorialAuthorBodyStatus)[keyof typeof CreateEditorialAuthorBodyStatus];
+
+export const CreateEditorialAuthorBodyStatus = {
+  active: "active",
+  archived: "archived",
+} as const;
+
+export interface CreateEditorialAuthorBody {
+  /**
+   * @minLength 1
+   * @maxLength 200
+   */
+  publicName: string;
+  /**
+   * @minLength 1
+   * @maxLength 200
+   */
+  role: string;
+  /** @nullable */
+  biography?: string | null;
+  /** @nullable */
+  avatarUrl?: string | null;
+  /** @nullable */
+  systemUserId?: number | null;
+  status?: CreateEditorialAuthorBodyStatus;
+}
+
+export type UpdateEditorialAuthorBodyStatus =
+  (typeof UpdateEditorialAuthorBodyStatus)[keyof typeof UpdateEditorialAuthorBodyStatus];
+
+export const UpdateEditorialAuthorBodyStatus = {
+  active: "active",
+  archived: "archived",
+} as const;
+
+/**
+ * Partial update.
+ */
+export interface UpdateEditorialAuthorBody {
+  /**
+   * @minLength 1
+   * @maxLength 200
+   */
+  publicName?: string;
+  /**
+   * @minLength 1
+   * @maxLength 200
+   */
+  role?: string;
+  /** @nullable */
+  biography?: string | null;
+  /** @nullable */
+  avatarUrl?: string | null;
+  /** @nullable */
+  systemUserId?: number | null;
+  status?: UpdateEditorialAuthorBodyStatus;
+}
+
+export type EditorialTopicChannel =
+  (typeof EditorialTopicChannel)[keyof typeof EditorialTopicChannel];
+
+export const EditorialTopicChannel = {
+  news: "news",
+  experience: "experience",
+} as const;
+
+export type EditorialTopicStatus =
+  (typeof EditorialTopicStatus)[keyof typeof EditorialTopicStatus];
+
+export const EditorialTopicStatus = {
+  active: "active",
+  archived: "archived",
+} as const;
+
+export interface EditorialTopic {
+  id: number;
+  channel: EditorialTopicChannel;
+  name: string;
+  slug: string;
+  status: EditorialTopicStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type CreateEditorialTopicBodyChannel =
+  (typeof CreateEditorialTopicBodyChannel)[keyof typeof CreateEditorialTopicBodyChannel];
+
+export const CreateEditorialTopicBodyChannel = {
+  news: "news",
+  experience: "experience",
+} as const;
+
+export type CreateEditorialTopicBodyStatus =
+  (typeof CreateEditorialTopicBodyStatus)[keyof typeof CreateEditorialTopicBodyStatus];
+
+export const CreateEditorialTopicBodyStatus = {
+  active: "active",
+  archived: "archived",
+} as const;
+
+export interface CreateEditorialTopicBody {
+  channel: CreateEditorialTopicBodyChannel;
+  /**
+   * @minLength 1
+   * @maxLength 200
+   */
+  name: string;
+  /**
+   * @minLength 1
+   * @maxLength 200
+   */
+  slug: string;
+  status?: CreateEditorialTopicBodyStatus;
+}
+
+export type UpdateEditorialTopicBodyStatus =
+  (typeof UpdateEditorialTopicBodyStatus)[keyof typeof UpdateEditorialTopicBodyStatus];
+
+export const UpdateEditorialTopicBodyStatus = {
+  active: "active",
+  archived: "archived",
+} as const;
+
+/**
+ * Partial update. Channel is immutable and is not accepted here.
+ */
+export interface UpdateEditorialTopicBody {
+  /**
+   * @minLength 1
+   * @maxLength 200
+   */
+  name?: string;
+  /**
+   * @minLength 1
+   * @maxLength 200
+   */
+  slug?: string;
+  status?: UpdateEditorialTopicBodyStatus;
+}
+
+export type EditorialPostChannel =
+  (typeof EditorialPostChannel)[keyof typeof EditorialPostChannel];
+
+export const EditorialPostChannel = {
+  news: "news",
+  experience: "experience",
+} as const;
+
+export type EditorialPostStatus =
+  (typeof EditorialPostStatus)[keyof typeof EditorialPostStatus];
+
+export const EditorialPostStatus = {
+  draft: "draft",
+  published: "published",
+  archived: "archived",
+} as const;
+
+export interface EditorialPost {
+  id: number;
+  channel: EditorialPostChannel;
+  slug: string;
+  status: EditorialPostStatus;
+  title: string;
+  /** @nullable */
+  deck: string | null;
+  /** @nullable */
+  contextLabel: string | null;
+  body: EditorialBody;
+  bodyVersion: number;
+  /** @nullable */
+  featureImageUrl: string | null;
+  /** @nullable */
+  featureImageAlt: string | null;
+  /** @nullable */
+  authorId: number | null;
+  authorSnapshot: EditorialAuthorSnapshot | null;
+  /** @nullable */
+  readingTimeOverrideMinutes: number | null;
+  /** @nullable */
+  publishedAt: string | null;
+  /** @nullable */
+  migrationSourceTable: string | null;
+  /** @nullable */
+  migrationSourceId: number | null;
+  /** @nullable */
+  seoTitle: string | null;
+  /** @nullable */
+  seoDescription: string | null;
+  /** @nullable */
+  ogImageUrl: string | null;
+  createdAt: string;
+  updatedAt: string;
+  /** @nullable */
+  updatedByAdminId: number | null;
+}
+
+export type EditorialRecommendationTargetStatus =
+  (typeof EditorialRecommendationTargetStatus)[keyof typeof EditorialRecommendationTargetStatus];
+
+export const EditorialRecommendationTargetStatus = {
+  draft: "draft",
+  published: "published",
+  archived: "archived",
+} as const;
+
+export interface EditorialRecommendation {
+  targetPostId: number;
+  position: number;
+  targetTitle: string;
+  targetSlug: string;
+  targetStatus: EditorialRecommendationTargetStatus;
+}
+
+export interface EditorialPostDetail {
+  post: EditorialPost;
+  topics: EditorialTopic[];
+  recommendations: EditorialRecommendation[];
+}
+
+export interface EditorialPostListResponse {
+  items: EditorialPost[];
+  page: number;
+  limit: number;
+  total: number;
+}
+
+export type CreateEditorialPostBodyChannel =
+  (typeof CreateEditorialPostBodyChannel)[keyof typeof CreateEditorialPostBodyChannel];
+
+export const CreateEditorialPostBodyChannel = {
+  news: "news",
+  experience: "experience",
+} as const;
+
+/**
+ * Always creates a DRAFT. Status is not accepted here — use the publish/archive/restore endpoints.
+ */
+export interface CreateEditorialPostBody {
+  channel: CreateEditorialPostBodyChannel;
+  /**
+   * @minLength 1
+   * @maxLength 200
+   */
+  slug: string;
+  /**
+   * @minLength 1
+   * @maxLength 300
+   */
+  title: string;
+  /** @nullable */
+  deck?: string | null;
+  /** @nullable */
+  contextLabel?: string | null;
+  body: EditorialBody;
+  /** @nullable */
+  featureImageUrl?: string | null;
+  /** @nullable */
+  featureImageAlt?: string | null;
+  /** @nullable */
+  authorId?: number | null;
+  /** @nullable */
+  readingTimeOverrideMinutes?: number | null;
+  /** @nullable */
+  seoTitle?: string | null;
+  /** @nullable */
+  seoDescription?: string | null;
+  /** @nullable */
+  ogImageUrl?: string | null;
+}
+
+/**
+ * Partial update. Channel and status are immutable here — status changes go through publish/archive/restore.
+ */
+export interface UpdateEditorialPostBody {
+  /**
+   * @minLength 1
+   * @maxLength 200
+   */
+  slug?: string;
+  /**
+   * @minLength 1
+   * @maxLength 300
+   */
+  title?: string;
+  /** @nullable */
+  deck?: string | null;
+  /** @nullable */
+  contextLabel?: string | null;
+  body?: EditorialBody;
+  /** @nullable */
+  featureImageUrl?: string | null;
+  /** @nullable */
+  featureImageAlt?: string | null;
+  /** @nullable */
+  authorId?: number | null;
+  /** @nullable */
+  readingTimeOverrideMinutes?: number | null;
+  /** @nullable */
+  seoTitle?: string | null;
+  /** @nullable */
+  seoDescription?: string | null;
+  /** @nullable */
+  ogImageUrl?: string | null;
+}
+
+export interface ReplaceEditorialPostTopicsBody {
+  /** @maxItems 50 */
+  topicIds: number[];
+}
+
+export type ReplaceEditorialPostRecommendationsBodyItemsItem = {
+  targetPostId: number;
+  /** @minimum 0 */
+  position?: number;
+};
+
+export interface ReplaceEditorialPostRecommendationsBody {
+  /** @maxItems 20 */
+  items: ReplaceEditorialPostRecommendationsBodyItemsItem[];
+}
+
+export type EditorialPlacementEntryChannel =
+  (typeof EditorialPlacementEntryChannel)[keyof typeof EditorialPlacementEntryChannel];
+
+export const EditorialPlacementEntryChannel = {
+  news: "news",
+  experience: "experience",
+} as const;
+
+export type EditorialPlacementEntryPostStatus =
+  (typeof EditorialPlacementEntryPostStatus)[keyof typeof EditorialPlacementEntryPostStatus];
+
+export const EditorialPlacementEntryPostStatus = {
+  draft: "draft",
+  published: "published",
+  archived: "archived",
+} as const;
+
+export interface EditorialPlacementEntry {
+  id: number;
+  key: string;
+  channel: EditorialPlacementEntryChannel;
+  postId: number;
+  position: number;
+  /** @nullable */
+  startAt: string | null;
+  /** @nullable */
+  endAt: string | null;
+  postTitle: string;
+  postStatus: EditorialPlacementEntryPostStatus;
+}
+
+export type ReplaceEditorialPlacementBodyChannel =
+  (typeof ReplaceEditorialPlacementBodyChannel)[keyof typeof ReplaceEditorialPlacementBodyChannel];
+
+export const ReplaceEditorialPlacementBodyChannel = {
+  news: "news",
+  experience: "experience",
+} as const;
+
+export type ReplaceEditorialPlacementBodyItemsItem = {
+  postId: number;
+  /** @minimum 0 */
+  position?: number;
+  /** @nullable */
+  startAt?: string | null;
+  /** @nullable */
+  endAt?: string | null;
+};
+
+export interface ReplaceEditorialPlacementBody {
+  channel: ReplaceEditorialPlacementBodyChannel;
+  /** @maxItems 50 */
+  items: ReplaceEditorialPlacementBodyItemsItem[];
+}
+
+export type EditorialRevisionSummaryEventType =
+  (typeof EditorialRevisionSummaryEventType)[keyof typeof EditorialRevisionSummaryEventType];
+
+export const EditorialRevisionSummaryEventType = {
+  published_edit: "published_edit",
+  restore: "restore",
+  author_change: "author_change",
+  topics_change: "topics_change",
+} as const;
+
+export interface EditorialRevisionSummary {
+  id: number;
+  postId: number;
+  revisionNumber: number;
+  eventType: EditorialRevisionSummaryEventType;
+  createdAt: string;
+  /** @nullable */
+  createdByAdminId: number | null;
+}
+
+export type EditorialRevisionSnapshotStatus =
+  (typeof EditorialRevisionSnapshotStatus)[keyof typeof EditorialRevisionSnapshotStatus];
+
+export const EditorialRevisionSnapshotStatus = {
+  draft: "draft",
+  published: "published",
+  archived: "archived",
+} as const;
+
+export interface EditorialRevisionSnapshot {
+  title: string;
+  /** @nullable */
+  deck: string | null;
+  /** @nullable */
+  contextLabel: string | null;
+  body: EditorialBody;
+  bodyVersion: number;
+  /** @nullable */
+  featureImageUrl: string | null;
+  /** @nullable */
+  featureImageAlt: string | null;
+  /** @nullable */
+  authorId: number | null;
+  authorSnapshot: EditorialAuthorSnapshot | null;
+  topics: number[];
+  /** @nullable */
+  seoTitle: string | null;
+  /** @nullable */
+  seoDescription: string | null;
+  /** @nullable */
+  ogImageUrl: string | null;
+  status: EditorialRevisionSnapshotStatus;
+  /** @nullable */
+  publishedAt: string | null;
+}
+
+export type EditorialRevisionEventType =
+  (typeof EditorialRevisionEventType)[keyof typeof EditorialRevisionEventType];
+
+export const EditorialRevisionEventType = {
+  published_edit: "published_edit",
+  restore: "restore",
+  author_change: "author_change",
+  topics_change: "topics_change",
+} as const;
+
+export interface EditorialRevision {
+  id: number;
+  postId: number;
+  revisionNumber: number;
+  eventType: EditorialRevisionEventType;
+  snapshot: EditorialRevisionSnapshot;
+  createdAt: string;
+  /** @nullable */
+  createdByAdminId: number | null;
+}
+
 export type UpdateAdminClassCapacitySettingsBody = {
   classCapacityEnabled: boolean;
   confirmOverCapacity?: boolean;
@@ -3441,4 +4016,79 @@ export type GetMyAttendanceParams = {
    * @maximum 100
    */
   limit?: number;
+};
+
+export type ListEditorialPostsParams = {
+  channel?: ListEditorialPostsChannel;
+  status?: ListEditorialPostsStatus;
+  authorId?: number;
+  topicId?: number;
+  search?: string;
+  /**
+   * @minimum 1
+   */
+  page?: number;
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+};
+
+export type ListEditorialPostsChannel =
+  (typeof ListEditorialPostsChannel)[keyof typeof ListEditorialPostsChannel];
+
+export const ListEditorialPostsChannel = {
+  news: "news",
+  experience: "experience",
+} as const;
+
+export type ListEditorialPostsStatus =
+  (typeof ListEditorialPostsStatus)[keyof typeof ListEditorialPostsStatus];
+
+export const ListEditorialPostsStatus = {
+  draft: "draft",
+  published: "published",
+  archived: "archived",
+} as const;
+
+export type ListEditorialTopicsParams = {
+  channel?: ListEditorialTopicsChannel;
+  status?: ListEditorialTopicsStatus;
+};
+
+export type ListEditorialTopicsChannel =
+  (typeof ListEditorialTopicsChannel)[keyof typeof ListEditorialTopicsChannel];
+
+export const ListEditorialTopicsChannel = {
+  news: "news",
+  experience: "experience",
+} as const;
+
+export type ListEditorialTopicsStatus =
+  (typeof ListEditorialTopicsStatus)[keyof typeof ListEditorialTopicsStatus];
+
+export const ListEditorialTopicsStatus = {
+  active: "active",
+  archived: "archived",
+} as const;
+
+export type ListEditorialAuthorsParams = {
+  status?: ListEditorialAuthorsStatus;
+};
+
+export type ListEditorialAuthorsStatus =
+  (typeof ListEditorialAuthorsStatus)[keyof typeof ListEditorialAuthorsStatus];
+
+export const ListEditorialAuthorsStatus = {
+  active: "active",
+  archived: "archived",
+} as const;
+
+export type GetEditorialPlacementParams = {
+  key: string;
+};
+
+export type ReplaceEditorialPlacementParams = {
+  key: string;
 };

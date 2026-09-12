@@ -2602,6 +2602,692 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/MyAttendanceResponse" }
 
+  # ─── Unified Editorial CMS Wave 1 — Admin-only, additive ──────────────────
+  # ADMIN ONLY BY DESIGN: there is no public editorial path in this wave.
+  # The public website keeps reading /website/news and /website/performances
+  # (unchanged above); nothing here replaces or re-points those. Every path
+  # below requires the existing admin auth middleware plus the new
+  # `website.posts` permission family — publish/archive/restore specifically
+  # require website.posts:publish, everything else view/create/edit/delete.
+  /admin/editorial/posts:
+    get:
+      operationId: listEditorialPosts
+      tags: [editorial]
+      summary: List editorial posts (filterable, paginated) — requires website.posts:view
+      parameters:
+        - { name: channel, in: query, schema: { type: string, enum: [news, experience] } }
+        - { name: status, in: query, schema: { type: string, enum: [draft, published, archived] } }
+        - { name: authorId, in: query, schema: { type: integer } }
+        - { name: topicId, in: query, schema: { type: integer } }
+        - { name: search, in: query, schema: { type: string } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100 } }
+      responses:
+        "200":
+          description: Matching posts, newest first
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EditorialPostListResponse" }
+        "403":
+          description: Missing website.posts:view
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+    post:
+      operationId: createEditorialPost
+      tags: [editorial]
+      summary: Create a DRAFT editorial post — requires website.posts:create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateEditorialPostBody" }
+      responses:
+        "201":
+          description: Created (always status=draft)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EditorialPost" }
+        "400":
+          description: Invalid body, body-block violation, or media URL rejected
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "403":
+          description: Missing website.posts:create
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "409":
+          description: Slug already in use for this channel
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /admin/editorial/posts/{id}:
+    get:
+      operationId: getEditorialPost
+      tags: [editorial]
+      summary: Get one editorial post with its topics and recommendations
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: The post
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EditorialPostDetail" }
+        "403":
+          description: Missing website.posts:view
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: Unknown post
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+    patch:
+      operationId: updateEditorialPost
+      tags: [editorial]
+      summary: Edit a post's content — requires website.posts:edit. Editing a PUBLISHED post writes a revision in the same transaction.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateEditorialPostBody" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EditorialPost" }
+        "400":
+          description: Invalid body, body-block violation, or media URL rejected
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "403":
+          description: Missing website.posts:edit
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: Unknown post
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "409":
+          description: Slug already in use for this channel
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /admin/editorial/posts/{id}/publish:
+    post:
+      operationId: publishEditorialPost
+      tags: [editorial]
+      summary: draft -> published — requires website.posts:publish. Fails unless the post passes the full readiness gate.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Published
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EditorialPost" }
+        "400":
+          description: Publish readiness gate failed (missing title/body/feature image/alt/author biography, or a rejected media URL)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "403":
+          description: Missing website.posts:publish
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: Unknown post
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "409":
+          description: Illegal transition from the post's current status
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /admin/editorial/posts/{id}/archive:
+    post:
+      operationId: archiveEditorialPost
+      tags: [editorial]
+      summary: draft|published -> archived — requires website.posts:publish
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Archived
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EditorialPost" }
+        "403":
+          description: Missing website.posts:publish
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: Unknown post
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "409":
+          description: Illegal transition from the post's current status
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /admin/editorial/posts/{id}/restore:
+    post:
+      operationId: restoreEditorialPost
+      tags: [editorial]
+      summary: archived -> draft — requires website.posts:publish. published -> draft is never allowed.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Restored to draft
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EditorialPost" }
+        "403":
+          description: Missing website.posts:publish
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: Unknown post
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "409":
+          description: Illegal transition (e.g. published -> draft)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /admin/editorial/posts/{id}/topics:
+    get:
+      operationId: listEditorialPostTopics
+      tags: [editorial]
+      summary: List a post's assigned topics
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Assigned topics
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EditorialTopic" }
+        "403":
+          description: Missing website.posts:view
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: Unknown post
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+    put:
+      operationId: replaceEditorialPostTopics
+      tags: [editorial]
+      summary: Replace a post's topic set — requires website.posts:edit. Topics must match the post's channel.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReplaceEditorialPostTopicsBody" }
+      responses:
+        "200":
+          description: Updated topic set
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EditorialTopic" }
+        "400":
+          description: Channel mismatch, archived topic, duplicate, or unknown topic
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "403":
+          description: Missing website.posts:edit
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: Unknown post or topic
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /admin/editorial/posts/{id}/recommendations:
+    get:
+      operationId: listEditorialPostRecommendations
+      tags: [editorial]
+      summary: List a post's recommended posts, in editor order
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Recommendations
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EditorialRecommendation" }
+        "403":
+          description: Missing website.posts:view
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: Unknown post
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+    put:
+      operationId: replaceEditorialPostRecommendations
+      tags: [editorial]
+      summary: Replace a post's recommendations — requires website.posts:edit. Same channel only, no self-reference, no duplicates.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReplaceEditorialPostRecommendationsBody" }
+      responses:
+        "200":
+          description: Updated recommendations
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EditorialRecommendation" }
+        "400":
+          description: Self-reference, duplicate, or cross-channel target
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "403":
+          description: Missing website.posts:edit
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: Unknown post or target
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /admin/editorial/posts/{id}/revisions:
+    get:
+      operationId: listEditorialPostRevisions
+      tags: [editorial]
+      summary: List a post's revisions, newest first (metadata only — no snapshot payload)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Revision list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EditorialRevisionSummary" }
+        "403":
+          description: Missing website.posts:view
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: Unknown post
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /admin/editorial/posts/{id}/revisions/{revisionId}:
+    get:
+      operationId: getEditorialPostRevision
+      tags: [editorial]
+      summary: Read one revision including its full snapshot
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: revisionId, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: The revision
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EditorialRevision" }
+        "403":
+          description: Missing website.posts:view
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: Unknown post or revision
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /admin/editorial/posts/{id}/revisions/{revisionId}/restore:
+    post:
+      operationId: restoreEditorialPostRevision
+      tags: [editorial]
+      summary: Restore a post's content from a revision — requires website.posts:publish. Writes a new 'restore' revision of the pre-restore state first, in the same transaction.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: revisionId, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Restored post
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EditorialPost" }
+        "403":
+          description: Missing website.posts:publish
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: Unknown post or revision
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /admin/editorial/topics:
+    get:
+      operationId: listEditorialTopics
+      tags: [editorial]
+      summary: List topics (optionally filtered by channel/status)
+      parameters:
+        - { name: channel, in: query, schema: { type: string, enum: [news, experience] } }
+        - { name: status, in: query, schema: { type: string, enum: [active, archived] } }
+      responses:
+        "200":
+          description: Topics
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EditorialTopic" }
+        "403":
+          description: Missing website.posts:view
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+    post:
+      operationId: createEditorialTopic
+      tags: [editorial]
+      summary: Create a topic — requires website.posts:create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateEditorialTopicBody" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EditorialTopic" }
+        "400":
+          description: Invalid body
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "403":
+          description: Missing website.posts:create
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "409":
+          description: Slug already in use for this channel
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /admin/editorial/topics/{id}:
+    get:
+      operationId: getEditorialTopic
+      tags: [editorial]
+      summary: Get one topic
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: The topic
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EditorialTopic" }
+        "403":
+          description: Missing website.posts:view
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: Unknown topic
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+    patch:
+      operationId: updateEditorialTopic
+      tags: [editorial]
+      summary: Edit a topic — requires website.posts:edit. Channel is immutable.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateEditorialTopicBody" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EditorialTopic" }
+        "400":
+          description: Invalid body
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "403":
+          description: Missing website.posts:edit
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: Unknown topic
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "409":
+          description: Slug already in use for this channel
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /admin/editorial/authors:
+    get:
+      operationId: listEditorialAuthors
+      tags: [editorial]
+      summary: List authors (optionally filtered by status)
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [active, archived] } }
+      responses:
+        "200":
+          description: Authors
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EditorialAuthor" }
+        "403":
+          description: Missing website.posts:view
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+    post:
+      operationId: createEditorialAuthor
+      tags: [editorial]
+      summary: Create an author — requires website.posts:create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateEditorialAuthorBody" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EditorialAuthor" }
+        "400":
+          description: Invalid body or rejected avatar URL
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "403":
+          description: Missing website.posts:create
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /admin/editorial/authors/{id}:
+    get:
+      operationId: getEditorialAuthor
+      tags: [editorial]
+      summary: Get one author
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: The author
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EditorialAuthor" }
+        "403":
+          description: Missing website.posts:view
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: Unknown author
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+    patch:
+      operationId: updateEditorialAuthor
+      tags: [editorial]
+      summary: Edit an author — requires website.posts:edit. Never rewrites a published post's frozen author snapshot.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateEditorialAuthorBody" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EditorialAuthor" }
+        "400":
+          description: Invalid body or rejected avatar URL
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "403":
+          description: Missing website.posts:edit
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: Unknown author
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /admin/editorial/placements:
+    get:
+      operationId: getEditorialPlacement
+      tags: [editorial]
+      summary: Read one named placement's ordered entries
+      parameters:
+        - { name: key, in: query, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Placement entries, position ASC
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EditorialPlacementEntry" }
+        "400":
+          description: Missing key
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "403":
+          description: Missing website.posts:view
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+    put:
+      operationId: replaceEditorialPlacement
+      tags: [editorial]
+      summary: Replace a named placement's entries — requires website.posts:edit. All posts must match the placement channel; a post appears at most once.
+      parameters:
+        - { name: key, in: query, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReplaceEditorialPlacementBody" }
+      responses:
+        "200":
+          description: Updated placement
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EditorialPlacementEntry" }
+        "400":
+          description: Channel mismatch or duplicate post in the placement
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "403":
+          description: Missing website.posts:edit
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: Unknown post
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
 components:
   schemas:
     HealthStatus:
@@ -5095,3 +5781,356 @@ components:
           type: array
           items: { type: integer }
         createdAt: { type: string }
+
+    # ─── Unified Editorial CMS Wave 1 ────────────────────────────────────────
+    # Net-new schemas. None of the Website News / Performance schemas above
+    # are referenced, extended, or modified by anything here.
+
+    # Flat, discriminated body block model — deliberately NOT the nested
+    # WebsiteNewsContent { leadParagraph, sections[] } shape, so every block
+    # type carries its own exact rules. Alt text is REQUIRED on image blocks
+    # at the schema level, on every write, not only at publish.
+    EditorialParagraphBlock:
+      type: object
+      required: [type, text]
+      properties:
+        type: { type: string, enum: [paragraph] }
+        text: { type: string, minLength: 1, maxLength: 5000 }
+
+    EditorialHeadingBlock:
+      type: object
+      required: [type, level, text]
+      properties:
+        type: { type: string, enum: [heading] }
+        level: { type: integer, enum: [2, 3] }
+        text: { type: string, minLength: 1, maxLength: 150 }
+
+    EditorialImageBlock:
+      type: object
+      required: [type, url, alt]
+      properties:
+        type: { type: string, enum: [image] }
+        url: { type: string }
+        alt: { type: string, minLength: 1, maxLength: 200 }
+        caption: { type: string, maxLength: 300 }
+
+    EditorialBulletedListBlock:
+      type: object
+      required: [type, items]
+      properties:
+        type: { type: string, enum: [bulleted-list] }
+        items:
+          type: array
+          minItems: 2
+          maxItems: 30
+          items: { type: string, minLength: 1, maxLength: 300 }
+
+    EditorialBodyBlock:
+      oneOf:
+        - { $ref: "#/components/schemas/EditorialParagraphBlock" }
+        - { $ref: "#/components/schemas/EditorialHeadingBlock" }
+        - { $ref: "#/components/schemas/EditorialImageBlock" }
+        - { $ref: "#/components/schemas/EditorialBulletedListBlock" }
+
+    EditorialBody:
+      type: object
+      required: [blocks]
+      properties:
+        blocks:
+          type: array
+          maxItems: 250
+          items: { $ref: "#/components/schemas/EditorialBodyBlock" }
+
+    # Frozen byline, captured at publish time. Editing the author ENTITY
+    # never rewrites an already-frozen snapshot.
+    EditorialAuthorSnapshot:
+      type: object
+      required: [name, role, avatarUrl, biography]
+      properties:
+        name: { type: string }
+        role: { type: string }
+        avatarUrl: { type: ["string", "null"] }
+        biography: { type: ["string", "null"] }
+
+    EditorialAuthor:
+      type: object
+      required:
+        [id, publicName, role, biography, avatarUrl, systemUserId, status,
+         createdAt, updatedAt]
+      properties:
+        id: { type: integer }
+        publicName: { type: string }
+        role: { type: string }
+        biography: { type: ["string", "null"] }
+        avatarUrl: { type: ["string", "null"] }
+        systemUserId: { type: ["integer", "null"] }
+        status: { type: string, enum: [active, archived] }
+        createdAt: { type: string }
+        updatedAt: { type: string }
+
+    CreateEditorialAuthorBody:
+      type: object
+      required: [publicName, role]
+      properties:
+        publicName: { type: string, minLength: 1, maxLength: 200 }
+        role: { type: string, minLength: 1, maxLength: 200 }
+        biography: { type: ["string", "null"] }
+        avatarUrl: { type: ["string", "null"] }
+        systemUserId: { type: ["integer", "null"] }
+        status: { type: string, enum: [active, archived] }
+
+    UpdateEditorialAuthorBody:
+      type: object
+      description: Partial update.
+      properties:
+        publicName: { type: string, minLength: 1, maxLength: 200 }
+        role: { type: string, minLength: 1, maxLength: 200 }
+        biography: { type: ["string", "null"] }
+        avatarUrl: { type: ["string", "null"] }
+        systemUserId: { type: ["integer", "null"] }
+        status: { type: string, enum: [active, archived] }
+
+    EditorialTopic:
+      type: object
+      required: [id, channel, name, slug, status, createdAt, updatedAt]
+      properties:
+        id: { type: integer }
+        channel: { type: string, enum: [news, experience] }
+        name: { type: string }
+        slug: { type: string }
+        status: { type: string, enum: [active, archived] }
+        createdAt: { type: string }
+        updatedAt: { type: string }
+
+    CreateEditorialTopicBody:
+      type: object
+      required: [channel, name, slug]
+      properties:
+        channel: { type: string, enum: [news, experience] }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        slug: { type: string, minLength: 1, maxLength: 200 }
+        status: { type: string, enum: [active, archived] }
+
+    UpdateEditorialTopicBody:
+      type: object
+      description: Partial update. Channel is immutable and is not accepted here.
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        slug: { type: string, minLength: 1, maxLength: 200 }
+        status: { type: string, enum: [active, archived] }
+
+    EditorialPost:
+      type: object
+      required:
+        [id, channel, slug, status, title, deck, contextLabel, body,
+         bodyVersion, featureImageUrl, featureImageAlt, authorId,
+         authorSnapshot, readingTimeOverrideMinutes, publishedAt,
+         migrationSourceTable, migrationSourceId, seoTitle, seoDescription,
+         ogImageUrl, createdAt, updatedAt, updatedByAdminId]
+      properties:
+        id: { type: integer }
+        channel: { type: string, enum: [news, experience] }
+        slug: { type: string }
+        status: { type: string, enum: [draft, published, archived] }
+        title: { type: string }
+        deck: { type: ["string", "null"] }
+        contextLabel: { type: ["string", "null"] }
+        body: { $ref: "#/components/schemas/EditorialBody" }
+        bodyVersion: { type: integer }
+        featureImageUrl: { type: ["string", "null"] }
+        featureImageAlt: { type: ["string", "null"] }
+        authorId: { type: ["integer", "null"] }
+        authorSnapshot:
+          oneOf:
+            - { $ref: "#/components/schemas/EditorialAuthorSnapshot" }
+            - { type: "null" }
+        readingTimeOverrideMinutes: { type: ["integer", "null"] }
+        publishedAt: { type: ["string", "null"] }
+        # Inert provenance placeholders reserved for a LATER wave's content
+        # migration. Nothing in Wave 1 writes them.
+        migrationSourceTable: { type: ["string", "null"] }
+        migrationSourceId: { type: ["integer", "null"] }
+        seoTitle: { type: ["string", "null"] }
+        seoDescription: { type: ["string", "null"] }
+        ogImageUrl: { type: ["string", "null"] }
+        createdAt: { type: string }
+        updatedAt: { type: string }
+        updatedByAdminId: { type: ["integer", "null"] }
+
+    EditorialPostDetail:
+      type: object
+      required: [post, topics, recommendations]
+      properties:
+        post: { $ref: "#/components/schemas/EditorialPost" }
+        topics:
+          type: array
+          items: { $ref: "#/components/schemas/EditorialTopic" }
+        recommendations:
+          type: array
+          items: { $ref: "#/components/schemas/EditorialRecommendation" }
+
+    EditorialPostListResponse:
+      type: object
+      required: [items, page, limit, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/EditorialPost" }
+        page: { type: integer }
+        limit: { type: integer }
+        total: { type: integer }
+
+    CreateEditorialPostBody:
+      type: object
+      description: Always creates a DRAFT. Status is not accepted here — use the publish/archive/restore endpoints.
+      required: [channel, slug, title, body]
+      properties:
+        channel: { type: string, enum: [news, experience] }
+        slug: { type: string, minLength: 1, maxLength: 200 }
+        title: { type: string, minLength: 1, maxLength: 300 }
+        deck: { type: ["string", "null"] }
+        contextLabel: { type: ["string", "null"] }
+        body: { $ref: "#/components/schemas/EditorialBody" }
+        featureImageUrl: { type: ["string", "null"] }
+        featureImageAlt: { type: ["string", "null"] }
+        authorId: { type: ["integer", "null"] }
+        readingTimeOverrideMinutes: { type: ["integer", "null"] }
+        seoTitle: { type: ["string", "null"] }
+        seoDescription: { type: ["string", "null"] }
+        ogImageUrl: { type: ["string", "null"] }
+
+    UpdateEditorialPostBody:
+      type: object
+      description: Partial update. Channel and status are immutable here — status changes go through publish/archive/restore.
+      properties:
+        slug: { type: string, minLength: 1, maxLength: 200 }
+        title: { type: string, minLength: 1, maxLength: 300 }
+        deck: { type: ["string", "null"] }
+        contextLabel: { type: ["string", "null"] }
+        body: { $ref: "#/components/schemas/EditorialBody" }
+        featureImageUrl: { type: ["string", "null"] }
+        featureImageAlt: { type: ["string", "null"] }
+        authorId: { type: ["integer", "null"] }
+        readingTimeOverrideMinutes: { type: ["integer", "null"] }
+        seoTitle: { type: ["string", "null"] }
+        seoDescription: { type: ["string", "null"] }
+        ogImageUrl: { type: ["string", "null"] }
+
+    ReplaceEditorialPostTopicsBody:
+      type: object
+      required: [topicIds]
+      properties:
+        topicIds:
+          type: array
+          maxItems: 50
+          items: { type: integer }
+
+    EditorialRecommendation:
+      type: object
+      required: [targetPostId, position, targetTitle, targetStatus, targetSlug]
+      properties:
+        targetPostId: { type: integer }
+        position: { type: integer }
+        targetTitle: { type: string }
+        targetSlug: { type: string }
+        targetStatus: { type: string, enum: [draft, published, archived] }
+
+    ReplaceEditorialPostRecommendationsBody:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 20
+          items:
+            type: object
+            required: [targetPostId]
+            properties:
+              targetPostId: { type: integer }
+              position: { type: integer, minimum: 0 }
+
+    EditorialPlacementEntry:
+      type: object
+      required: [id, key, channel, postId, position, startAt, endAt, postTitle, postStatus]
+      properties:
+        id: { type: integer }
+        key: { type: string }
+        channel: { type: string, enum: [news, experience] }
+        postId: { type: integer }
+        position: { type: integer }
+        startAt: { type: ["string", "null"] }
+        endAt: { type: ["string", "null"] }
+        postTitle: { type: string }
+        postStatus: { type: string, enum: [draft, published, archived] }
+
+    ReplaceEditorialPlacementBody:
+      type: object
+      required: [channel, items]
+      properties:
+        channel: { type: string, enum: [news, experience] }
+        items:
+          type: array
+          maxItems: 50
+          items:
+            type: object
+            required: [postId]
+            properties:
+              postId: { type: integer }
+              position: { type: integer, minimum: 0 }
+              startAt: { type: ["string", "null"] }
+              endAt: { type: ["string", "null"] }
+
+    EditorialRevisionSummary:
+      type: object
+      required: [id, postId, revisionNumber, eventType, createdAt, createdByAdminId]
+      properties:
+        id: { type: integer }
+        postId: { type: integer }
+        revisionNumber: { type: integer }
+        eventType:
+          type: string
+          enum: [published_edit, restore, author_change, topics_change]
+        createdAt: { type: string }
+        createdByAdminId: { type: ["integer", "null"] }
+
+    EditorialRevisionSnapshot:
+      type: object
+      required:
+        [title, deck, contextLabel, body, bodyVersion, featureImageUrl,
+         featureImageAlt, authorId, authorSnapshot, topics, seoTitle,
+         seoDescription, ogImageUrl, status, publishedAt]
+      properties:
+        title: { type: string }
+        deck: { type: ["string", "null"] }
+        contextLabel: { type: ["string", "null"] }
+        body: { $ref: "#/components/schemas/EditorialBody" }
+        bodyVersion: { type: integer }
+        featureImageUrl: { type: ["string", "null"] }
+        featureImageAlt: { type: ["string", "null"] }
+        authorId: { type: ["integer", "null"] }
+        authorSnapshot:
+          oneOf:
+            - { $ref: "#/components/schemas/EditorialAuthorSnapshot" }
+            - { type: "null" }
+        topics:
+          type: array
+          items: { type: integer }
+        seoTitle: { type: ["string", "null"] }
+        seoDescription: { type: ["string", "null"] }
+        ogImageUrl: { type: ["string", "null"] }
+        status: { type: string, enum: [draft, published, archived] }
+        publishedAt: { type: ["string", "null"] }
+
+    EditorialRevision:
+      type: object
+      required: [id, postId, revisionNumber, eventType, snapshot, createdAt, createdByAdminId]
+      properties:
+        id: { type: integer }
+        postId: { type: integer }
+        revisionNumber: { type: integer }
+        eventType:
+          type: string
+          enum: [published_edit, restore, author_change, topics_change]
+        snapshot: { $ref: "#/components/schemas/EditorialRevisionSnapshot" }
+        createdAt: { type: string }
+        createdByAdminId: { type: ["integer", "null"] }
