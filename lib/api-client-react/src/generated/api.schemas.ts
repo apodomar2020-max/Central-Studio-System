@@ -3228,6 +3228,849 @@ export interface Offer {
   createdAt: string;
 }
 
+export type EditorialParagraphBlockType =
+  (typeof EditorialParagraphBlockType)[keyof typeof EditorialParagraphBlockType];
+
+export const EditorialParagraphBlockType = {
+  paragraph: "paragraph",
+} as const;
+
+export interface EditorialParagraphBlock {
+  type: EditorialParagraphBlockType;
+  /**
+   * @minLength 1
+   * @maxLength 5000
+   */
+  text: string;
+}
+
+export type EditorialHeadingBlockType =
+  (typeof EditorialHeadingBlockType)[keyof typeof EditorialHeadingBlockType];
+
+export const EditorialHeadingBlockType = {
+  heading: "heading",
+} as const;
+
+export type EditorialHeadingBlockLevel =
+  (typeof EditorialHeadingBlockLevel)[keyof typeof EditorialHeadingBlockLevel];
+
+export const EditorialHeadingBlockLevel = {
+  NUMBER_2: 2,
+  NUMBER_3: 3,
+} as const;
+
+export interface EditorialHeadingBlock {
+  type: EditorialHeadingBlockType;
+  level: EditorialHeadingBlockLevel;
+  /**
+   * @minLength 1
+   * @maxLength 150
+   */
+  text: string;
+}
+
+export type EditorialImageBlockType =
+  (typeof EditorialImageBlockType)[keyof typeof EditorialImageBlockType];
+
+export const EditorialImageBlockType = {
+  image: "image",
+} as const;
+
+export interface EditorialImageBlock {
+  type: EditorialImageBlockType;
+  /** @minLength 1 */
+  url: string;
+  /**
+   * @minLength 1
+   * @maxLength 200
+   */
+  alt: string;
+  /** @maxLength 300 */
+  caption?: string;
+}
+
+export type EditorialBulletedListBlockType =
+  (typeof EditorialBulletedListBlockType)[keyof typeof EditorialBulletedListBlockType];
+
+export const EditorialBulletedListBlockType = {
+  "bulleted-list": "bulleted-list",
+} as const;
+
+export interface EditorialBulletedListBlock {
+  type: EditorialBulletedListBlockType;
+  /**
+   * @minItems 2
+   * @maxItems 30
+   * @items.minLength 1
+   * @items.maxLength 300
+   */
+  items: string[];
+}
+
+export type EditorialBodyBlock =
+  | EditorialParagraphBlock
+  | EditorialHeadingBlock
+  | EditorialImageBlock
+  | EditorialBulletedListBlock;
+
+export interface EditorialBody {
+  /** @maxItems 250 */
+  blocks: EditorialBodyBlock[];
+}
+
+export interface EditorialAuthorSnapshot {
+  name: string;
+  role: string;
+  /** @nullable */
+  avatarUrl: string | null;
+  /** @nullable */
+  biography: string | null;
+}
+
+export type EditorialLanguageDirection =
+  (typeof EditorialLanguageDirection)[keyof typeof EditorialLanguageDirection];
+
+export const EditorialLanguageDirection = {
+  ltr: "ltr",
+  rtl: "rtl",
+} as const;
+
+export interface EditorialLanguage {
+  id: number;
+  code: string;
+  name: string;
+  nativeName: string;
+  direction: EditorialLanguageDirection;
+  isActive: boolean;
+  isDefault: boolean;
+  displayOrder: number;
+  createdAt: string;
+  updatedAt: string;
+  /** @nullable */
+  updatedByAdminId: number | null;
+}
+
+export type EditorialLanguageWithUsageTranslationCounts = {
+  draft: number;
+  published: number;
+  archived: number;
+};
+
+export type EditorialLanguageWithUsage = EditorialLanguage & {
+  translationCounts: EditorialLanguageWithUsageTranslationCounts;
+};
+
+export type CreateEditorialLanguageBodyDirection =
+  (typeof CreateEditorialLanguageBodyDirection)[keyof typeof CreateEditorialLanguageBodyDirection];
+
+export const CreateEditorialLanguageBodyDirection = {
+  ltr: "ltr",
+  rtl: "rtl",
+} as const;
+
+export interface CreateEditorialLanguageBody {
+  /**
+   * @minLength 2
+   * @maxLength 15
+   */
+  code: string;
+  /**
+   * @minLength 1
+   * @maxLength 100
+   */
+  name: string;
+  /**
+   * @minLength 1
+   * @maxLength 100
+   */
+  nativeName: string;
+  direction: CreateEditorialLanguageBodyDirection;
+  /** @minimum 0 */
+  displayOrder?: number;
+  isActive?: boolean;
+  isDefault?: boolean;
+}
+
+export type UpdateEditorialLanguageBodyDirection =
+  (typeof UpdateEditorialLanguageBodyDirection)[keyof typeof UpdateEditorialLanguageBodyDirection];
+
+export const UpdateEditorialLanguageBodyDirection = {
+  ltr: "ltr",
+  rtl: "rtl",
+} as const;
+
+/**
+ * Presentation only. `code` is immutable (every stored translation is keyed to it), and isActive / isDefault are changed through /activate, /deactivate and /default so their invariants and audit events cannot be bypassed by a generic patch.
+ */
+export interface UpdateEditorialLanguageBody {
+  /**
+   * @minLength 1
+   * @maxLength 100
+   */
+  name?: string;
+  /**
+   * @minLength 1
+   * @maxLength 100
+   */
+  nativeName?: string;
+  direction?: UpdateEditorialLanguageBodyDirection;
+  /** @minimum 0 */
+  displayOrder?: number;
+}
+
+export interface EditorialWebsiteLinks {
+  id: number;
+  /** @nullable */
+  googlePlayUrl: string | null;
+  /** @nullable */
+  appStoreUrl: string | null;
+  /** @nullable */
+  updatedAt: string | null;
+  /** @nullable */
+  updatedByAdminId: number | null;
+}
+
+/**
+ * Partial. An omitted field is left alone; an explicit null or "" clears it. Non-empty values must be absolute HTTPS URLs.
+ */
+export interface UpdateEditorialWebsiteLinksBody {
+  /**
+   * @maxLength 2000
+   * @nullable
+   */
+  googlePlayUrl?: string | null;
+  /**
+   * @maxLength 2000
+   * @nullable
+   */
+  appStoreUrl?: string | null;
+}
+
+export type EditorialAuthorChannel =
+  (typeof EditorialAuthorChannel)[keyof typeof EditorialAuthorChannel];
+
+export const EditorialAuthorChannel = {
+  news: "news",
+  experience: "experience",
+} as const;
+
+export type EditorialAuthorStatus =
+  (typeof EditorialAuthorStatus)[keyof typeof EditorialAuthorStatus];
+
+export const EditorialAuthorStatus = {
+  active: "active",
+  archived: "archived",
+} as const;
+
+export interface EditorialAuthor {
+  id: number;
+  channel: EditorialAuthorChannel;
+  publicName: string;
+  role: string;
+  /** @nullable */
+  biography: string | null;
+  /** @nullable */
+  avatarUrl: string | null;
+  /** @nullable */
+  systemUserId: number | null;
+  status: EditorialAuthorStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type CreateEditorialAuthorBodyChannel =
+  (typeof CreateEditorialAuthorBodyChannel)[keyof typeof CreateEditorialAuthorBodyChannel];
+
+export const CreateEditorialAuthorBodyChannel = {
+  news: "news",
+  experience: "experience",
+} as const;
+
+export type CreateEditorialAuthorBodyStatus =
+  (typeof CreateEditorialAuthorBodyStatus)[keyof typeof CreateEditorialAuthorBodyStatus];
+
+export const CreateEditorialAuthorBodyStatus = {
+  active: "active",
+  archived: "archived",
+} as const;
+
+export interface CreateEditorialAuthorBody {
+  channel: CreateEditorialAuthorBodyChannel;
+  /**
+   * @minLength 1
+   * @maxLength 200
+   */
+  publicName: string;
+  /**
+   * @minLength 1
+   * @maxLength 200
+   */
+  role: string;
+  /** @nullable */
+  biography?: string | null;
+  /** @nullable */
+  avatarUrl?: string | null;
+  /** @nullable */
+  systemUserId?: number | null;
+  status?: CreateEditorialAuthorBodyStatus;
+}
+
+export type UpdateEditorialAuthorBodyStatus =
+  (typeof UpdateEditorialAuthorBodyStatus)[keyof typeof UpdateEditorialAuthorBodyStatus];
+
+export const UpdateEditorialAuthorBodyStatus = {
+  active: "active",
+  archived: "archived",
+} as const;
+
+/**
+ * Partial update. `channel` is deliberately absent — changing it would break the author-channel-match invariant for every post already carrying the byline.
+ */
+export interface UpdateEditorialAuthorBody {
+  /**
+   * @minLength 1
+   * @maxLength 200
+   */
+  publicName?: string;
+  /**
+   * @minLength 1
+   * @maxLength 200
+   */
+  role?: string;
+  /** @nullable */
+  biography?: string | null;
+  /** @nullable */
+  avatarUrl?: string | null;
+  /** @nullable */
+  systemUserId?: number | null;
+  status?: UpdateEditorialAuthorBodyStatus;
+}
+
+export type EditorialTopicChannel =
+  (typeof EditorialTopicChannel)[keyof typeof EditorialTopicChannel];
+
+export const EditorialTopicChannel = {
+  news: "news",
+  experience: "experience",
+} as const;
+
+export type EditorialTopicStatus =
+  (typeof EditorialTopicStatus)[keyof typeof EditorialTopicStatus];
+
+export const EditorialTopicStatus = {
+  active: "active",
+  archived: "archived",
+} as const;
+
+export interface EditorialTopic {
+  id: number;
+  channel: EditorialTopicChannel;
+  name: string;
+  slug: string;
+  status: EditorialTopicStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type CreateEditorialTopicBodyChannel =
+  (typeof CreateEditorialTopicBodyChannel)[keyof typeof CreateEditorialTopicBodyChannel];
+
+export const CreateEditorialTopicBodyChannel = {
+  news: "news",
+  experience: "experience",
+} as const;
+
+export type CreateEditorialTopicBodyStatus =
+  (typeof CreateEditorialTopicBodyStatus)[keyof typeof CreateEditorialTopicBodyStatus];
+
+export const CreateEditorialTopicBodyStatus = {
+  active: "active",
+  archived: "archived",
+} as const;
+
+export interface CreateEditorialTopicBody {
+  channel: CreateEditorialTopicBodyChannel;
+  /**
+   * @minLength 1
+   * @maxLength 120
+   */
+  name: string;
+  /**
+   * @minLength 1
+   * @maxLength 120
+   */
+  slug: string;
+  status?: CreateEditorialTopicBodyStatus;
+}
+
+export type UpdateEditorialTopicBodyStatus =
+  (typeof UpdateEditorialTopicBodyStatus)[keyof typeof UpdateEditorialTopicBodyStatus];
+
+export const UpdateEditorialTopicBodyStatus = {
+  active: "active",
+  archived: "archived",
+} as const;
+
+/**
+ * Partial update. Channel is immutable.
+ */
+export interface UpdateEditorialTopicBody {
+  /**
+   * @minLength 1
+   * @maxLength 120
+   */
+  name?: string;
+  /**
+   * @minLength 1
+   * @maxLength 120
+   */
+  slug?: string;
+  status?: UpdateEditorialTopicBodyStatus;
+}
+
+export type EditorialPostChannel =
+  (typeof EditorialPostChannel)[keyof typeof EditorialPostChannel];
+
+export const EditorialPostChannel = {
+  news: "news",
+  experience: "experience",
+} as const;
+
+/**
+ * The shared spine of a logical post. Carries NO title, slug, body, status or publishedAt — those are per-translation. `featureImageUrl` is shared by every language; its ALT TEXT is per-translation, because alt text is prose.
+ */
+export interface EditorialPost {
+  id: number;
+  channel: EditorialPostChannel;
+  /** @nullable */
+  authorId: number | null;
+  /** @nullable */
+  featureImageUrl: string | null;
+  /** @nullable */
+  migrationSourceTable: string | null;
+  /** @nullable */
+  migrationSourceId: number | null;
+  createdAt: string;
+  updatedAt: string;
+  /** @nullable */
+  updatedByAdminId: number | null;
+}
+
+/**
+ * Partial update of the SHARED fields only. Channel is immutable. Prose belongs to translations. A feature-image change deliberately does NOT clear any translation's localized alt text.
+ */
+export interface UpdateEditorialPostSharedBody {
+  /** @nullable */
+  authorId?: number | null;
+  /** @nullable */
+  featureImageUrl?: string | null;
+}
+
+export type EditorialPostTranslationLanguageDirection =
+  (typeof EditorialPostTranslationLanguageDirection)[keyof typeof EditorialPostTranslationLanguageDirection];
+
+export const EditorialPostTranslationLanguageDirection = {
+  ltr: "ltr",
+  rtl: "rtl",
+} as const;
+
+export type EditorialPostTranslationChannel =
+  (typeof EditorialPostTranslationChannel)[keyof typeof EditorialPostTranslationChannel];
+
+export const EditorialPostTranslationChannel = {
+  news: "news",
+  experience: "experience",
+} as const;
+
+export type EditorialPostTranslationStatus =
+  (typeof EditorialPostTranslationStatus)[keyof typeof EditorialPostTranslationStatus];
+
+export const EditorialPostTranslationStatus = {
+  draft: "draft",
+  published: "published",
+  archived: "archived",
+} as const;
+
+/**
+ * One language's rendering of a post, with its own independent lifecycle.
+ */
+export interface EditorialPostTranslation {
+  id: number;
+  postId: number;
+  languageId: number;
+  languageCode: string;
+  languageName?: string;
+  languageDirection?: EditorialPostTranslationLanguageDirection;
+  languageIsActive?: boolean;
+  channel: EditorialPostTranslationChannel;
+  title: string;
+  slug: string;
+  /** @nullable */
+  deck: string | null;
+  /** @nullable */
+  contextLabel: string | null;
+  /** @nullable */
+  featureImageAlt: string | null;
+  body: EditorialBody;
+  bodyVersion: number;
+  status: EditorialPostTranslationStatus;
+  /** @nullable */
+  publishedAt: string | null;
+  /** @nullable */
+  readingTimeOverrideMinutes: number | null;
+  /** @nullable */
+  seoTitle: string | null;
+  /** @nullable */
+  seoDescription: string | null;
+  /** @nullable */
+  ogImageUrl: string | null;
+  authorSnapshot: EditorialAuthorSnapshot | null;
+  createdAt: string;
+  updatedAt: string;
+  /** @nullable */
+  updatedByAdminId: number | null;
+}
+
+export type EditorialTranslationSummaryLanguageDirection =
+  (typeof EditorialTranslationSummaryLanguageDirection)[keyof typeof EditorialTranslationSummaryLanguageDirection];
+
+export const EditorialTranslationSummaryLanguageDirection = {
+  ltr: "ltr",
+  rtl: "rtl",
+} as const;
+
+export type EditorialTranslationSummaryStatus =
+  (typeof EditorialTranslationSummaryStatus)[keyof typeof EditorialTranslationSummaryStatus];
+
+export const EditorialTranslationSummaryStatus = {
+  draft: "draft",
+  published: "published",
+  archived: "archived",
+} as const;
+
+/**
+ * Enough of a translation to render a post list row without its body.
+ */
+export interface EditorialTranslationSummary {
+  id: number;
+  languageId: number;
+  languageCode: string;
+  languageDirection?: EditorialTranslationSummaryLanguageDirection;
+  title: string;
+  slug: string;
+  status: EditorialTranslationSummaryStatus;
+  /** @nullable */
+  publishedAt: string | null;
+  updatedAt: string;
+}
+
+/**
+ * Always creates a DRAFT. Status is not accepted here — use the publish/archive/restore endpoints. `slug` is optional: omit it to have one generated from the title (Unicode-safe, deterministically suffixed on collision); supply it to choose one, in which case a collision is a 409 rather than a silent rename.
+ */
+export interface CreateEditorialTranslationBody {
+  /**
+   * @minLength 2
+   * @maxLength 15
+   */
+  languageCode: string;
+  /**
+   * @minLength 1
+   * @maxLength 300
+   */
+  title: string;
+  /**
+   * @maxLength 120
+   * @nullable
+   */
+  slug?: string | null;
+  /** @nullable */
+  deck?: string | null;
+  /** @nullable */
+  contextLabel?: string | null;
+  /** @nullable */
+  featureImageAlt?: string | null;
+  body: EditorialBody;
+  /** @nullable */
+  readingTimeOverrideMinutes?: number | null;
+  /** @nullable */
+  seoTitle?: string | null;
+  /** @nullable */
+  seoDescription?: string | null;
+  /** @nullable */
+  ogImageUrl?: string | null;
+}
+
+/**
+ * Partial update of ONE language's content. Status changes go through publish/archive/restore. The slug is editable only before this translation's first publish. Nothing here can reach another translation.
+ */
+export interface UpdateEditorialTranslationBody {
+  /**
+   * @minLength 1
+   * @maxLength 300
+   */
+  title?: string;
+  /**
+   * @minLength 1
+   * @maxLength 120
+   */
+  slug?: string;
+  /** @nullable */
+  deck?: string | null;
+  /** @nullable */
+  contextLabel?: string | null;
+  /** @nullable */
+  featureImageAlt?: string | null;
+  body?: EditorialBody;
+  /** @nullable */
+  readingTimeOverrideMinutes?: number | null;
+  /** @nullable */
+  seoTitle?: string | null;
+  /** @nullable */
+  seoDescription?: string | null;
+  /** @nullable */
+  ogImageUrl?: string | null;
+}
+
+export interface EditorialPostWithTranslation {
+  post: EditorialPost;
+  translation: EditorialPostTranslation | null;
+}
+
+/**
+ * A post-to-post pointer. `targetTitle` / `targetSlug` are rendered from the target's DEFAULT-language translation (falling back to any translation) purely so the Admin list is readable; the relation itself is language-agnostic.
+ */
+export interface EditorialRecommendation {
+  targetPostId: number;
+  position: number;
+  targetTitle: string;
+  targetSlug: string;
+  /** @nullable */
+  targetLanguageCode?: string | null;
+}
+
+export interface EditorialPostDetail {
+  post: EditorialPost;
+  translations: EditorialPostTranslation[];
+  topics: EditorialTopic[];
+  recommendations: EditorialRecommendation[];
+}
+
+export interface EditorialPostListItem {
+  post: EditorialPost;
+  translations: EditorialTranslationSummary[];
+}
+
+export interface EditorialPostListResponse {
+  items: EditorialPostListItem[];
+  page: number;
+  limit: number;
+  total: number;
+}
+
+export type CreateEditorialPostBodyChannel =
+  (typeof CreateEditorialPostBodyChannel)[keyof typeof CreateEditorialPostBodyChannel];
+
+export const CreateEditorialPostBodyChannel = {
+  news: "news",
+  experience: "experience",
+} as const;
+
+/**
+ * Creates the shared post spine, and optionally its first translation in the same transaction. Any translation is always a DRAFT. The author must belong to the post's channel.
+ */
+export interface CreateEditorialPostBody {
+  channel: CreateEditorialPostBodyChannel;
+  /** @nullable */
+  authorId?: number | null;
+  /** @nullable */
+  featureImageUrl?: string | null;
+  translation?: CreateEditorialTranslationBody;
+}
+
+export interface ReplaceEditorialPostTopicsBody {
+  /** @maxItems 50 */
+  topicIds: number[];
+}
+
+export type ReplaceEditorialPostRecommendationsBodyItemsItem = {
+  targetPostId: number;
+  /** @minimum 0 */
+  position?: number;
+};
+
+export interface ReplaceEditorialPostRecommendationsBody {
+  /** @maxItems 20 */
+  items: ReplaceEditorialPostRecommendationsBodyItemsItem[];
+}
+
+export type EditorialPlacementEntryChannel =
+  (typeof EditorialPlacementEntryChannel)[keyof typeof EditorialPlacementEntryChannel];
+
+export const EditorialPlacementEntryChannel = {
+  news: "news",
+  experience: "experience",
+} as const;
+
+export interface EditorialPlacementEntry {
+  id: number;
+  key: string;
+  channel: EditorialPlacementEntryChannel;
+  postId: number;
+  position: number;
+  /** @nullable */
+  startAt: string | null;
+  /** @nullable */
+  endAt: string | null;
+  postTitle: string;
+  /** @nullable */
+  postLanguageCode?: string | null;
+}
+
+export type ReplaceEditorialPlacementBodyChannel =
+  (typeof ReplaceEditorialPlacementBodyChannel)[keyof typeof ReplaceEditorialPlacementBodyChannel];
+
+export const ReplaceEditorialPlacementBodyChannel = {
+  news: "news",
+  experience: "experience",
+} as const;
+
+export type ReplaceEditorialPlacementBodyItemsItem = {
+  postId: number;
+  /** @minimum 0 */
+  position?: number;
+  /** @nullable */
+  startAt?: string | null;
+  /** @nullable */
+  endAt?: string | null;
+};
+
+export interface ReplaceEditorialPlacementBody {
+  channel: ReplaceEditorialPlacementBodyChannel;
+  /** @maxItems 50 */
+  items: ReplaceEditorialPlacementBodyItemsItem[];
+}
+
+export type EditorialRevisionSummaryEventType =
+  (typeof EditorialRevisionSummaryEventType)[keyof typeof EditorialRevisionSummaryEventType];
+
+export const EditorialRevisionSummaryEventType = {
+  published_edit: "published_edit",
+  restore: "restore",
+  translation_status_change: "translation_status_change",
+  author_change: "author_change",
+  topics_change: "topics_change",
+  shared_field_change: "shared_field_change",
+} as const;
+
+export interface EditorialRevisionSummary {
+  id: number;
+  postId: number;
+  /** @nullable */
+  translationId: number | null;
+  /** @nullable */
+  languageCode?: string | null;
+  revisionNumber: number;
+  eventType: EditorialRevisionSummaryEventType;
+  createdAt: string;
+  /** @nullable */
+  createdByAdminId: number | null;
+}
+
+export type EditorialTranslationRevisionSnapshotScope =
+  (typeof EditorialTranslationRevisionSnapshotScope)[keyof typeof EditorialTranslationRevisionSnapshotScope];
+
+export const EditorialTranslationRevisionSnapshotScope = {
+  translation: "translation",
+} as const;
+
+export type EditorialTranslationRevisionSnapshotStatus =
+  (typeof EditorialTranslationRevisionSnapshotStatus)[keyof typeof EditorialTranslationRevisionSnapshotStatus];
+
+export const EditorialTranslationRevisionSnapshotStatus = {
+  draft: "draft",
+  published: "published",
+  archived: "archived",
+} as const;
+
+/**
+ * The prior state of ONE translation. Holds nothing belonging to a sibling translation, which is why restoring it cannot touch one.
+ */
+export interface EditorialTranslationRevisionSnapshot {
+  scope: EditorialTranslationRevisionSnapshotScope;
+  languageId: number;
+  languageCode: string;
+  title: string;
+  slug: string;
+  /** @nullable */
+  deck: string | null;
+  /** @nullable */
+  contextLabel: string | null;
+  body: EditorialBody;
+  bodyVersion: number;
+  /** @nullable */
+  featureImageAlt: string | null;
+  authorSnapshot: EditorialAuthorSnapshot | null;
+  /** @nullable */
+  readingTimeOverrideMinutes: number | null;
+  /** @nullable */
+  seoTitle: string | null;
+  /** @nullable */
+  seoDescription: string | null;
+  /** @nullable */
+  ogImageUrl: string | null;
+  status: EditorialTranslationRevisionSnapshotStatus;
+  /** @nullable */
+  publishedAt: string | null;
+}
+
+export type EditorialSharedRevisionSnapshotScope =
+  (typeof EditorialSharedRevisionSnapshotScope)[keyof typeof EditorialSharedRevisionSnapshotScope];
+
+export const EditorialSharedRevisionSnapshotScope = {
+  shared: "shared",
+} as const;
+
+/**
+ * The prior state of the SHARED post spine. Deliberately holds no prose, so restoring or reading it cannot affect any language's content.
+ */
+export interface EditorialSharedRevisionSnapshot {
+  scope: EditorialSharedRevisionSnapshotScope;
+  /** @nullable */
+  authorId: number | null;
+  /** @nullable */
+  featureImageUrl: string | null;
+  topics: number[];
+}
+
+export type EditorialRevisionSnapshot =
+  | EditorialTranslationRevisionSnapshot
+  | EditorialSharedRevisionSnapshot;
+
+export type EditorialRevisionEventType =
+  (typeof EditorialRevisionEventType)[keyof typeof EditorialRevisionEventType];
+
+export const EditorialRevisionEventType = {
+  published_edit: "published_edit",
+  restore: "restore",
+  translation_status_change: "translation_status_change",
+  author_change: "author_change",
+  topics_change: "topics_change",
+  shared_field_change: "shared_field_change",
+} as const;
+
+export interface EditorialRevision {
+  id: number;
+  postId: number;
+  /** @nullable */
+  translationId: number | null;
+  revisionNumber: number;
+  eventType: EditorialRevisionEventType;
+  snapshot: EditorialRevisionSnapshot;
+  createdAt: string;
+  /** @nullable */
+  createdByAdminId: number | null;
+}
+
 export type UpdateAdminClassCapacitySettingsBody = {
   classCapacityEnabled: boolean;
   confirmOverCapacity?: boolean;
@@ -3441,4 +4284,97 @@ export type GetMyAttendanceParams = {
    * @maximum 100
    */
   limit?: number;
+};
+
+export type ListEditorialPostsParams = {
+  channel?: ListEditorialPostsChannel;
+  translationStatus?: ListEditorialPostsTranslationStatus;
+  languageCode?: string;
+  authorId?: number;
+  topicId?: number;
+  search?: string;
+  /**
+   * @minimum 1
+   */
+  page?: number;
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+};
+
+export type ListEditorialPostsChannel =
+  (typeof ListEditorialPostsChannel)[keyof typeof ListEditorialPostsChannel];
+
+export const ListEditorialPostsChannel = {
+  news: "news",
+  experience: "experience",
+} as const;
+
+export type ListEditorialPostsTranslationStatus =
+  (typeof ListEditorialPostsTranslationStatus)[keyof typeof ListEditorialPostsTranslationStatus];
+
+export const ListEditorialPostsTranslationStatus = {
+  draft: "draft",
+  published: "published",
+  archived: "archived",
+} as const;
+
+export type ListEditorialPostRevisionsParams = {
+  languageCode?: string;
+};
+
+export type ListEditorialTopicsParams = {
+  channel?: ListEditorialTopicsChannel;
+  status?: ListEditorialTopicsStatus;
+};
+
+export type ListEditorialTopicsChannel =
+  (typeof ListEditorialTopicsChannel)[keyof typeof ListEditorialTopicsChannel];
+
+export const ListEditorialTopicsChannel = {
+  news: "news",
+  experience: "experience",
+} as const;
+
+export type ListEditorialTopicsStatus =
+  (typeof ListEditorialTopicsStatus)[keyof typeof ListEditorialTopicsStatus];
+
+export const ListEditorialTopicsStatus = {
+  active: "active",
+  archived: "archived",
+} as const;
+
+export type ListEditorialAuthorsParams = {
+  channel?: ListEditorialAuthorsChannel;
+  status?: ListEditorialAuthorsStatus;
+};
+
+export type ListEditorialAuthorsChannel =
+  (typeof ListEditorialAuthorsChannel)[keyof typeof ListEditorialAuthorsChannel];
+
+export const ListEditorialAuthorsChannel = {
+  news: "news",
+  experience: "experience",
+} as const;
+
+export type ListEditorialAuthorsStatus =
+  (typeof ListEditorialAuthorsStatus)[keyof typeof ListEditorialAuthorsStatus];
+
+export const ListEditorialAuthorsStatus = {
+  active: "active",
+  archived: "archived",
+} as const;
+
+export type GetEditorialPlacementParams = {
+  key: string;
+};
+
+export type ReplaceEditorialPlacementParams = {
+  key: string;
+};
+
+export type ListEditorialLanguagesParams = {
+  activeOnly?: boolean;
 };

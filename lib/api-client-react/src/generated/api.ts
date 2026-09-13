@@ -44,6 +44,11 @@ import type {
   CreateCampaignBody,
   CreateClassBody,
   CreateDanceTypeBody,
+  CreateEditorialAuthorBody,
+  CreateEditorialLanguageBody,
+  CreateEditorialPostBody,
+  CreateEditorialTopicBody,
+  CreateEditorialTranslationBody,
   CreateHeroItemBody,
   CreateInstructorBody,
   CreateNotificationBody,
@@ -59,11 +64,26 @@ import type {
   DashboardAnalytics,
   DashboardSummary,
   DeactivateStudentBody,
+  EditorialAuthor,
+  EditorialLanguage,
+  EditorialLanguageWithUsage,
+  EditorialPlacementEntry,
+  EditorialPost,
+  EditorialPostDetail,
+  EditorialPostListResponse,
+  EditorialPostTranslation,
+  EditorialPostWithTranslation,
+  EditorialRecommendation,
+  EditorialRevision,
+  EditorialRevisionSummary,
+  EditorialTopic,
+  EditorialWebsiteLinks,
   ErrorResponse,
   GetAdminCalendarOccurrenceRosterParams,
   GetAdminCalendarResourceViewParams,
   GetAttendanceStatsParams,
   GetBookingParticipantCandidatesParams,
+  GetEditorialPlacementParams,
   GetMyAttendanceParams,
   GetMyCreditsParams,
   HealthStatus,
@@ -76,6 +96,11 @@ import type {
   ListBookingsResponse,
   ListCreditTransactionsParams,
   ListCreditTransactionsResponse,
+  ListEditorialAuthorsParams,
+  ListEditorialLanguagesParams,
+  ListEditorialPostRevisionsParams,
+  ListEditorialPostsParams,
+  ListEditorialTopicsParams,
   ListPackageOrdersParams,
   ListRoomReservationsParams,
   ListSchedulesParams,
@@ -101,6 +126,10 @@ import type {
   PublicWebsitePerformanceFeatured,
   PublicWebsitePerformanceListItem,
   RecordStudentDeletionManualResolutionRequest,
+  ReplaceEditorialPlacementBody,
+  ReplaceEditorialPlacementParams,
+  ReplaceEditorialPostRecommendationsBody,
+  ReplaceEditorialPostTopicsBody,
   Room,
   RoomListResponse,
   RoomReservation,
@@ -124,6 +153,12 @@ import type {
   UpdateCampaignBody,
   UpdateClassBody,
   UpdateDanceTypeBody,
+  UpdateEditorialAuthorBody,
+  UpdateEditorialLanguageBody,
+  UpdateEditorialPostSharedBody,
+  UpdateEditorialTopicBody,
+  UpdateEditorialTranslationBody,
+  UpdateEditorialWebsiteLinksBody,
   UpdateHeroItemBody,
   UpdateInstructorBody,
   UpdateNotificationBody,
@@ -10848,3 +10883,3498 @@ export function useGetMyAttendance<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+export const getListEditorialPostsUrl = (params?: ListEditorialPostsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/admin/editorial/posts?${stringifiedParams}`
+    : `/api/admin/editorial/posts`;
+};
+
+/**
+ * @summary List editorial posts with their translation summaries (filterable, paginated) — requires website.posts:view
+ */
+export const listEditorialPosts = async (
+  params?: ListEditorialPostsParams,
+  options?: RequestInit,
+): Promise<EditorialPostListResponse> => {
+  return customFetch<EditorialPostListResponse>(
+    getListEditorialPostsUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListEditorialPostsQueryKey = (
+  params?: ListEditorialPostsParams,
+) => {
+  return [`/api/admin/editorial/posts`, ...(params ? [params] : [])] as const;
+};
+
+export const getListEditorialPostsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listEditorialPosts>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params?: ListEditorialPostsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listEditorialPosts>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListEditorialPostsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listEditorialPosts>>
+  > = ({ signal }) => listEditorialPosts(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listEditorialPosts>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListEditorialPostsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listEditorialPosts>>
+>;
+export type ListEditorialPostsQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary List editorial posts with their translation summaries (filterable, paginated) — requires website.posts:view
+ */
+
+export function useListEditorialPosts<
+  TData = Awaited<ReturnType<typeof listEditorialPosts>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params?: ListEditorialPostsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listEditorialPosts>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListEditorialPostsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getCreateEditorialPostUrl = () => {
+  return `/api/admin/editorial/posts`;
+};
+
+/**
+ * @summary Create a post (shared spine), optionally with its first DRAFT translation — requires website.posts:create
+ */
+export const createEditorialPost = async (
+  createEditorialPostBody: CreateEditorialPostBody,
+  options?: RequestInit,
+): Promise<EditorialPostWithTranslation> => {
+  return customFetch<EditorialPostWithTranslation>(
+    getCreateEditorialPostUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(createEditorialPostBody),
+    },
+  );
+};
+
+export const getCreateEditorialPostMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createEditorialPost>>,
+    TError,
+    { data: BodyType<CreateEditorialPostBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createEditorialPost>>,
+  TError,
+  { data: BodyType<CreateEditorialPostBody> },
+  TContext
+> => {
+  const mutationKey = ["createEditorialPost"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createEditorialPost>>,
+    { data: BodyType<CreateEditorialPostBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createEditorialPost(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateEditorialPostMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createEditorialPost>>
+>;
+export type CreateEditorialPostMutationBody = BodyType<CreateEditorialPostBody>;
+export type CreateEditorialPostMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Create a post (shared spine), optionally with its first DRAFT translation — requires website.posts:create
+ */
+export const useCreateEditorialPost = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createEditorialPost>>,
+    TError,
+    { data: BodyType<CreateEditorialPostBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createEditorialPost>>,
+  TError,
+  { data: BodyType<CreateEditorialPostBody> },
+  TContext
+> => {
+  return useMutation(getCreateEditorialPostMutationOptions(options));
+};
+
+export const getGetEditorialPostUrl = (id: number) => {
+  return `/api/admin/editorial/posts/${id}`;
+};
+
+/**
+ * @summary Get one post with every translation, its topics, and its recommendations
+ */
+export const getEditorialPost = async (
+  id: number,
+  options?: RequestInit,
+): Promise<EditorialPostDetail> => {
+  return customFetch<EditorialPostDetail>(getGetEditorialPostUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetEditorialPostQueryKey = (id: number) => {
+  return [`/api/admin/editorial/posts/${id}`] as const;
+};
+
+export const getGetEditorialPostQueryOptions = <
+  TData = Awaited<ReturnType<typeof getEditorialPost>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getEditorialPost>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetEditorialPostQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getEditorialPost>>
+  > = ({ signal }) => getEditorialPost(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getEditorialPost>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetEditorialPostQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getEditorialPost>>
+>;
+export type GetEditorialPostQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Get one post with every translation, its topics, and its recommendations
+ */
+
+export function useGetEditorialPost<
+  TData = Awaited<ReturnType<typeof getEditorialPost>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getEditorialPost>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetEditorialPostQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getUpdateEditorialPostSharedUrl = (id: number) => {
+  return `/api/admin/editorial/posts/${id}`;
+};
+
+/**
+ * @summary Change a post's SHARED fields (byline, feature image URL) — requires website.posts:edit. Channel is immutable. Prose lives on translations, not here. When the post has at least one published translation a shared revision is written in the same transaction.
+ */
+export const updateEditorialPostShared = async (
+  id: number,
+  updateEditorialPostSharedBody: UpdateEditorialPostSharedBody,
+  options?: RequestInit,
+): Promise<EditorialPost> => {
+  return customFetch<EditorialPost>(getUpdateEditorialPostSharedUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateEditorialPostSharedBody),
+  });
+};
+
+export const getUpdateEditorialPostSharedMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateEditorialPostShared>>,
+    TError,
+    { id: number; data: BodyType<UpdateEditorialPostSharedBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateEditorialPostShared>>,
+  TError,
+  { id: number; data: BodyType<UpdateEditorialPostSharedBody> },
+  TContext
+> => {
+  const mutationKey = ["updateEditorialPostShared"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateEditorialPostShared>>,
+    { id: number; data: BodyType<UpdateEditorialPostSharedBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateEditorialPostShared(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateEditorialPostSharedMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateEditorialPostShared>>
+>;
+export type UpdateEditorialPostSharedMutationBody =
+  BodyType<UpdateEditorialPostSharedBody>;
+export type UpdateEditorialPostSharedMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Change a post's SHARED fields (byline, feature image URL) — requires website.posts:edit. Channel is immutable. Prose lives on translations, not here. When the post has at least one published translation a shared revision is written in the same transaction.
+ */
+export const useUpdateEditorialPostShared = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateEditorialPostShared>>,
+    TError,
+    { id: number; data: BodyType<UpdateEditorialPostSharedBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateEditorialPostShared>>,
+  TError,
+  { id: number; data: BodyType<UpdateEditorialPostSharedBody> },
+  TContext
+> => {
+  return useMutation(getUpdateEditorialPostSharedMutationOptions(options));
+};
+
+export const getListEditorialPostTranslationsUrl = (id: number) => {
+  return `/api/admin/editorial/posts/${id}/translations`;
+};
+
+/**
+ * @summary Every translation of this post, in language display order — requires website.posts:view
+ */
+export const listEditorialPostTranslations = async (
+  id: number,
+  options?: RequestInit,
+): Promise<EditorialPostTranslation[]> => {
+  return customFetch<EditorialPostTranslation[]>(
+    getListEditorialPostTranslationsUrl(id),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListEditorialPostTranslationsQueryKey = (id: number) => {
+  return [`/api/admin/editorial/posts/${id}/translations`] as const;
+};
+
+export const getListEditorialPostTranslationsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listEditorialPostTranslations>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listEditorialPostTranslations>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListEditorialPostTranslationsQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listEditorialPostTranslations>>
+  > = ({ signal }) =>
+    listEditorialPostTranslations(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listEditorialPostTranslations>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListEditorialPostTranslationsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listEditorialPostTranslations>>
+>;
+export type ListEditorialPostTranslationsQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Every translation of this post, in language display order — requires website.posts:view
+ */
+
+export function useListEditorialPostTranslations<
+  TData = Awaited<ReturnType<typeof listEditorialPostTranslations>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listEditorialPostTranslations>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListEditorialPostTranslationsQueryOptions(
+    id,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getCreateEditorialPostTranslationUrl = (id: number) => {
+  return `/api/admin/editorial/posts/${id}/translations`;
+};
+
+/**
+ * @summary Add a language to this post — requires website.posts:create. Always created as a DRAFT. The language must be ACTIVE. Slug is generated from the title when omitted (Unicode-safe, no transliteration) and deterministically suffixed -2/-3 on collision; a slug supplied explicitly is never silently altered and a collision is a 409.
+ */
+export const createEditorialPostTranslation = async (
+  id: number,
+  createEditorialTranslationBody: CreateEditorialTranslationBody,
+  options?: RequestInit,
+): Promise<EditorialPostTranslation> => {
+  return customFetch<EditorialPostTranslation>(
+    getCreateEditorialPostTranslationUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(createEditorialTranslationBody),
+    },
+  );
+};
+
+export const getCreateEditorialPostTranslationMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createEditorialPostTranslation>>,
+    TError,
+    { id: number; data: BodyType<CreateEditorialTranslationBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createEditorialPostTranslation>>,
+  TError,
+  { id: number; data: BodyType<CreateEditorialTranslationBody> },
+  TContext
+> => {
+  const mutationKey = ["createEditorialPostTranslation"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createEditorialPostTranslation>>,
+    { id: number; data: BodyType<CreateEditorialTranslationBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return createEditorialPostTranslation(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateEditorialPostTranslationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createEditorialPostTranslation>>
+>;
+export type CreateEditorialPostTranslationMutationBody =
+  BodyType<CreateEditorialTranslationBody>;
+export type CreateEditorialPostTranslationMutationError =
+  ErrorType<ErrorResponse>;
+
+/**
+ * @summary Add a language to this post — requires website.posts:create. Always created as a DRAFT. The language must be ACTIVE. Slug is generated from the title when omitted (Unicode-safe, no transliteration) and deterministically suffixed -2/-3 on collision; a slug supplied explicitly is never silently altered and a collision is a 409.
+ */
+export const useCreateEditorialPostTranslation = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createEditorialPostTranslation>>,
+    TError,
+    { id: number; data: BodyType<CreateEditorialTranslationBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createEditorialPostTranslation>>,
+  TError,
+  { id: number; data: BodyType<CreateEditorialTranslationBody> },
+  TContext
+> => {
+  return useMutation(getCreateEditorialPostTranslationMutationOptions(options));
+};
+
+export const getGetEditorialPostTranslationUrl = (
+  id: number,
+  languageCode: string,
+) => {
+  return `/api/admin/editorial/posts/${id}/translations/${languageCode}`;
+};
+
+/**
+ * @summary One language's translation of this post — requires website.posts:view
+ */
+export const getEditorialPostTranslation = async (
+  id: number,
+  languageCode: string,
+  options?: RequestInit,
+): Promise<EditorialPostTranslation> => {
+  return customFetch<EditorialPostTranslation>(
+    getGetEditorialPostTranslationUrl(id, languageCode),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetEditorialPostTranslationQueryKey = (
+  id: number,
+  languageCode: string,
+) => {
+  return [
+    `/api/admin/editorial/posts/${id}/translations/${languageCode}`,
+  ] as const;
+};
+
+export const getGetEditorialPostTranslationQueryOptions = <
+  TData = Awaited<ReturnType<typeof getEditorialPostTranslation>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  languageCode: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getEditorialPostTranslation>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getGetEditorialPostTranslationQueryKey(id, languageCode);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getEditorialPostTranslation>>
+  > = ({ signal }) =>
+    getEditorialPostTranslation(id, languageCode, {
+      signal,
+      ...requestOptions,
+    });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled:
+      id !== null &&
+      id !== undefined &&
+      languageCode !== null &&
+      languageCode !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getEditorialPostTranslation>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetEditorialPostTranslationQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getEditorialPostTranslation>>
+>;
+export type GetEditorialPostTranslationQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary One language's translation of this post — requires website.posts:view
+ */
+
+export function useGetEditorialPostTranslation<
+  TData = Awaited<ReturnType<typeof getEditorialPostTranslation>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  languageCode: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getEditorialPostTranslation>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetEditorialPostTranslationQueryOptions(
+    id,
+    languageCode,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getUpdateEditorialPostTranslationUrl = (
+  id: number,
+  languageCode: string,
+) => {
+  return `/api/admin/editorial/posts/${id}/translations/${languageCode}`;
+};
+
+/**
+ * @summary Edit ONE language's content — requires website.posts:edit. Never touches another translation. Editing a PUBLISHED translation writes a revision of that translation's own prior state, in the same transaction, before the mutation. The slug is editable only before this translation's first publish. publishedAt is never written here.
+ */
+export const updateEditorialPostTranslation = async (
+  id: number,
+  languageCode: string,
+  updateEditorialTranslationBody: UpdateEditorialTranslationBody,
+  options?: RequestInit,
+): Promise<EditorialPostTranslation> => {
+  return customFetch<EditorialPostTranslation>(
+    getUpdateEditorialPostTranslationUrl(id, languageCode),
+    {
+      ...options,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(updateEditorialTranslationBody),
+    },
+  );
+};
+
+export const getUpdateEditorialPostTranslationMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateEditorialPostTranslation>>,
+    TError,
+    {
+      id: number;
+      languageCode: string;
+      data: BodyType<UpdateEditorialTranslationBody>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateEditorialPostTranslation>>,
+  TError,
+  {
+    id: number;
+    languageCode: string;
+    data: BodyType<UpdateEditorialTranslationBody>;
+  },
+  TContext
+> => {
+  const mutationKey = ["updateEditorialPostTranslation"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateEditorialPostTranslation>>,
+    {
+      id: number;
+      languageCode: string;
+      data: BodyType<UpdateEditorialTranslationBody>;
+    }
+  > = (props) => {
+    const { id, languageCode, data } = props ?? {};
+
+    return updateEditorialPostTranslation(
+      id,
+      languageCode,
+      data,
+      requestOptions,
+    );
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateEditorialPostTranslationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateEditorialPostTranslation>>
+>;
+export type UpdateEditorialPostTranslationMutationBody =
+  BodyType<UpdateEditorialTranslationBody>;
+export type UpdateEditorialPostTranslationMutationError =
+  ErrorType<ErrorResponse>;
+
+/**
+ * @summary Edit ONE language's content — requires website.posts:edit. Never touches another translation. Editing a PUBLISHED translation writes a revision of that translation's own prior state, in the same transaction, before the mutation. The slug is editable only before this translation's first publish. publishedAt is never written here.
+ */
+export const useUpdateEditorialPostTranslation = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateEditorialPostTranslation>>,
+    TError,
+    {
+      id: number;
+      languageCode: string;
+      data: BodyType<UpdateEditorialTranslationBody>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateEditorialPostTranslation>>,
+  TError,
+  {
+    id: number;
+    languageCode: string;
+    data: BodyType<UpdateEditorialTranslationBody>;
+  },
+  TContext
+> => {
+  return useMutation(getUpdateEditorialPostTranslationMutationOptions(options));
+};
+
+export const getPublishEditorialPostTranslationUrl = (
+  id: number,
+  languageCode: string,
+) => {
+  return `/api/admin/editorial/posts/${id}/translations/${languageCode}/publish`;
+};
+
+/**
+ * @summary draft|archived -> published for ONE translation — requires website.posts:publish. Fails unless that translation passes the full readiness gate (title, non-empty body, localized feature-image alt, alt on every image block, the post's shared feature image and an active author WITH a biography, every media URL re-validated, and an ACTIVE language). publishedAt is stamped once on this translation's own first publish and never affects a sibling translation.
+ */
+export const publishEditorialPostTranslation = async (
+  id: number,
+  languageCode: string,
+  options?: RequestInit,
+): Promise<EditorialPostTranslation> => {
+  return customFetch<EditorialPostTranslation>(
+    getPublishEditorialPostTranslationUrl(id, languageCode),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getPublishEditorialPostTranslationMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof publishEditorialPostTranslation>>,
+    TError,
+    { id: number; languageCode: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof publishEditorialPostTranslation>>,
+  TError,
+  { id: number; languageCode: string },
+  TContext
+> => {
+  const mutationKey = ["publishEditorialPostTranslation"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof publishEditorialPostTranslation>>,
+    { id: number; languageCode: string }
+  > = (props) => {
+    const { id, languageCode } = props ?? {};
+
+    return publishEditorialPostTranslation(id, languageCode, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PublishEditorialPostTranslationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof publishEditorialPostTranslation>>
+>;
+
+export type PublishEditorialPostTranslationMutationError =
+  ErrorType<ErrorResponse>;
+
+/**
+ * @summary draft|archived -> published for ONE translation — requires website.posts:publish. Fails unless that translation passes the full readiness gate (title, non-empty body, localized feature-image alt, alt on every image block, the post's shared feature image and an active author WITH a biography, every media URL re-validated, and an ACTIVE language). publishedAt is stamped once on this translation's own first publish and never affects a sibling translation.
+ */
+export const usePublishEditorialPostTranslation = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof publishEditorialPostTranslation>>,
+    TError,
+    { id: number; languageCode: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof publishEditorialPostTranslation>>,
+  TError,
+  { id: number; languageCode: string },
+  TContext
+> => {
+  return useMutation(
+    getPublishEditorialPostTranslationMutationOptions(options),
+  );
+};
+
+export const getArchiveEditorialPostTranslationUrl = (
+  id: number,
+  languageCode: string,
+) => {
+  return `/api/admin/editorial/posts/${id}/translations/${languageCode}/archive`;
+};
+
+/**
+ * @summary draft|published -> archived for ONE translation — requires website.posts:publish. Leaving published writes a revision of that translation. Sibling translations are untouched and stay published if they are.
+ */
+export const archiveEditorialPostTranslation = async (
+  id: number,
+  languageCode: string,
+  options?: RequestInit,
+): Promise<EditorialPostTranslation> => {
+  return customFetch<EditorialPostTranslation>(
+    getArchiveEditorialPostTranslationUrl(id, languageCode),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getArchiveEditorialPostTranslationMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof archiveEditorialPostTranslation>>,
+    TError,
+    { id: number; languageCode: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof archiveEditorialPostTranslation>>,
+  TError,
+  { id: number; languageCode: string },
+  TContext
+> => {
+  const mutationKey = ["archiveEditorialPostTranslation"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof archiveEditorialPostTranslation>>,
+    { id: number; languageCode: string }
+  > = (props) => {
+    const { id, languageCode } = props ?? {};
+
+    return archiveEditorialPostTranslation(id, languageCode, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ArchiveEditorialPostTranslationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof archiveEditorialPostTranslation>>
+>;
+
+export type ArchiveEditorialPostTranslationMutationError =
+  ErrorType<ErrorResponse>;
+
+/**
+ * @summary draft|published -> archived for ONE translation — requires website.posts:publish. Leaving published writes a revision of that translation. Sibling translations are untouched and stay published if they are.
+ */
+export const useArchiveEditorialPostTranslation = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof archiveEditorialPostTranslation>>,
+    TError,
+    { id: number; languageCode: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof archiveEditorialPostTranslation>>,
+  TError,
+  { id: number; languageCode: string },
+  TContext
+> => {
+  return useMutation(
+    getArchiveEditorialPostTranslationMutationOptions(options),
+  );
+};
+
+export const getRestoreEditorialPostTranslationUrl = (
+  id: number,
+  languageCode: string,
+) => {
+  return `/api/admin/editorial/posts/${id}/translations/${languageCode}/restore`;
+};
+
+/**
+ * @summary archived -> draft for ONE translation — requires website.posts:publish. published -> draft directly is NOT allowed (409): unpublishing goes through archive so there is always an explicit audited "taken off the site" event. publishedAt is preserved, never cleared.
+ */
+export const restoreEditorialPostTranslation = async (
+  id: number,
+  languageCode: string,
+  options?: RequestInit,
+): Promise<EditorialPostTranslation> => {
+  return customFetch<EditorialPostTranslation>(
+    getRestoreEditorialPostTranslationUrl(id, languageCode),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getRestoreEditorialPostTranslationMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof restoreEditorialPostTranslation>>,
+    TError,
+    { id: number; languageCode: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof restoreEditorialPostTranslation>>,
+  TError,
+  { id: number; languageCode: string },
+  TContext
+> => {
+  const mutationKey = ["restoreEditorialPostTranslation"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof restoreEditorialPostTranslation>>,
+    { id: number; languageCode: string }
+  > = (props) => {
+    const { id, languageCode } = props ?? {};
+
+    return restoreEditorialPostTranslation(id, languageCode, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RestoreEditorialPostTranslationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof restoreEditorialPostTranslation>>
+>;
+
+export type RestoreEditorialPostTranslationMutationError =
+  ErrorType<ErrorResponse>;
+
+/**
+ * @summary archived -> draft for ONE translation — requires website.posts:publish. published -> draft directly is NOT allowed (409): unpublishing goes through archive so there is always an explicit audited "taken off the site" event. publishedAt is preserved, never cleared.
+ */
+export const useRestoreEditorialPostTranslation = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof restoreEditorialPostTranslation>>,
+    TError,
+    { id: number; languageCode: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof restoreEditorialPostTranslation>>,
+  TError,
+  { id: number; languageCode: string },
+  TContext
+> => {
+  return useMutation(
+    getRestoreEditorialPostTranslationMutationOptions(options),
+  );
+};
+
+export const getListEditorialPostTopicsUrl = (id: number) => {
+  return `/api/admin/editorial/posts/${id}/topics`;
+};
+
+/**
+ * @summary Topics assigned to a post — shared by every translation. Requires website.posts:view
+ */
+export const listEditorialPostTopics = async (
+  id: number,
+  options?: RequestInit,
+): Promise<EditorialTopic[]> => {
+  return customFetch<EditorialTopic[]>(getListEditorialPostTopicsUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListEditorialPostTopicsQueryKey = (id: number) => {
+  return [`/api/admin/editorial/posts/${id}/topics`] as const;
+};
+
+export const getListEditorialPostTopicsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listEditorialPostTopics>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listEditorialPostTopics>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListEditorialPostTopicsQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listEditorialPostTopics>>
+  > = ({ signal }) =>
+    listEditorialPostTopics(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listEditorialPostTopics>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListEditorialPostTopicsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listEditorialPostTopics>>
+>;
+export type ListEditorialPostTopicsQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Topics assigned to a post — shared by every translation. Requires website.posts:view
+ */
+
+export function useListEditorialPostTopics<
+  TData = Awaited<ReturnType<typeof listEditorialPostTopics>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listEditorialPostTopics>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListEditorialPostTopicsQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getReplaceEditorialPostTopicsUrl = (id: number) => {
+  return `/api/admin/editorial/posts/${id}/topics`;
+};
+
+/**
+ * @summary Replace a post's topics — requires website.posts:edit. Topics are classification of the logical story and are NOT localized. All topics must be in the post's channel and active. When the post has at least one published translation a shared revision is written.
+ */
+export const replaceEditorialPostTopics = async (
+  id: number,
+  replaceEditorialPostTopicsBody: ReplaceEditorialPostTopicsBody,
+  options?: RequestInit,
+): Promise<EditorialTopic[]> => {
+  return customFetch<EditorialTopic[]>(getReplaceEditorialPostTopicsUrl(id), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(replaceEditorialPostTopicsBody),
+  });
+};
+
+export const getReplaceEditorialPostTopicsMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof replaceEditorialPostTopics>>,
+    TError,
+    { id: number; data: BodyType<ReplaceEditorialPostTopicsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof replaceEditorialPostTopics>>,
+  TError,
+  { id: number; data: BodyType<ReplaceEditorialPostTopicsBody> },
+  TContext
+> => {
+  const mutationKey = ["replaceEditorialPostTopics"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof replaceEditorialPostTopics>>,
+    { id: number; data: BodyType<ReplaceEditorialPostTopicsBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return replaceEditorialPostTopics(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ReplaceEditorialPostTopicsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof replaceEditorialPostTopics>>
+>;
+export type ReplaceEditorialPostTopicsMutationBody =
+  BodyType<ReplaceEditorialPostTopicsBody>;
+export type ReplaceEditorialPostTopicsMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Replace a post's topics — requires website.posts:edit. Topics are classification of the logical story and are NOT localized. All topics must be in the post's channel and active. When the post has at least one published translation a shared revision is written.
+ */
+export const useReplaceEditorialPostTopics = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof replaceEditorialPostTopics>>,
+    TError,
+    { id: number; data: BodyType<ReplaceEditorialPostTopicsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof replaceEditorialPostTopics>>,
+  TError,
+  { id: number; data: BodyType<ReplaceEditorialPostTopicsBody> },
+  TContext
+> => {
+  return useMutation(getReplaceEditorialPostTopicsMutationOptions(options));
+};
+
+export const getListEditorialPostRecommendationsUrl = (id: number) => {
+  return `/api/admin/editorial/posts/${id}/recommendations`;
+};
+
+/**
+ * @summary A post's recommended posts, in editor order — requires website.posts:view
+ */
+export const listEditorialPostRecommendations = async (
+  id: number,
+  options?: RequestInit,
+): Promise<EditorialRecommendation[]> => {
+  return customFetch<EditorialRecommendation[]>(
+    getListEditorialPostRecommendationsUrl(id),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListEditorialPostRecommendationsQueryKey = (id: number) => {
+  return [`/api/admin/editorial/posts/${id}/recommendations`] as const;
+};
+
+export const getListEditorialPostRecommendationsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listEditorialPostRecommendations>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listEditorialPostRecommendations>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListEditorialPostRecommendationsQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listEditorialPostRecommendations>>
+  > = ({ signal }) =>
+    listEditorialPostRecommendations(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listEditorialPostRecommendations>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListEditorialPostRecommendationsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listEditorialPostRecommendations>>
+>;
+export type ListEditorialPostRecommendationsQueryError =
+  ErrorType<ErrorResponse>;
+
+/**
+ * @summary A post's recommended posts, in editor order — requires website.posts:view
+ */
+
+export function useListEditorialPostRecommendations<
+  TData = Awaited<ReturnType<typeof listEditorialPostRecommendations>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listEditorialPostRecommendations>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListEditorialPostRecommendationsQueryOptions(
+    id,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getReplaceEditorialPostRecommendationsUrl = (id: number) => {
+  return `/api/admin/editorial/posts/${id}/recommendations`;
+};
+
+/**
+ * @summary Replace a post's recommendations — requires website.posts:edit. Post-to-post, not translation-to-translation: the website resolves each target into the reader's language. No self-reference, no duplicates, same channel only.
+ */
+export const replaceEditorialPostRecommendations = async (
+  id: number,
+  replaceEditorialPostRecommendationsBody: ReplaceEditorialPostRecommendationsBody,
+  options?: RequestInit,
+): Promise<EditorialRecommendation[]> => {
+  return customFetch<EditorialRecommendation[]>(
+    getReplaceEditorialPostRecommendationsUrl(id),
+    {
+      ...options,
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(replaceEditorialPostRecommendationsBody),
+    },
+  );
+};
+
+export const getReplaceEditorialPostRecommendationsMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof replaceEditorialPostRecommendations>>,
+    TError,
+    { id: number; data: BodyType<ReplaceEditorialPostRecommendationsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof replaceEditorialPostRecommendations>>,
+  TError,
+  { id: number; data: BodyType<ReplaceEditorialPostRecommendationsBody> },
+  TContext
+> => {
+  const mutationKey = ["replaceEditorialPostRecommendations"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof replaceEditorialPostRecommendations>>,
+    { id: number; data: BodyType<ReplaceEditorialPostRecommendationsBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return replaceEditorialPostRecommendations(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ReplaceEditorialPostRecommendationsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof replaceEditorialPostRecommendations>>
+>;
+export type ReplaceEditorialPostRecommendationsMutationBody =
+  BodyType<ReplaceEditorialPostRecommendationsBody>;
+export type ReplaceEditorialPostRecommendationsMutationError =
+  ErrorType<ErrorResponse>;
+
+/**
+ * @summary Replace a post's recommendations — requires website.posts:edit. Post-to-post, not translation-to-translation: the website resolves each target into the reader's language. No self-reference, no duplicates, same channel only.
+ */
+export const useReplaceEditorialPostRecommendations = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof replaceEditorialPostRecommendations>>,
+    TError,
+    { id: number; data: BodyType<ReplaceEditorialPostRecommendationsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof replaceEditorialPostRecommendations>>,
+  TError,
+  { id: number; data: BodyType<ReplaceEditorialPostRecommendationsBody> },
+  TContext
+> => {
+  return useMutation(
+    getReplaceEditorialPostRecommendationsMutationOptions(options),
+  );
+};
+
+export const getListEditorialPostRevisionsUrl = (
+  id: number,
+  params?: ListEditorialPostRevisionsParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/admin/editorial/posts/${id}/revisions?${stringifiedParams}`
+    : `/api/admin/editorial/posts/${id}/revisions`;
+};
+
+/**
+ * @summary A post's revision history, newest first — requires website.posts:view. Metadata only. Each entry is either TRANSLATION-scoped (translationId set) or SHARED/post-scoped (translationId null). Filter by languageCode for one language's history.
+ */
+export const listEditorialPostRevisions = async (
+  id: number,
+  params?: ListEditorialPostRevisionsParams,
+  options?: RequestInit,
+): Promise<EditorialRevisionSummary[]> => {
+  return customFetch<EditorialRevisionSummary[]>(
+    getListEditorialPostRevisionsUrl(id, params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListEditorialPostRevisionsQueryKey = (
+  id: number,
+  params?: ListEditorialPostRevisionsParams,
+) => {
+  return [
+    `/api/admin/editorial/posts/${id}/revisions`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getListEditorialPostRevisionsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listEditorialPostRevisions>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  params?: ListEditorialPostRevisionsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listEditorialPostRevisions>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListEditorialPostRevisionsQueryKey(id, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listEditorialPostRevisions>>
+  > = ({ signal }) =>
+    listEditorialPostRevisions(id, params, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listEditorialPostRevisions>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListEditorialPostRevisionsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listEditorialPostRevisions>>
+>;
+export type ListEditorialPostRevisionsQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary A post's revision history, newest first — requires website.posts:view. Metadata only. Each entry is either TRANSLATION-scoped (translationId set) or SHARED/post-scoped (translationId null). Filter by languageCode for one language's history.
+ */
+
+export function useListEditorialPostRevisions<
+  TData = Awaited<ReturnType<typeof listEditorialPostRevisions>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  params?: ListEditorialPostRevisionsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listEditorialPostRevisions>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListEditorialPostRevisionsQueryOptions(
+    id,
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getGetEditorialPostRevisionUrl = (
+  id: number,
+  revisionId: number,
+) => {
+  return `/api/admin/editorial/posts/${id}/revisions/${revisionId}`;
+};
+
+/**
+ * @summary One revision including its full snapshot — requires website.posts:view
+ */
+export const getEditorialPostRevision = async (
+  id: number,
+  revisionId: number,
+  options?: RequestInit,
+): Promise<EditorialRevision> => {
+  return customFetch<EditorialRevision>(
+    getGetEditorialPostRevisionUrl(id, revisionId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetEditorialPostRevisionQueryKey = (
+  id: number,
+  revisionId: number,
+) => {
+  return [`/api/admin/editorial/posts/${id}/revisions/${revisionId}`] as const;
+};
+
+export const getGetEditorialPostRevisionQueryOptions = <
+  TData = Awaited<ReturnType<typeof getEditorialPostRevision>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  revisionId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getEditorialPostRevision>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getGetEditorialPostRevisionQueryKey(id, revisionId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getEditorialPostRevision>>
+  > = ({ signal }) =>
+    getEditorialPostRevision(id, revisionId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled:
+      id !== null &&
+      id !== undefined &&
+      revisionId !== null &&
+      revisionId !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getEditorialPostRevision>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetEditorialPostRevisionQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getEditorialPostRevision>>
+>;
+export type GetEditorialPostRevisionQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary One revision including its full snapshot — requires website.posts:view
+ */
+
+export function useGetEditorialPostRevision<
+  TData = Awaited<ReturnType<typeof getEditorialPostRevision>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  revisionId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getEditorialPostRevision>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetEditorialPostRevisionQueryOptions(
+    id,
+    revisionId,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getRestoreEditorialPostRevisionUrl = (
+  id: number,
+  revisionId: number,
+) => {
+  return `/api/admin/editorial/posts/${id}/revisions/${revisionId}/restore`;
+};
+
+/**
+ * @summary Restore ONE translation's content from a translation-scoped revision — requires website.posts:publish. The revision names its own translation, so restoring the Arabic history cannot touch English. A new revision of the pre-restore state is written first, so restoring is undoable. Restores CONTENT only — never status, publishedAt, or slug. A shared/post-scoped revision has no translation to restore and is rejected with 400.
+ */
+export const restoreEditorialPostRevision = async (
+  id: number,
+  revisionId: number,
+  options?: RequestInit,
+): Promise<EditorialPostTranslation> => {
+  return customFetch<EditorialPostTranslation>(
+    getRestoreEditorialPostRevisionUrl(id, revisionId),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getRestoreEditorialPostRevisionMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof restoreEditorialPostRevision>>,
+    TError,
+    { id: number; revisionId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof restoreEditorialPostRevision>>,
+  TError,
+  { id: number; revisionId: number },
+  TContext
+> => {
+  const mutationKey = ["restoreEditorialPostRevision"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof restoreEditorialPostRevision>>,
+    { id: number; revisionId: number }
+  > = (props) => {
+    const { id, revisionId } = props ?? {};
+
+    return restoreEditorialPostRevision(id, revisionId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RestoreEditorialPostRevisionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof restoreEditorialPostRevision>>
+>;
+
+export type RestoreEditorialPostRevisionMutationError =
+  ErrorType<ErrorResponse>;
+
+/**
+ * @summary Restore ONE translation's content from a translation-scoped revision — requires website.posts:publish. The revision names its own translation, so restoring the Arabic history cannot touch English. A new revision of the pre-restore state is written first, so restoring is undoable. Restores CONTENT only — never status, publishedAt, or slug. A shared/post-scoped revision has no translation to restore and is rejected with 400.
+ */
+export const useRestoreEditorialPostRevision = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof restoreEditorialPostRevision>>,
+    TError,
+    { id: number; revisionId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof restoreEditorialPostRevision>>,
+  TError,
+  { id: number; revisionId: number },
+  TContext
+> => {
+  return useMutation(getRestoreEditorialPostRevisionMutationOptions(options));
+};
+
+export const getListEditorialTopicsUrl = (
+  params?: ListEditorialTopicsParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/admin/editorial/topics?${stringifiedParams}`
+    : `/api/admin/editorial/topics`;
+};
+
+/**
+ * @summary List topics — requires website.posts:view
+ */
+export const listEditorialTopics = async (
+  params?: ListEditorialTopicsParams,
+  options?: RequestInit,
+): Promise<EditorialTopic[]> => {
+  return customFetch<EditorialTopic[]>(getListEditorialTopicsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListEditorialTopicsQueryKey = (
+  params?: ListEditorialTopicsParams,
+) => {
+  return [`/api/admin/editorial/topics`, ...(params ? [params] : [])] as const;
+};
+
+export const getListEditorialTopicsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listEditorialTopics>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params?: ListEditorialTopicsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listEditorialTopics>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListEditorialTopicsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listEditorialTopics>>
+  > = ({ signal }) =>
+    listEditorialTopics(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listEditorialTopics>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListEditorialTopicsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listEditorialTopics>>
+>;
+export type ListEditorialTopicsQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary List topics — requires website.posts:view
+ */
+
+export function useListEditorialTopics<
+  TData = Awaited<ReturnType<typeof listEditorialTopics>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params?: ListEditorialTopicsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listEditorialTopics>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListEditorialTopicsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getCreateEditorialTopicUrl = () => {
+  return `/api/admin/editorial/topics`;
+};
+
+/**
+ * @summary Create a channel-scoped topic — requires website.posts:create
+ */
+export const createEditorialTopic = async (
+  createEditorialTopicBody: CreateEditorialTopicBody,
+  options?: RequestInit,
+): Promise<EditorialTopic> => {
+  return customFetch<EditorialTopic>(getCreateEditorialTopicUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createEditorialTopicBody),
+  });
+};
+
+export const getCreateEditorialTopicMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createEditorialTopic>>,
+    TError,
+    { data: BodyType<CreateEditorialTopicBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createEditorialTopic>>,
+  TError,
+  { data: BodyType<CreateEditorialTopicBody> },
+  TContext
+> => {
+  const mutationKey = ["createEditorialTopic"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createEditorialTopic>>,
+    { data: BodyType<CreateEditorialTopicBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createEditorialTopic(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateEditorialTopicMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createEditorialTopic>>
+>;
+export type CreateEditorialTopicMutationBody =
+  BodyType<CreateEditorialTopicBody>;
+export type CreateEditorialTopicMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Create a channel-scoped topic — requires website.posts:create
+ */
+export const useCreateEditorialTopic = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createEditorialTopic>>,
+    TError,
+    { data: BodyType<CreateEditorialTopicBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createEditorialTopic>>,
+  TError,
+  { data: BodyType<CreateEditorialTopicBody> },
+  TContext
+> => {
+  return useMutation(getCreateEditorialTopicMutationOptions(options));
+};
+
+export const getGetEditorialTopicUrl = (id: number) => {
+  return `/api/admin/editorial/topics/${id}`;
+};
+
+/**
+ * @summary Get one topic — requires website.posts:view
+ */
+export const getEditorialTopic = async (
+  id: number,
+  options?: RequestInit,
+): Promise<EditorialTopic> => {
+  return customFetch<EditorialTopic>(getGetEditorialTopicUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetEditorialTopicQueryKey = (id: number) => {
+  return [`/api/admin/editorial/topics/${id}`] as const;
+};
+
+export const getGetEditorialTopicQueryOptions = <
+  TData = Awaited<ReturnType<typeof getEditorialTopic>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getEditorialTopic>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetEditorialTopicQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getEditorialTopic>>
+  > = ({ signal }) => getEditorialTopic(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getEditorialTopic>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetEditorialTopicQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getEditorialTopic>>
+>;
+export type GetEditorialTopicQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Get one topic — requires website.posts:view
+ */
+
+export function useGetEditorialTopic<
+  TData = Awaited<ReturnType<typeof getEditorialTopic>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getEditorialTopic>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetEditorialTopicQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getUpdateEditorialTopicUrl = (id: number) => {
+  return `/api/admin/editorial/topics/${id}`;
+};
+
+/**
+ * @summary Edit a topic — requires website.posts:edit. Channel is immutable.
+ */
+export const updateEditorialTopic = async (
+  id: number,
+  updateEditorialTopicBody: UpdateEditorialTopicBody,
+  options?: RequestInit,
+): Promise<EditorialTopic> => {
+  return customFetch<EditorialTopic>(getUpdateEditorialTopicUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateEditorialTopicBody),
+  });
+};
+
+export const getUpdateEditorialTopicMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateEditorialTopic>>,
+    TError,
+    { id: number; data: BodyType<UpdateEditorialTopicBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateEditorialTopic>>,
+  TError,
+  { id: number; data: BodyType<UpdateEditorialTopicBody> },
+  TContext
+> => {
+  const mutationKey = ["updateEditorialTopic"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateEditorialTopic>>,
+    { id: number; data: BodyType<UpdateEditorialTopicBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateEditorialTopic(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateEditorialTopicMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateEditorialTopic>>
+>;
+export type UpdateEditorialTopicMutationBody =
+  BodyType<UpdateEditorialTopicBody>;
+export type UpdateEditorialTopicMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Edit a topic — requires website.posts:edit. Channel is immutable.
+ */
+export const useUpdateEditorialTopic = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateEditorialTopic>>,
+    TError,
+    { id: number; data: BodyType<UpdateEditorialTopicBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateEditorialTopic>>,
+  TError,
+  { id: number; data: BodyType<UpdateEditorialTopicBody> },
+  TContext
+> => {
+  return useMutation(getUpdateEditorialTopicMutationOptions(options));
+};
+
+export const getListEditorialAuthorsUrl = (
+  params?: ListEditorialAuthorsParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/admin/editorial/authors?${stringifiedParams}`
+    : `/api/admin/editorial/authors`;
+};
+
+/**
+ * @summary List authors — requires website.posts:view. Authors are CHANNEL-SCOPED.
+ */
+export const listEditorialAuthors = async (
+  params?: ListEditorialAuthorsParams,
+  options?: RequestInit,
+): Promise<EditorialAuthor[]> => {
+  return customFetch<EditorialAuthor[]>(getListEditorialAuthorsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListEditorialAuthorsQueryKey = (
+  params?: ListEditorialAuthorsParams,
+) => {
+  return [`/api/admin/editorial/authors`, ...(params ? [params] : [])] as const;
+};
+
+export const getListEditorialAuthorsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listEditorialAuthors>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params?: ListEditorialAuthorsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listEditorialAuthors>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListEditorialAuthorsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listEditorialAuthors>>
+  > = ({ signal }) =>
+    listEditorialAuthors(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listEditorialAuthors>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListEditorialAuthorsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listEditorialAuthors>>
+>;
+export type ListEditorialAuthorsQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary List authors — requires website.posts:view. Authors are CHANNEL-SCOPED.
+ */
+
+export function useListEditorialAuthors<
+  TData = Awaited<ReturnType<typeof listEditorialAuthors>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params?: ListEditorialAuthorsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listEditorialAuthors>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListEditorialAuthorsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getCreateEditorialAuthorUrl = () => {
+  return `/api/admin/editorial/authors`;
+};
+
+/**
+ * @summary Create an author — requires website.posts:create. `channel` is REQUIRED: an author belongs to exactly one editorial channel and can only be the byline of a post in that channel. The same person writing for both surfaces is two author rows, deliberately.
+ */
+export const createEditorialAuthor = async (
+  createEditorialAuthorBody: CreateEditorialAuthorBody,
+  options?: RequestInit,
+): Promise<EditorialAuthor> => {
+  return customFetch<EditorialAuthor>(getCreateEditorialAuthorUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createEditorialAuthorBody),
+  });
+};
+
+export const getCreateEditorialAuthorMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createEditorialAuthor>>,
+    TError,
+    { data: BodyType<CreateEditorialAuthorBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createEditorialAuthor>>,
+  TError,
+  { data: BodyType<CreateEditorialAuthorBody> },
+  TContext
+> => {
+  const mutationKey = ["createEditorialAuthor"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createEditorialAuthor>>,
+    { data: BodyType<CreateEditorialAuthorBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createEditorialAuthor(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateEditorialAuthorMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createEditorialAuthor>>
+>;
+export type CreateEditorialAuthorMutationBody =
+  BodyType<CreateEditorialAuthorBody>;
+export type CreateEditorialAuthorMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Create an author — requires website.posts:create. `channel` is REQUIRED: an author belongs to exactly one editorial channel and can only be the byline of a post in that channel. The same person writing for both surfaces is two author rows, deliberately.
+ */
+export const useCreateEditorialAuthor = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createEditorialAuthor>>,
+    TError,
+    { data: BodyType<CreateEditorialAuthorBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createEditorialAuthor>>,
+  TError,
+  { data: BodyType<CreateEditorialAuthorBody> },
+  TContext
+> => {
+  return useMutation(getCreateEditorialAuthorMutationOptions(options));
+};
+
+export const getGetEditorialAuthorUrl = (id: number) => {
+  return `/api/admin/editorial/authors/${id}`;
+};
+
+/**
+ * @summary Get one author — requires website.posts:view
+ */
+export const getEditorialAuthor = async (
+  id: number,
+  options?: RequestInit,
+): Promise<EditorialAuthor> => {
+  return customFetch<EditorialAuthor>(getGetEditorialAuthorUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetEditorialAuthorQueryKey = (id: number) => {
+  return [`/api/admin/editorial/authors/${id}`] as const;
+};
+
+export const getGetEditorialAuthorQueryOptions = <
+  TData = Awaited<ReturnType<typeof getEditorialAuthor>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getEditorialAuthor>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetEditorialAuthorQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getEditorialAuthor>>
+  > = ({ signal }) => getEditorialAuthor(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getEditorialAuthor>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetEditorialAuthorQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getEditorialAuthor>>
+>;
+export type GetEditorialAuthorQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Get one author — requires website.posts:view
+ */
+
+export function useGetEditorialAuthor<
+  TData = Awaited<ReturnType<typeof getEditorialAuthor>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getEditorialAuthor>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetEditorialAuthorQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getUpdateEditorialAuthorUrl = (id: number) => {
+  return `/api/admin/editorial/authors/${id}`;
+};
+
+/**
+ * @summary Edit an author entity — requires website.posts:edit. `channel` is NOT editable here: it would break the author-channel-match invariant for every post already carrying the byline. This never rewrites a published translation's frozen author_snapshot.
+ */
+export const updateEditorialAuthor = async (
+  id: number,
+  updateEditorialAuthorBody: UpdateEditorialAuthorBody,
+  options?: RequestInit,
+): Promise<EditorialAuthor> => {
+  return customFetch<EditorialAuthor>(getUpdateEditorialAuthorUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateEditorialAuthorBody),
+  });
+};
+
+export const getUpdateEditorialAuthorMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateEditorialAuthor>>,
+    TError,
+    { id: number; data: BodyType<UpdateEditorialAuthorBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateEditorialAuthor>>,
+  TError,
+  { id: number; data: BodyType<UpdateEditorialAuthorBody> },
+  TContext
+> => {
+  const mutationKey = ["updateEditorialAuthor"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateEditorialAuthor>>,
+    { id: number; data: BodyType<UpdateEditorialAuthorBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateEditorialAuthor(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateEditorialAuthorMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateEditorialAuthor>>
+>;
+export type UpdateEditorialAuthorMutationBody =
+  BodyType<UpdateEditorialAuthorBody>;
+export type UpdateEditorialAuthorMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Edit an author entity — requires website.posts:edit. `channel` is NOT editable here: it would break the author-channel-match invariant for every post already carrying the byline. This never rewrites a published translation's frozen author_snapshot.
+ */
+export const useUpdateEditorialAuthor = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateEditorialAuthor>>,
+    TError,
+    { id: number; data: BodyType<UpdateEditorialAuthorBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateEditorialAuthor>>,
+  TError,
+  { id: number; data: BodyType<UpdateEditorialAuthorBody> },
+  TContext
+> => {
+  return useMutation(getUpdateEditorialAuthorMutationOptions(options));
+};
+
+export const getGetEditorialPlacementUrl = (
+  params: GetEditorialPlacementParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/admin/editorial/placements?${stringifiedParams}`
+    : `/api/admin/editorial/placements`;
+};
+
+/**
+ * @summary Read one named placement's entries in order — requires website.posts:view
+ */
+export const getEditorialPlacement = async (
+  params: GetEditorialPlacementParams,
+  options?: RequestInit,
+): Promise<EditorialPlacementEntry[]> => {
+  return customFetch<EditorialPlacementEntry[]>(
+    getGetEditorialPlacementUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetEditorialPlacementQueryKey = (
+  params?: GetEditorialPlacementParams,
+) => {
+  return [
+    `/api/admin/editorial/placements`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getGetEditorialPlacementQueryOptions = <
+  TData = Awaited<ReturnType<typeof getEditorialPlacement>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params: GetEditorialPlacementParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getEditorialPlacement>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetEditorialPlacementQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getEditorialPlacement>>
+  > = ({ signal }) =>
+    getEditorialPlacement(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getEditorialPlacement>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetEditorialPlacementQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getEditorialPlacement>>
+>;
+export type GetEditorialPlacementQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Read one named placement's entries in order — requires website.posts:view
+ */
+
+export function useGetEditorialPlacement<
+  TData = Awaited<ReturnType<typeof getEditorialPlacement>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params: GetEditorialPlacementParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getEditorialPlacement>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetEditorialPlacementQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getReplaceEditorialPlacementUrl = (
+  params: ReplaceEditorialPlacementParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/admin/editorial/placements?${stringifiedParams}`
+    : `/api/admin/editorial/placements`;
+};
+
+/**
+ * @summary Replace a named placement's entries — requires website.posts:edit. All posts must match the placement channel; a post appears at most once.
+ */
+export const replaceEditorialPlacement = async (
+  replaceEditorialPlacementBody: ReplaceEditorialPlacementBody,
+  params: ReplaceEditorialPlacementParams,
+  options?: RequestInit,
+): Promise<EditorialPlacementEntry[]> => {
+  return customFetch<EditorialPlacementEntry[]>(
+    getReplaceEditorialPlacementUrl(params),
+    {
+      ...options,
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(replaceEditorialPlacementBody),
+    },
+  );
+};
+
+export const getReplaceEditorialPlacementMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof replaceEditorialPlacement>>,
+    TError,
+    {
+      data: BodyType<ReplaceEditorialPlacementBody>;
+      params: ReplaceEditorialPlacementParams;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof replaceEditorialPlacement>>,
+  TError,
+  {
+    data: BodyType<ReplaceEditorialPlacementBody>;
+    params: ReplaceEditorialPlacementParams;
+  },
+  TContext
+> => {
+  const mutationKey = ["replaceEditorialPlacement"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof replaceEditorialPlacement>>,
+    {
+      data: BodyType<ReplaceEditorialPlacementBody>;
+      params: ReplaceEditorialPlacementParams;
+    }
+  > = (props) => {
+    const { data, params } = props ?? {};
+
+    return replaceEditorialPlacement(data, params, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ReplaceEditorialPlacementMutationResult = NonNullable<
+  Awaited<ReturnType<typeof replaceEditorialPlacement>>
+>;
+export type ReplaceEditorialPlacementMutationBody =
+  BodyType<ReplaceEditorialPlacementBody>;
+export type ReplaceEditorialPlacementMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Replace a named placement's entries — requires website.posts:edit. All posts must match the placement channel; a post appears at most once.
+ */
+export const useReplaceEditorialPlacement = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof replaceEditorialPlacement>>,
+    TError,
+    {
+      data: BodyType<ReplaceEditorialPlacementBody>;
+      params: ReplaceEditorialPlacementParams;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof replaceEditorialPlacement>>,
+  TError,
+  {
+    data: BodyType<ReplaceEditorialPlacementBody>;
+    params: ReplaceEditorialPlacementParams;
+  },
+  TContext
+> => {
+  return useMutation(getReplaceEditorialPlacementMutationOptions(options));
+};
+
+export const getListEditorialLanguagesUrl = (
+  params?: ListEditorialLanguagesParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/admin/editorial/settings/languages?${stringifiedParams}`
+    : `/api/admin/editorial/settings/languages`;
+};
+
+/**
+ * @summary Every registered website language in display order, with per-language translation counts — requires website.settings:view. Inactive languages are RETAINED and returned (they are excluded from new-translation pickers and from publishing, never deleted).
+ */
+export const listEditorialLanguages = async (
+  params?: ListEditorialLanguagesParams,
+  options?: RequestInit,
+): Promise<EditorialLanguageWithUsage[]> => {
+  return customFetch<EditorialLanguageWithUsage[]>(
+    getListEditorialLanguagesUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListEditorialLanguagesQueryKey = (
+  params?: ListEditorialLanguagesParams,
+) => {
+  return [
+    `/api/admin/editorial/settings/languages`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getListEditorialLanguagesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listEditorialLanguages>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params?: ListEditorialLanguagesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listEditorialLanguages>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListEditorialLanguagesQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listEditorialLanguages>>
+  > = ({ signal }) =>
+    listEditorialLanguages(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listEditorialLanguages>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListEditorialLanguagesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listEditorialLanguages>>
+>;
+export type ListEditorialLanguagesQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Every registered website language in display order, with per-language translation counts — requires website.settings:view. Inactive languages are RETAINED and returned (they are excluded from new-translation pickers and from publishing, never deleted).
+ */
+
+export function useListEditorialLanguages<
+  TData = Awaited<ReturnType<typeof listEditorialLanguages>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params?: ListEditorialLanguagesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listEditorialLanguages>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListEditorialLanguagesQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getCreateEditorialLanguageUrl = () => {
+  return `/api/admin/editorial/settings/languages`;
+};
+
+/**
+ * @summary Register a language — requires website.settings:edit. `code` is a BCP-47 locale tag ("en", "ar", "en-GB", "zh-Hant-TW"), canonicalized and UNIQUE. Creating one as the default atomically demotes the incumbent.
+ */
+export const createEditorialLanguage = async (
+  createEditorialLanguageBody: CreateEditorialLanguageBody,
+  options?: RequestInit,
+): Promise<EditorialLanguage> => {
+  return customFetch<EditorialLanguage>(getCreateEditorialLanguageUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createEditorialLanguageBody),
+  });
+};
+
+export const getCreateEditorialLanguageMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createEditorialLanguage>>,
+    TError,
+    { data: BodyType<CreateEditorialLanguageBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createEditorialLanguage>>,
+  TError,
+  { data: BodyType<CreateEditorialLanguageBody> },
+  TContext
+> => {
+  const mutationKey = ["createEditorialLanguage"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createEditorialLanguage>>,
+    { data: BodyType<CreateEditorialLanguageBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createEditorialLanguage(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateEditorialLanguageMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createEditorialLanguage>>
+>;
+export type CreateEditorialLanguageMutationBody =
+  BodyType<CreateEditorialLanguageBody>;
+export type CreateEditorialLanguageMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Register a language — requires website.settings:edit. `code` is a BCP-47 locale tag ("en", "ar", "en-GB", "zh-Hant-TW"), canonicalized and UNIQUE. Creating one as the default atomically demotes the incumbent.
+ */
+export const useCreateEditorialLanguage = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createEditorialLanguage>>,
+    TError,
+    { data: BodyType<CreateEditorialLanguageBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createEditorialLanguage>>,
+  TError,
+  { data: BodyType<CreateEditorialLanguageBody> },
+  TContext
+> => {
+  return useMutation(getCreateEditorialLanguageMutationOptions(options));
+};
+
+export const getGetEditorialLanguageUrl = (id: number) => {
+  return `/api/admin/editorial/settings/languages/${id}`;
+};
+
+/**
+ * @summary Get one language — requires website.settings:view
+ */
+export const getEditorialLanguage = async (
+  id: number,
+  options?: RequestInit,
+): Promise<EditorialLanguage> => {
+  return customFetch<EditorialLanguage>(getGetEditorialLanguageUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetEditorialLanguageQueryKey = (id: number) => {
+  return [`/api/admin/editorial/settings/languages/${id}`] as const;
+};
+
+export const getGetEditorialLanguageQueryOptions = <
+  TData = Awaited<ReturnType<typeof getEditorialLanguage>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getEditorialLanguage>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetEditorialLanguageQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getEditorialLanguage>>
+  > = ({ signal }) => getEditorialLanguage(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getEditorialLanguage>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetEditorialLanguageQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getEditorialLanguage>>
+>;
+export type GetEditorialLanguageQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Get one language — requires website.settings:view
+ */
+
+export function useGetEditorialLanguage<
+  TData = Awaited<ReturnType<typeof getEditorialLanguage>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getEditorialLanguage>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetEditorialLanguageQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getUpdateEditorialLanguageUrl = (id: number) => {
+  return `/api/admin/editorial/settings/languages/${id}`;
+};
+
+/**
+ * @summary Edit a language's presentation — requires website.settings:edit. `code` is NOT editable (it is the identity every stored translation is keyed to), and isActive / isDefault are NOT editable here either — they are lifecycle transitions with their own invariants and their own audit events, under /activate, /deactivate and /default.
+ */
+export const updateEditorialLanguage = async (
+  id: number,
+  updateEditorialLanguageBody: UpdateEditorialLanguageBody,
+  options?: RequestInit,
+): Promise<EditorialLanguage> => {
+  return customFetch<EditorialLanguage>(getUpdateEditorialLanguageUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateEditorialLanguageBody),
+  });
+};
+
+export const getUpdateEditorialLanguageMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateEditorialLanguage>>,
+    TError,
+    { id: number; data: BodyType<UpdateEditorialLanguageBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateEditorialLanguage>>,
+  TError,
+  { id: number; data: BodyType<UpdateEditorialLanguageBody> },
+  TContext
+> => {
+  const mutationKey = ["updateEditorialLanguage"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateEditorialLanguage>>,
+    { id: number; data: BodyType<UpdateEditorialLanguageBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateEditorialLanguage(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateEditorialLanguageMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateEditorialLanguage>>
+>;
+export type UpdateEditorialLanguageMutationBody =
+  BodyType<UpdateEditorialLanguageBody>;
+export type UpdateEditorialLanguageMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Edit a language's presentation — requires website.settings:edit. `code` is NOT editable (it is the identity every stored translation is keyed to), and isActive / isDefault are NOT editable here either — they are lifecycle transitions with their own invariants and their own audit events, under /activate, /deactivate and /default.
+ */
+export const useUpdateEditorialLanguage = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateEditorialLanguage>>,
+    TError,
+    { id: number; data: BodyType<UpdateEditorialLanguageBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateEditorialLanguage>>,
+  TError,
+  { id: number; data: BodyType<UpdateEditorialLanguageBody> },
+  TContext
+> => {
+  return useMutation(getUpdateEditorialLanguageMutationOptions(options));
+};
+
+export const getActivateEditorialLanguageUrl = (id: number) => {
+  return `/api/admin/editorial/settings/languages/${id}/activate`;
+};
+
+/**
+ * @summary Make a language active again — requires website.settings:edit. Touches only the language row: no translation's stored status is read or written, so reactivating never resurrects or alters content.
+ */
+export const activateEditorialLanguage = async (
+  id: number,
+  options?: RequestInit,
+): Promise<EditorialLanguage> => {
+  return customFetch<EditorialLanguage>(getActivateEditorialLanguageUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getActivateEditorialLanguageMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof activateEditorialLanguage>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof activateEditorialLanguage>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["activateEditorialLanguage"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof activateEditorialLanguage>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return activateEditorialLanguage(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ActivateEditorialLanguageMutationResult = NonNullable<
+  Awaited<ReturnType<typeof activateEditorialLanguage>>
+>;
+
+export type ActivateEditorialLanguageMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Make a language active again — requires website.settings:edit. Touches only the language row: no translation's stored status is read or written, so reactivating never resurrects or alters content.
+ */
+export const useActivateEditorialLanguage = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof activateEditorialLanguage>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof activateEditorialLanguage>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getActivateEditorialLanguageMutationOptions(options));
+};
+
+export const getDeactivateEditorialLanguageUrl = (id: number) => {
+  return `/api/admin/editorial/settings/languages/${id}/deactivate`;
+};
+
+/**
+ * @summary Retire a language — requires website.settings:edit. Languages are never deleted. The CURRENT DEFAULT cannot be deactivated (409): promote another ACTIVE language to default first. The last remaining active language cannot be deactivated either. Existing translations keep their stored status; the language is simply excluded from new-translation pickers and from publishing.
+ */
+export const deactivateEditorialLanguage = async (
+  id: number,
+  options?: RequestInit,
+): Promise<EditorialLanguage> => {
+  return customFetch<EditorialLanguage>(getDeactivateEditorialLanguageUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getDeactivateEditorialLanguageMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deactivateEditorialLanguage>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deactivateEditorialLanguage>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["deactivateEditorialLanguage"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deactivateEditorialLanguage>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deactivateEditorialLanguage(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeactivateEditorialLanguageMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deactivateEditorialLanguage>>
+>;
+
+export type DeactivateEditorialLanguageMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Retire a language — requires website.settings:edit. Languages are never deleted. The CURRENT DEFAULT cannot be deactivated (409): promote another ACTIVE language to default first. The last remaining active language cannot be deactivated either. Existing translations keep their stored status; the language is simply excluded from new-translation pickers and from publishing.
+ */
+export const useDeactivateEditorialLanguage = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deactivateEditorialLanguage>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deactivateEditorialLanguage>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getDeactivateEditorialLanguageMutationOptions(options));
+};
+
+export const getSetDefaultEditorialLanguageUrl = (id: number) => {
+  return `/api/admin/editorial/settings/languages/${id}/default`;
+};
+
+/**
+ * @summary Make this the default website language — requires website.settings:edit. Demotes the incumbent and promotes the successor in ONE transaction under row locks; a partial unique index guarantees at most one default even under concurrency. The target must be ACTIVE.
+ */
+export const setDefaultEditorialLanguage = async (
+  id: number,
+  options?: RequestInit,
+): Promise<EditorialLanguage> => {
+  return customFetch<EditorialLanguage>(getSetDefaultEditorialLanguageUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getSetDefaultEditorialLanguageMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof setDefaultEditorialLanguage>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof setDefaultEditorialLanguage>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["setDefaultEditorialLanguage"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof setDefaultEditorialLanguage>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return setDefaultEditorialLanguage(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SetDefaultEditorialLanguageMutationResult = NonNullable<
+  Awaited<ReturnType<typeof setDefaultEditorialLanguage>>
+>;
+
+export type SetDefaultEditorialLanguageMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Make this the default website language — requires website.settings:edit. Demotes the incumbent and promotes the successor in ONE transaction under row locks; a partial unique index guarantees at most one default even under concurrency. The target must be ACTIVE.
+ */
+export const useSetDefaultEditorialLanguage = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof setDefaultEditorialLanguage>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof setDefaultEditorialLanguage>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getSetDefaultEditorialLanguageMutationOptions(options));
+};
+
+export const getGetEditorialWebsiteLinksUrl = () => {
+  return `/api/admin/editorial/settings/links`;
+};
+
+/**
+ * @summary The website's app-store links — requires website.settings:view
+ */
+export const getEditorialWebsiteLinks = async (
+  options?: RequestInit,
+): Promise<EditorialWebsiteLinks> => {
+  return customFetch<EditorialWebsiteLinks>(getGetEditorialWebsiteLinksUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetEditorialWebsiteLinksQueryKey = () => {
+  return [`/api/admin/editorial/settings/links`] as const;
+};
+
+export const getGetEditorialWebsiteLinksQueryOptions = <
+  TData = Awaited<ReturnType<typeof getEditorialWebsiteLinks>>,
+  TError = ErrorType<ErrorResponse>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getEditorialWebsiteLinks>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetEditorialWebsiteLinksQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getEditorialWebsiteLinks>>
+  > = ({ signal }) => getEditorialWebsiteLinks({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getEditorialWebsiteLinks>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetEditorialWebsiteLinksQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getEditorialWebsiteLinks>>
+>;
+export type GetEditorialWebsiteLinksQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary The website's app-store links — requires website.settings:view
+ */
+
+export function useGetEditorialWebsiteLinks<
+  TData = Awaited<ReturnType<typeof getEditorialWebsiteLinks>>,
+  TError = ErrorType<ErrorResponse>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getEditorialWebsiteLinks>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetEditorialWebsiteLinksQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getUpdateEditorialWebsiteLinksUrl = () => {
+  return `/api/admin/editorial/settings/links`;
+};
+
+/**
+ * @summary Update the app-store links — requires website.settings:edit. Partial: an omitted field is left alone, an explicit null or "" clears it. A non-empty value must be a valid absolute HTTPS URL with no whitespace or markup characters. One audit row is written per field that actually changed.
+ */
+export const updateEditorialWebsiteLinks = async (
+  updateEditorialWebsiteLinksBody: UpdateEditorialWebsiteLinksBody,
+  options?: RequestInit,
+): Promise<EditorialWebsiteLinks> => {
+  return customFetch<EditorialWebsiteLinks>(
+    getUpdateEditorialWebsiteLinksUrl(),
+    {
+      ...options,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(updateEditorialWebsiteLinksBody),
+    },
+  );
+};
+
+export const getUpdateEditorialWebsiteLinksMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateEditorialWebsiteLinks>>,
+    TError,
+    { data: BodyType<UpdateEditorialWebsiteLinksBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateEditorialWebsiteLinks>>,
+  TError,
+  { data: BodyType<UpdateEditorialWebsiteLinksBody> },
+  TContext
+> => {
+  const mutationKey = ["updateEditorialWebsiteLinks"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateEditorialWebsiteLinks>>,
+    { data: BodyType<UpdateEditorialWebsiteLinksBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return updateEditorialWebsiteLinks(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateEditorialWebsiteLinksMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateEditorialWebsiteLinks>>
+>;
+export type UpdateEditorialWebsiteLinksMutationBody =
+  BodyType<UpdateEditorialWebsiteLinksBody>;
+export type UpdateEditorialWebsiteLinksMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Update the app-store links — requires website.settings:edit. Partial: an omitted field is left alone, an explicit null or "" clears it. A non-empty value must be a valid absolute HTTPS URL with no whitespace or markup characters. One audit row is written per field that actually changed.
+ */
+export const useUpdateEditorialWebsiteLinks = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateEditorialWebsiteLinks>>,
+    TError,
+    { data: BodyType<UpdateEditorialWebsiteLinksBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateEditorialWebsiteLinks>>,
+  TError,
+  { data: BodyType<UpdateEditorialWebsiteLinksBody> },
+  TContext
+> => {
+  return useMutation(getUpdateEditorialWebsiteLinksMutationOptions(options));
+};
