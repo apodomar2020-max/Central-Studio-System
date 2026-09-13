@@ -1943,10 +1943,17 @@ test("#24 (6b): ANY means ANY — a shared edit is rejected when it breaks only 
   // alone, so it passes only if the gate genuinely iterates every published
   // translation.
   //
-  // The asymmetry is the language-active rule, the one readiness rule that
-  // can differ between two translations of the same post: AR is retired
-  // while its translation stays published (deactivation deliberately never
-  // rewrites content — see editorialLanguagesService).
+  // The asymmetry is AR's own feature-image ALT: alt text is PROSE, so it
+  // lives per translation, which makes it one of the few readiness rules
+  // that can genuinely differ between two translations of the same post.
+  // AR's alt is blanked by direct SQL (the route would refuse it — that is
+  // test #24 (2)), reproducing a row that predates the gate.
+  //
+  // NOTE (#24 policy): the asymmetry used to be the language-active rule,
+  // but that rule is deliberately no longer enforced when REVALIDATING an
+  // already-published translation, so it can no longer serve as an
+  // asymmetry here. A content rule is a stronger choice anyway: content
+  // rules are exactly the family that must still be enforced in full.
   const { postId } = await publishedEnPost();
   await newTranslation(postId, arId, { title: "عنوان", featureImageAlt: "صورة" });
   assert.equal(
@@ -1955,20 +1962,23 @@ test("#24 (6b): ANY means ANY — a shared edit is rejected when it breaks only 
   );
   const goodAuthor = await newAuthor("news", { biography: "A real biography." });
 
-  await pool.query(`UPDATE editorial_languages SET is_active = false WHERE id = $1`, [arId]);
-  try {
-    const res = await editShared(postId, { authorId: goodAuthor });
-    assert.equal(res.status, 400, "rejected on AR's account, though EN alone would have passed");
-    assert.match((await json(res)).error, /inactive/i);
+  await pool.query(
+    `UPDATE editorial_post_translations SET feature_image_alt = '' WHERE post_id = $1 AND language_id = $2`,
+    [postId, arId],
+  );
+  const res = await editShared(postId, { authorId: goodAuthor });
+  assert.equal(res.status, 400, "rejected on AR's account, though EN alone would have passed");
+  assert.match((await json(res)).error, /alt text/i);
 
-    const { rows } = await pool.query(`SELECT author_id FROM editorial_posts WHERE id = $1`, [postId]);
-    assert.notEqual(rows[0].author_id, goodAuthor, "the byline did not move");
-  } finally {
-    await pool.query(`UPDATE editorial_languages SET is_active = true WHERE id = $1`, [arId]);
-  }
+  const { rows } = await pool.query(`SELECT author_id FROM editorial_posts WHERE id = $1`, [postId]);
+  assert.notEqual(rows[0].author_id, goodAuthor, "the byline did not move");
 
-  // With AR active again the very same edit succeeds, proving the rejection
-  // was caused by AR's state and nothing else.
+  // With AR's alt restored the very same edit succeeds, proving the
+  // rejection was caused by AR's state and nothing else.
+  await pool.query(
+    `UPDATE editorial_post_translations SET feature_image_alt = 'صورة' WHERE post_id = $1 AND language_id = $2`,
+    [postId, arId],
+  );
   assert.equal((await editShared(postId, { authorId: goodAuthor })).status, 200);
 });
 
@@ -2026,4 +2036,246 @@ test("#24: a shared edit on a post with NO published translation remains permiss
   assert.equal(res.status, 200, "no published translation means nothing to protect");
   const { rows } = await pool.query(`SELECT feature_image_url FROM editorial_posts WHERE id = $1`, [postId]);
   assert.equal(rows[0].feature_image_url, null);
+});
+
+// ─── #24 policy adjustment: editing already-published content whose
+//     language has since been DEACTIVATED ──────────────────────────────────
+//
+// Deactivating a language is explicitly allowed and deliberately does NOT
+// touch the translations already published in it — those pages stay live.
+// The readiness gate therefore has to distinguish two different questions:
+//
+//   PUBLISH TRANSITION  "may this GO live?"    -> language must be active.
+//   EDIT REVALIDATION   "may this STAY live?"  -> language-active excluded,
+//                                                 every CONTENT rule kept.
+//
+// Without that split, an editor could not fix a typo in already-live
+// content without reactivating (and so republishing) a whole retired
+// language. The tests below pin both halves: the publish gate still refuses
+// an inactive language, and the edit path stays open for VALID edits only.
+
+/** A post with BOTH en and ar published, ready for the language to be retired. */
+async function publishedEnArPost(): Promise<{ postId: number }> {
+  const { postId } = await publishedEnPost();
+  await newTranslation(postId, arId, { title: "عنوان منشور", featureImageAlt: "صورة" });
+  assert.equal(
+    (await asSuper(`/admin/editorial/posts/${postId}/translations/ar/publish`, { method: "POST" })).status,
+    200,
+    "fixture must publish ar",
+  );
+  return { postId };
+}
+
+/** Retire ar for the duration of `fn`, always restoring it afterwards. */
+async function withArRetired<T>(fn: () => Promise<T>): Promise<T> {
+  await pool.query(`UPDATE editorial_languages SET is_active = false WHERE id = $1`, [arId]);
+  try {
+    return await fn();
+  } finally {
+    await pool.query(`UPDATE editorial_languages SET is_active = true WHERE id = $1`, [arId]);
+  }
+}
+
+test("#24-policy (A): an inactive language still cannot be NEWLY published", async () => {
+  // The publish TRANSITION is unchanged by this policy — it is the one
+  // place the language-active rule still bites.
+  const { postId } = await publishedEnPost();
+  await newTranslation(postId, arId, { title: "مسودة", featureImageAlt: "صورة" });
+
+  await withArRetired(async () => {
+    const res = await asSuper(`/admin/editorial/posts/${postId}/translations/ar/publish`, { method: "POST" });
+    assert.equal(res.status, 400, "publishing into a retired language is still refused");
+    assert.match((await json(res)).error, /inactive/i);
+    assert.equal((await translationRow(postId, arId)).status, "draft", "still a draft");
+    assert.equal((await translationRow(postId, arId)).publishedAt, null);
+  });
+});
+
+test("#24-policy (B): an already-published translation stays READABLE and EDITABLE after its language is retired", async () => {
+  const { postId } = await publishedEnArPost();
+
+  await withArRetired(async () => {
+    // Readable.
+    const get = await asSuper(`/admin/editorial/posts/${postId}`);
+    assert.equal(get.status, 200, "the post is still readable with a retired language");
+
+    // Editable, with a plain valid typo fix — and NO reactivation first.
+    const res = await editTranslation(postId, "ar", { title: "عنوان مصحح" });
+    assert.equal(res.status, 200, "a valid edit to already-published content must not require reactivation");
+    assert.equal((await translationRow(postId, arId)).title, "عنوان مصحح");
+  });
+});
+
+test("#24-policy (C): the valid edit keeps the translation PUBLISHED with publishedAt unchanged", async () => {
+  const { postId } = await publishedEnArPost();
+  const before = await translationRow(postId, arId);
+  assert.equal(before.status, "published");
+  assert.ok(before.publishedAtEpoch != null, "fixture is published");
+
+  await withArRetired(async () => {
+    assert.equal(
+      (await editTranslation(postId, "ar", {
+        deck: "سطر تعريفي جديد",
+        seoTitle: "SEO",
+        body: { blocks: [{ type: "paragraph", text: "نص محدث وصالح." }] },
+      })).status,
+      200,
+    );
+  });
+
+  const after = await translationRow(postId, arId);
+  assert.equal(after.status, "published", "still published — not demoted");
+  assert.equal(after.publishedAtEpoch, before.publishedAtEpoch, "publishedAt is untouched by an edit");
+});
+
+test("#24-policy (D): an INVALID content edit to the retired-language published translation is still rejected", async () => {
+  const { postId } = await publishedEnArPost();
+  const before = await translationRow(postId, arId);
+
+  await withArRetired(async () => {
+    // Blanked body.
+    const emptyBody = await editTranslation(postId, "ar", { body: { blocks: [] } });
+    assert.equal(emptyBody.status, 400, "the content rules are NOT bypassed for a retired language");
+    assert.match((await json(emptyBody)).error, /body block/i);
+
+    // Blanked required alt text.
+    const noAlt = await editTranslation(postId, "ar", { featureImageAlt: "" });
+    assert.equal(noAlt.status, 400);
+    assert.match((await json(noAlt)).error, /alt text/i);
+  });
+
+  const after = await translationRow(postId, arId);
+  assert.deepEqual(after.body, before.body, "body preserved exactly");
+  assert.equal(after.featureImageAlt, before.featureImageAlt, "alt preserved exactly");
+  assert.equal(after.status, "published");
+});
+
+test("#24-policy (E): the successful retired-language edit still writes its revision", async () => {
+  const { postId } = await publishedEnArPost();
+  const revisionsBefore = await revisionCount(postId);
+
+  await withArRetired(async () => {
+    assert.equal((await editTranslation(postId, "ar", { title: "عنوان آخر" })).status, 200);
+  });
+
+  assert.equal(
+    await revisionCount(postId),
+    revisionsBefore + 1,
+    "the pre-change revision is written exactly as for an active language",
+  );
+  const latest = (await revisionRows(postId)).at(-1)!;
+  assert.equal(latest.event_type, "published_edit");
+  assert.equal(latest.snapshot.title, "عنوان منشور", "the revision holds the PRE-change title");
+});
+
+test("#24-policy (F): audit is written for the accepted edit and NOT for the rejected one", async () => {
+  const { postId } = await publishedEnArPost();
+
+  await withArRetired(async () => {
+    const auditBefore = await auditCount("translation_edited", (await pool.query(
+      `SELECT id FROM editorial_post_translations WHERE post_id = $1 AND language_id = $2`,
+      [postId, arId],
+    )).rows[0].id);
+
+    // Accepted.
+    assert.equal((await editTranslation(postId, "ar", { deck: "صالح" })).status, 200);
+    const translationId = (await pool.query(
+      `SELECT id FROM editorial_post_translations WHERE post_id = $1 AND language_id = $2`,
+      [postId, arId],
+    )).rows[0].id;
+    assert.equal(
+      await auditCount("translation_edited", translationId),
+      auditBefore + 1,
+      "the accepted edit is audited",
+    );
+
+    // Rejected — must add NOTHING.
+    assert.equal((await editTranslation(postId, "ar", { body: { blocks: [] } })).status, 400);
+    assert.equal(
+      await auditCount("translation_edited", translationId),
+      auditBefore + 1,
+      "the rejected edit wrote no audit row",
+    );
+  });
+});
+
+test("#24-policy (G): the rejected retired-language mutation is ATOMIC — no orphan revision, no audit", async () => {
+  const { postId } = await publishedEnArPost();
+  const revisionsBefore = await revisionCount(postId);
+  const translationId = (await pool.query(
+    `SELECT id FROM editorial_post_translations WHERE post_id = $1 AND language_id = $2`,
+    [postId, arId],
+  )).rows[0].id;
+  const auditBefore = await auditCount("translation_edited", translationId);
+
+  await withArRetired(async () => {
+    assert.equal((await editTranslation(postId, "ar", { title: "x", body: { blocks: [] } })).status, 400);
+  });
+
+  // The revision in step (a) is written BEFORE the gate runs, so if the
+  // rollback were incomplete it would survive as an orphan. It must not.
+  assert.equal(await revisionCount(postId), revisionsBefore, "zero orphan revision rows");
+  assert.equal(await auditCount("translation_edited", translationId), auditBefore, "zero misleading audit rows");
+  assert.notEqual((await translationRow(postId, arId)).title, "x", "the title did not move");
+});
+
+test("#24-policy (H): two-language independence holds across the retirement", async () => {
+  const { postId } = await publishedEnArPost();
+  const enBefore = await translationRow(postId, enId);
+  const arBefore = await translationRow(postId, arId);
+
+  await withArRetired(async () => {
+    // Edit AR (retired) — EN must be untouched.
+    assert.equal((await editTranslation(postId, "ar", { title: "تحرير عربي" })).status, 200);
+    const enAfter = await translationRow(postId, enId);
+    assert.deepEqual(enAfter, enBefore, "the EN translation is byte-for-byte unchanged");
+
+    // Edit EN (active) — AR must be untouched apart from its own prior edit.
+    assert.equal((await editTranslation(postId, "en", { title: "An English edit" })).status, 200);
+    const arAfter = await translationRow(postId, arId);
+    assert.equal(arAfter.title, "تحرير عربي", "AR keeps its own title");
+    assert.equal(arAfter.status, "published");
+    assert.equal(arAfter.publishedAtEpoch, arBefore.publishedAtEpoch);
+    assert.deepEqual(arAfter.body, arBefore.body);
+  });
+});
+
+test("#24-policy (I): a VALID shared-field edit succeeds on a post with one active- and one retired-language published translation", async () => {
+  const { postId } = await publishedEnArPost();
+  const OTHER_OK_IMAGE = "https://images.unsplash.com/photo-editorial-test-second.jpg";
+
+  await withArRetired(async () => {
+    const res = await editShared(postId, { featureImageUrl: OTHER_OK_IMAGE });
+    assert.equal(res.status, 200, "the retired AR translation must not block a valid shared edit");
+  });
+
+  const { rows } = await pool.query(`SELECT feature_image_url FROM editorial_posts WHERE id = $1`, [postId]);
+  assert.equal(rows[0].feature_image_url, OTHER_OK_IMAGE, "the image moved");
+  assert.equal((await translationRow(postId, enId)).status, "published");
+  assert.equal((await translationRow(postId, arId)).status, "published");
+});
+
+test("#24-policy (J): an INVALID shared-field edit still FAILS on that same post — the exemption is scoped to the language rule alone", async () => {
+  const { postId } = await publishedEnArPost();
+  const biolessAuthor = await newAuthor("news", { biography: null });
+  const revisionsBefore = await revisionCount(postId);
+
+  await withArRetired(async () => {
+    // Removing the feature image entirely.
+    const noImage = await editShared(postId, { featureImageUrl: null });
+    assert.equal(noImage.status, 400, "shared readiness rules still apply in full");
+    assert.match((await json(noImage)).error, /feature image/i);
+
+    // A bio-less byline.
+    const badAuthor = await editShared(postId, { authorId: biolessAuthor });
+    assert.equal(badAuthor.status, 400);
+    assert.match((await json(badAuthor)).error, /biography/i);
+  });
+
+  const { rows } = await pool.query(
+    `SELECT feature_image_url, author_id FROM editorial_posts WHERE id = $1`, [postId],
+  );
+  assert.ok(rows[0].feature_image_url, "the image survived");
+  assert.notEqual(rows[0].author_id, biolessAuthor, "the byline did not move");
+  assert.equal(await revisionCount(postId), revisionsBefore, "no orphan revision from either rejection");
 });

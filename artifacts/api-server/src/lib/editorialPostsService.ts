@@ -417,6 +417,38 @@ export interface PublishReadinessDeps {
 }
 
 /**
+ * WHICH SIDE OF THE PUBLISHED LINE the readiness gate is being run on.
+ *
+ * "publish" — the draft -> published TRANSITION. Every rule applies,
+ *   including "the language must still be offered". Content is about to
+ *   BECOME public, so putting it live in a retired language is a category
+ *   error and must be refused.
+ *
+ * "edit" — revalidation of content that is ALREADY published. Every
+ *   CONTENT-readiness rule still applies in full (title, body, feature
+ *   image, alt text, per-block alt, active author with a biography, media
+ *   allowlist). The language-active rule is EXCLUDED — and it alone.
+ *
+ *   Why: deactivating a language is explicitly allowed WITHOUT touching the
+ *   translations already published in it; those pages stay live. If the
+ *   edit path also enforced language-active, an editor could no longer fix
+ *   a typo in already-live content without first REACTIVATING the language
+ *   — republishing an entire language to the public just to correct one
+ *   word. The language rule gates GOING live, not STAYING live, so it has
+ *   nothing to say about an edit to content that is already live.
+ *
+ *   This is a scalpel, not a bypass: an invalid edit to an
+ *   inactive-language published translation is still rejected, for its real
+ *   content reason.
+ */
+export type PublishReadinessContext = "publish" | "edit";
+
+export interface PublishReadinessOptions {
+  /** Defaults to "publish" — the strict transition gate. */
+  context?: PublishReadinessContext;
+}
+
+/**
  * The full draft -> published gate FOR ONE TRANSLATION. Throws
  * EditorialRuleError on the FIRST failing rule, with a message naming
  * exactly what the editor must fix.
@@ -434,10 +466,18 @@ export async function assertTranslationPublishReady(
   post: EditorialPost,
   translation: EditorialPostTranslation,
   deps: PublishReadinessDeps = {},
+  options: PublishReadinessOptions = {},
 ): Promise<void> {
   // The language must still be offered. Checked FIRST: publishing into a
   // retired language is a category error, not a content problem.
-  await assertLanguagePublishable(client, translation.languageId);
+  //
+  // PUBLISH-TRANSITION ONLY. On the "edit" path this single rule is
+  // skipped, because it gates going live rather than staying live — see
+  // PublishReadinessContext. EVERY rule below this line still runs in both
+  // contexts, so the exemption cannot widen into a content bypass.
+  if ((options.context ?? "publish") === "publish") {
+    await assertLanguagePublishable(client, translation.languageId);
+  }
 
   if (translation.title.trim().length === 0) {
     throw new EditorialRuleError("A translation needs a title before it can be published.");
@@ -514,6 +554,17 @@ export async function assertTranslationPublishReady(
  * It reuses `assertTranslationPublishReady` wholesale rather than restating
  * any rule, so the edit gate and the publish gate can never drift apart.
  *
+ * ONE RULE IS EXCLUDED HERE: the language must be ACTIVE. It is called with
+ * context "edit", which skips that check and only that check. Deactivating
+ * a language is explicitly allowed without disturbing the translations
+ * already published in it, and those pages stay live — so requiring an
+ * active language in order to fix a typo in already-live content would mean
+ * reactivating (and thereby republishing) an entire language to correct one
+ * word. The language rule gates GOING live, not STAYING live. Every
+ * CONTENT-readiness rule still applies in full: an invalid edit to an
+ * inactive-language published translation is still rejected atomically, for
+ * its real content reason.
+ *
  * MEDIA LIVE-CHECKS ARE SKIPPED HERE by default. Every URL arriving in an
  * edit is already live-checked at the route boundary before the service is
  * reached, and every stored URL was live-checked when it was written, so
@@ -536,6 +587,9 @@ export async function assertPublishedTranslationStillReady(
       post,
       translation,
       deps ?? { media: { skipLiveCheck: true } },
+      // The one rule that does NOT survive into the edit path. Everything
+      // else the publish gate asserts is asserted here too.
+      { context: "edit" },
     );
   } catch (err) {
     if (err instanceof EditorialRuleError) {
