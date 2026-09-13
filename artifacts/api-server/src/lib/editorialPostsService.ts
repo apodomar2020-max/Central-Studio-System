@@ -488,6 +488,66 @@ export async function assertTranslationPublishReady(
   if (mediaError) throw new EditorialRuleError(mediaError.error);
 }
 
+/**
+ * PUBLISH-READINESS REVALIDATION ON EDIT (Wave 2.0 — Issue #24).
+ *
+ * Wave 1.1 ran the readiness gate only on the draft -> published
+ * TRANSITION. Once live, a translation could be edited into a state the
+ * gate would have refused — body emptied, feature-image alt blanked, the
+ * post's shared image cleared, the byline reassigned to an author with no
+ * biography — and the edit committed. The public page then rendered the
+ * broken state, and nothing in the system objected, because the only gate
+ * was behind a transition that had already happened.
+ *
+ * THE RULE: published content may never be saved into a state that fails
+ * the requirements it had to satisfy to become published. This is checked
+ * against the RESULT of the mutation, inside the mutation's own
+ * transaction, so a failure rolls the whole edit back — no partial save, no
+ * orphan revision row, no misleading "success" audit row, and no automatic
+ * demotion to draft (the previous published state is preserved exactly and
+ * the editor is told what to fix).
+ *
+ * Draft and archived translations are deliberately UNAFFECTED: they are
+ * working copy, and staying permissive there is the whole point of having a
+ * draft state. This helper is a no-op for them.
+ *
+ * It reuses `assertTranslationPublishReady` wholesale rather than restating
+ * any rule, so the edit gate and the publish gate can never drift apart.
+ *
+ * MEDIA LIVE-CHECKS ARE SKIPPED HERE by default. Every URL arriving in an
+ * edit is already live-checked at the route boundary before the service is
+ * reached, and every stored URL was live-checked when it was written, so
+ * re-running DNS + HEAD on each save would add a network round trip per
+ * keystroke-batch without checking anything new. The STATIC rules
+ * (https-only, host allowlist, shape) still run in full — those are the
+ * ones that actually defend the trust boundary, and they are free.
+ */
+export async function assertPublishedTranslationStillReady(
+  client: DbClient,
+  post: EditorialPost,
+  translation: EditorialPostTranslation,
+  languageCode: string,
+  deps?: PublishReadinessDeps,
+): Promise<void> {
+  if (translation.status !== "published") return;
+  try {
+    await assertTranslationPublishReady(
+      client,
+      post,
+      translation,
+      deps ?? { media: { skipLiveCheck: true } },
+    );
+  } catch (err) {
+    if (err instanceof EditorialRuleError) {
+      throw new EditorialRuleError(
+        `This change would leave the PUBLISHED ${languageCode} translation of post #${post.id} in a state that could not be published: ${err.message} The change was not saved.`,
+        err.status === 404 ? 400 : err.status,
+      );
+    }
+    throw err;
+  }
+}
+
 // ─── Revisions ──────────────────────────────────────────────────────────────
 
 export async function loadPostTopicIds(client: DbClient, postId: number): Promise<number[]> {
@@ -1091,8 +1151,18 @@ export interface UpdateTranslationInput {
  * Drafts and archived translations are working copy and make no revision.
  * This is Wave 1's exact pattern, scoped to the translation.
  *
+ * When that translation is CURRENTLY PUBLISHED, the result of the edit is
+ * also re-asserted against the FULL publish-readiness gate before the
+ * transaction commits (Wave 2.0 — Issue #24). An edit that would empty the
+ * body, blank the feature-image alt, or otherwise leave live content in a
+ * state that could never have been published is rejected with a 400; the
+ * previous published state is preserved exactly, and it is NOT demoted to
+ * draft. Drafts and archived translations skip the gate entirely.
+ *
  * `publishedAt` is never written here, on any path. Neither is any other
- * translation's row: the UPDATE names this translation's id.
+ * translation's row: the UPDATE names this translation's id — and the
+ * readiness gate above likewise reads only this translation, so a rejected
+ * Arabic edit cannot disturb a published English sibling.
  */
 export async function updateTranslation(
   postId: number,
@@ -1143,7 +1213,15 @@ export async function updateTranslation(
       .where(eq(editorialPostTranslationsTable.id, translation.id))
       .returning();
 
-    // (c) audit, same transaction.
+    // (c) PUBLISHED-EDIT READINESS GATE (Wave 2.0 — Issue #24), asserted
+    // against the RESULT of the mutation and inside its transaction. On
+    // failure this throws, the transaction rolls back, and the revision
+    // written in (a) plus the row written in (b) both vanish — the live
+    // translation is left byte-for-byte as it was. A no-op for drafts and
+    // archived translations.
+    await assertPublishedTranslationStillReady(tx, post, updated, language.code, ctx.deps);
+
+    // (d) audit, same transaction.
     await auditEditorial(tx, ctx.actor, {
       action: slugChanged ? "translation_slug_changed" : "translation_edited",
       entityType: EDITORIAL_TRANSLATION_ENTITY_TYPE,
@@ -1269,6 +1347,16 @@ export interface UpdatePostSharedInput {
  * legitimately writes translation rows, and it writes only the byline
  * field, never any prose; a translation-scoped revision is taken for each
  * published translation it touches, so each language's history records it.
+ *
+ * READINESS REVALIDATION (Wave 2.0 — Issue #24). Because the spine is
+ * SHARED, a change to it is checked against EVERY currently-published
+ * translation, not just one: clearing the feature image, or reassigning the
+ * byline to an archived author or one with no biography, would invalidate
+ * all of them at once. If the resulting spine would break any published
+ * translation the whole mutation is rejected (400) and rolled back — the
+ * post, every translation, the shared revision and the audit row are all
+ * left exactly as they were. A post with no published translations is
+ * unaffected.
  */
 export async function updatePostSharedFields(
   postId: number,
@@ -1289,7 +1377,27 @@ export async function updatePostSharedFields(
       newAuthor = await assertAuthorAssignableToChannel(tx, post.channel, input.authorId);
     }
 
-    const anyPublished = await postHasPublishedTranslation(tx, post.id);
+    // Every PUBLISHED translation of this post, locked. These are the rows
+    // whose validity the shared spine is jointly responsible for: the
+    // feature-image URL and the byline live here on the post, but the
+    // readiness rules that consume them are per-translation. Read ONCE and
+    // reused below for both the readiness gate and the byline refresh.
+    // Prose is never read from here for mutation and never written.
+    const publishedTranslations = await tx
+      .select({
+        translation: editorialPostTranslationsTable,
+        languageCode: editorialLanguagesTable.code,
+      })
+      .from(editorialPostTranslationsTable)
+      .innerJoin(editorialLanguagesTable, eq(editorialLanguagesTable.id, editorialPostTranslationsTable.languageId))
+      .where(
+        and(
+          eq(editorialPostTranslationsTable.postId, postId),
+          eq(editorialPostTranslationsTable.status, "published"),
+        ),
+      )
+      .for("update");
+    const anyPublished = publishedTranslations.length > 0;
 
     // (a) shared revision of the PRE-change spine.
     if (anyPublished) {
@@ -1311,27 +1419,29 @@ export async function updatePostSharedFields(
       .where(eq(editorialPostsTable.id, postId))
       .returning();
 
-    // (b) refresh the frozen byline on PUBLISHED translations only, taking
+    // (b) PUBLISHED-EDIT READINESS GATE (Wave 2.0 — Issue #24), against the
+    // RESULT of the shared change and inside its transaction.
+    //
+    // A shared field is shared: clearing the feature image, or reassigning
+    // the byline to an archived author or one with no biography, invalidates
+    // EVERY published translation at once. So the gate runs for ALL of them,
+    // not just one — a post with a published EN and a published AR is
+    // rejected if the resulting spine would break either. The first failure
+    // throws, the transaction rolls back, and the shared revision written in
+    // (a) plus the post row written just above both vanish.
+    //
+    // A post with no published translations is unaffected: the loop is
+    // empty, and drafts stay permissive exactly as before.
+    for (const row of publishedTranslations) {
+      await assertPublishedTranslationStillReady(tx, updated, row.translation, row.languageCode, ctx.deps);
+    }
+
+    // (c) refresh the frozen byline on PUBLISHED translations only, taking
     // a per-translation revision for each so no language's history has a
     // gap. Prose is never touched.
     if (authorChanged) {
-      const published = await tx
-        .select({
-          translation: editorialPostTranslationsTable,
-          languageCode: editorialLanguagesTable.code,
-        })
-        .from(editorialPostTranslationsTable)
-        .innerJoin(editorialLanguagesTable, eq(editorialLanguagesTable.id, editorialPostTranslationsTable.languageId))
-        .where(
-          and(
-            eq(editorialPostTranslationsTable.postId, postId),
-            eq(editorialPostTranslationsTable.status, "published"),
-          ),
-        )
-        .for("update");
-
       const snapshot = newAuthor ? buildAuthorSnapshot(newAuthor) : null;
-      for (const row of published) {
+      for (const row of publishedTranslations) {
         await recordTranslationRevision(
           tx,
           row.translation,
@@ -1346,7 +1456,7 @@ export async function updatePostSharedFields(
       }
     }
 
-    // (c) audit, same transaction.
+    // (d) audit, same transaction.
     await auditEditorial(tx, ctx.actor, {
       action: authorChanged && imageChanged
         ? "shared_fields_changed"

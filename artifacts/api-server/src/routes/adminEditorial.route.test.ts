@@ -1779,3 +1779,251 @@ test("404s: unknown post, topic, author, revision, and a post with no translatio
   assert.equal(res.status, 404);
   assert.match((await json(res)).error, /no translation in that language/i);
 });
+
+// ─── Issue #24: published content cannot be edited into an unpublishable state ─
+//
+// Wave 1.1 ran the readiness gate only on the draft -> published
+// TRANSITION. Once live, a translation could be edited into a state the
+// gate would have refused — body emptied, feature-image alt blanked, the
+// shared image cleared, the byline moved to an author with no biography —
+// and the edit committed, so the public page rendered the broken state.
+//
+// Wave 2.0 re-asserts the SAME gate against the RESULT of every edit to
+// published content, inside the mutation's transaction. Each test asserts
+// on the real rows AND on the revision/audit tables, because the whole
+// point is that a rejection leaves no trace at all: no partial save, no
+// orphan revision, no misleading "success" audit row, and no silent
+// demotion to draft.
+
+/** A post with a PUBLISHED English translation, ready to be edited. */
+async function publishedEnPost(): Promise<{ postId: number; authorId: number }> {
+  const authorId = await newAuthor("news");
+  const postId = await newPost({ channel: "news", authorId });
+  await newTranslation(postId, enId);
+  const res = await asSuper(`/admin/editorial/posts/${postId}/translations/en/publish`, { method: "POST" });
+  assert.equal(res.status, 200, "fixture must publish");
+  return { postId, authorId };
+}
+
+function editTranslation(postId: number, lang: string, body: unknown): Promise<Response> {
+  return asSuper(`/admin/editorial/posts/${postId}/translations/${lang}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+}
+
+function editShared(postId: number, body: unknown): Promise<Response> {
+  return asSuper(`/admin/editorial/posts/${postId}`, { method: "PATCH", body: JSON.stringify(body) });
+}
+
+async function auditCountForPost(action: string, postId: number): Promise<number> {
+  return auditCount(action, postId);
+}
+
+test("#24 (1): emptying the body of a PUBLISHED translation is rejected and changes nothing", async () => {
+  const { postId } = await publishedEnPost();
+  const beforeRow = await translationRow(postId, enId);
+  const beforeRevisions = await revisionCount(postId);
+
+  const res = await editTranslation(postId, "en", { body: { blocks: [] } });
+  assert.equal(res.status, 400);
+  assert.match((await json(res)).error, /published/i);
+
+  const afterRow = await translationRow(postId, enId);
+  assert.deepEqual(afterRow.body, beforeRow.body, "body preserved exactly");
+  assert.equal(afterRow.status, "published", "NOT demoted to draft");
+  assert.equal(afterRow.title, beforeRow.title);
+  // The rollback proof: the pre-change revision written inside the
+  // transaction must have been rolled back with it.
+  assert.equal(await revisionCount(postId), beforeRevisions, "zero orphan revision rows");
+  assert.equal(await auditCountForPost("translation_edited", postId), 0, "zero misleading audit rows");
+});
+
+test("#24 (1b): blanking the feature-image alt of a PUBLISHED translation is rejected", async () => {
+  const { postId } = await publishedEnPost();
+  const beforeRevisions = await revisionCount(postId);
+
+  const res = await editTranslation(postId, "en", { featureImageAlt: "   " });
+  assert.equal(res.status, 400);
+  assert.match((await json(res)).error, /alt text/i);
+
+  assert.equal((await translationRow(postId, enId)).featureImageAlt, "A feature image");
+  assert.equal(await revisionCount(postId), beforeRevisions);
+});
+
+test("#24 (2): an invalid edit to a published AR translation is rejected", async () => {
+  const { postId } = await publishedEnPost();
+  await newTranslation(postId, arId, { title: "عنوان", featureImageAlt: "صورة" });
+  assert.equal(
+    (await asSuper(`/admin/editorial/posts/${postId}/translations/ar/publish`, { method: "POST" })).status,
+    200,
+  );
+
+  const res = await editTranslation(postId, "ar", { body: { blocks: [] } });
+  assert.equal(res.status, 400);
+  assert.equal((await translationRow(postId, arId)).status, "published");
+});
+
+test("#24 (3): a rejected AR edit leaves the published EN sibling completely untouched", async () => {
+  const { postId } = await publishedEnPost();
+  await newTranslation(postId, arId, { title: "عنوان", featureImageAlt: "صورة" });
+  assert.equal(
+    (await asSuper(`/admin/editorial/posts/${postId}/translations/ar/publish`, { method: "POST" })).status,
+    200,
+  );
+  const enBefore = await translationRow(postId, enId);
+  const arBefore = await translationRow(postId, arId);
+  const revisionsBefore = await revisionCount(postId);
+
+  assert.equal((await editTranslation(postId, "ar", { body: { blocks: [] } })).status, 400);
+
+  assert.deepEqual(await translationRow(postId, enId), enBefore, "EN is byte-for-byte unchanged");
+  assert.deepEqual(await translationRow(postId, arId), arBefore, "AR is byte-for-byte unchanged");
+  assert.equal(await revisionCount(postId), revisionsBefore, "no revision row for either language");
+});
+
+test("#24 (4): clearing the SHARED feature image while a translation is published is rejected", async () => {
+  const { postId } = await publishedEnPost();
+  const revisionsBefore = await revisionCount(postId);
+
+  const res = await editShared(postId, { featureImageUrl: null });
+  assert.equal(res.status, 400);
+  assert.match((await json(res)).error, /feature image/i);
+
+  const { rows } = await pool.query(`SELECT feature_image_url FROM editorial_posts WHERE id = $1`, [postId]);
+  assert.equal(rows[0].feature_image_url, OK_IMAGE, "the shared image is preserved");
+  assert.equal((await translationRow(postId, enId)).status, "published");
+  assert.equal(await revisionCount(postId), revisionsBefore, "no orphan shared revision");
+  assert.equal(await auditCountForPost("feature_image_changed", postId), 0);
+});
+
+test("#24 (5): reassigning the byline to an author with no biography is rejected while published", async () => {
+  const { postId } = await publishedEnPost();
+  const biolessAuthor = await newAuthor("news", { biography: null });
+  const revisionsBefore = await revisionCount(postId);
+
+  const res = await editShared(postId, { authorId: biolessAuthor });
+  assert.equal(res.status, 400);
+  assert.match((await json(res)).error, /biography/i);
+
+  const { rows } = await pool.query(`SELECT author_id FROM editorial_posts WHERE id = $1`, [postId]);
+  assert.notEqual(rows[0].author_id, biolessAuthor, "the byline did not move");
+  assert.equal(await revisionCount(postId), revisionsBefore);
+  assert.equal(await auditCountForPost("author_changed", postId), 0);
+});
+
+test("#24 (6): a shared edit that would invalidate ANY published translation of a multi-language post is rejected", async () => {
+  // EN and AR both published; the resulting spine breaks BOTH.
+  const { postId } = await publishedEnPost();
+  await newTranslation(postId, arId, { title: "عنوان", featureImageAlt: "صورة" });
+  assert.equal(
+    (await asSuper(`/admin/editorial/posts/${postId}/translations/ar/publish`, { method: "POST" })).status,
+    200,
+  );
+
+  const bioless = await newAuthor("news", { biography: "" });
+  const res = await editShared(postId, { authorId: bioless });
+  assert.equal(res.status, 400);
+
+  // BOTH languages survive untouched, and neither got a revision row.
+  assert.equal((await translationRow(postId, enId)).status, "published");
+  assert.equal((await translationRow(postId, arId)).status, "published");
+  const revisions = await revisionRows(postId);
+  assert.equal(
+    revisions.filter((r) => r.event_type === "published_edit").length,
+    0,
+    "no per-language byline revision leaked from the rejected shared edit",
+  );
+});
+
+test("#24 (6b): ANY means ANY — a shared edit is rejected when it breaks only ONE of two published translations", async () => {
+  // The previous test's spine broke both languages symmetrically, so it
+  // cannot distinguish "checks all" from "checks the first one". This one
+  // is ASYMMETRIC: the resulting spine is fine for EN and invalid for AR
+  // alone, so it passes only if the gate genuinely iterates every published
+  // translation.
+  //
+  // The asymmetry is the language-active rule, the one readiness rule that
+  // can differ between two translations of the same post: AR is retired
+  // while its translation stays published (deactivation deliberately never
+  // rewrites content — see editorialLanguagesService).
+  const { postId } = await publishedEnPost();
+  await newTranslation(postId, arId, { title: "عنوان", featureImageAlt: "صورة" });
+  assert.equal(
+    (await asSuper(`/admin/editorial/posts/${postId}/translations/ar/publish`, { method: "POST" })).status,
+    200,
+  );
+  const goodAuthor = await newAuthor("news", { biography: "A real biography." });
+
+  await pool.query(`UPDATE editorial_languages SET is_active = false WHERE id = $1`, [arId]);
+  try {
+    const res = await editShared(postId, { authorId: goodAuthor });
+    assert.equal(res.status, 400, "rejected on AR's account, though EN alone would have passed");
+    assert.match((await json(res)).error, /inactive/i);
+
+    const { rows } = await pool.query(`SELECT author_id FROM editorial_posts WHERE id = $1`, [postId]);
+    assert.notEqual(rows[0].author_id, goodAuthor, "the byline did not move");
+  } finally {
+    await pool.query(`UPDATE editorial_languages SET is_active = true WHERE id = $1`, [arId]);
+  }
+
+  // With AR active again the very same edit succeeds, proving the rejection
+  // was caused by AR's state and nothing else.
+  assert.equal((await editShared(postId, { authorId: goodAuthor })).status, 200);
+});
+
+test("#24 (7): a VALID edit to a published translation still succeeds, with its revision and audit", async () => {
+  const { postId } = await publishedEnPost();
+  const revisionsBefore = await revisionCount(postId);
+
+  const res = await editTranslation(postId, "en", {
+    title: "A better headline",
+    body: { blocks: [{ type: "paragraph", text: "Rewritten, and still valid." }] },
+  });
+  assert.equal(res.status, 200);
+
+  const after = await translationRow(postId, enId);
+  assert.equal(after.title, "A better headline");
+  assert.equal(after.status, "published");
+  assert.equal(await revisionCount(postId), revisionsBefore + 1, "the pre-change revision is still written");
+  assert.equal(await auditCountForPost("translation_edited", postId), 0);
+  const { rows } = await pool.query(
+    `SELECT count(*)::int AS n FROM admin_activity_logs
+     WHERE module = 'website.posts' AND action = 'translation_edited'`,
+  );
+  assert.ok(rows[0].n > 0, "the edit is audited");
+});
+
+test("#24 (8): a VALID shared-field edit still succeeds while published", async () => {
+  const { postId } = await publishedEnPost();
+  const goodAuthor = await newAuthor("news", { biography: "A real biography." });
+
+  const res = await editShared(postId, { authorId: goodAuthor });
+  assert.equal(res.status, 200);
+
+  const { rows } = await pool.query(`SELECT author_id FROM editorial_posts WHERE id = $1`, [postId]);
+  assert.equal(rows[0].author_id, goodAuthor, "the byline moved");
+  assert.equal(await auditCountForPost("author_changed", postId), 1);
+  // The frozen byline on the published translation was refreshed.
+  const snap = await pool.query(
+    `SELECT author_snapshot FROM editorial_post_translations WHERE post_id = $1 AND language_id = $2`,
+    [postId, enId],
+  );
+  assert.ok(snap.rows[0].author_snapshot, "the published translation's frozen byline was refreshed");
+});
+
+test("#24: DRAFT translations remain permissive — the gate is published-only", async () => {
+  const { postId } = await newReadyPost("news");
+  // Exactly the edit that is rejected on a published translation.
+  const res = await editTranslation(postId, "en", { body: { blocks: [] } });
+  assert.equal(res.status, 200, "a draft may be saved in an unpublishable state");
+  assert.deepEqual((await translationRow(postId, enId)).body, { blocks: [] });
+});
+
+test("#24: a shared edit on a post with NO published translation remains permissive", async () => {
+  const { postId } = await newReadyPost("news");
+  const res = await editShared(postId, { featureImageUrl: null });
+  assert.equal(res.status, 200, "no published translation means nothing to protect");
+  const { rows } = await pool.query(`SELECT feature_image_url FROM editorial_posts WHERE id = $1`, [postId]);
+  assert.equal(rows[0].feature_image_url, null);
+});
