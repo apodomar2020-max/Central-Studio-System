@@ -801,13 +801,30 @@ export async function assertPlacementValid(
   }
 }
 
+/**
+ * Replace one slot's entries wholesale.
+ *
+ * CHANNEL SCOPING (Wave 2.0 — Issue #23). The DELETE predicate names BOTH
+ * `channel` and `key`. Scoped by `key` alone — as Wave 1 had it — a PUT of
+ * experience:featured would DELETE every news:featured row as its first
+ * statement, because the two channels share one free-text key namespace and
+ * "featured" is the obvious slot name in each. They are independent
+ * curation surfaces: a write to one must never be able to reach the other.
+ */
 export async function replacePlacement(
   tx: DbClient,
   key: string,
   channel: EditorialChannel,
   items: readonly PlacementInput[],
 ): Promise<void> {
-  await tx.delete(editorialPlacementsTable).where(eq(editorialPlacementsTable.key, key));
+  await tx
+    .delete(editorialPlacementsTable)
+    .where(
+      and(
+        eq(editorialPlacementsTable.channel, channel),
+        eq(editorialPlacementsTable.key, key),
+      ),
+    );
   if (items.length === 0) return;
   await tx.insert(editorialPlacementsTable).values(
     items.map((item, index) => ({

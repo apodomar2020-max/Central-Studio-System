@@ -13385,7 +13385,7 @@ export const getGetEditorialPlacementUrl = (
 };
 
 /**
- * @summary Read one named placement's entries in order — requires website.posts:view
+ * @summary Read one named placement's entries in order — requires website.posts:view. A placement is identified by BOTH `channel` and `key`. `key` is free text and the same slot name ("featured") is used independently in each channel, so a key-only read would return both channels' entries interleaved.
  */
 export const getEditorialPlacement = async (
   params: GetEditorialPlacementParams,
@@ -13446,7 +13446,7 @@ export type GetEditorialPlacementQueryResult = NonNullable<
 export type GetEditorialPlacementQueryError = ErrorType<ErrorResponse>;
 
 /**
- * @summary Read one named placement's entries in order — requires website.posts:view
+ * @summary Read one named placement's entries in order — requires website.posts:view. A placement is identified by BOTH `channel` and `key`. `key` is free text and the same slot name ("featured") is used independently in each channel, so a key-only read would return both channels' entries interleaved.
  */
 
 export function useGetEditorialPlacement<
@@ -13491,7 +13491,7 @@ export const getReplaceEditorialPlacementUrl = (
 };
 
 /**
- * @summary Replace a named placement's entries — requires website.posts:edit. All posts must match the placement channel; a post appears at most once.
+ * @summary Replace a named placement's entries — requires website.posts:edit. The slot replaced is (`channel` from the body, `key` from the query): entries in the SAME key under a DIFFERENT channel are never read, replaced or removed. All posts must match the placement channel; a post appears at most once.
  */
 export const replaceEditorialPlacement = async (
   replaceEditorialPlacementBody: ReplaceEditorialPlacementBody,
@@ -13564,7 +13564,7 @@ export type ReplaceEditorialPlacementMutationBody =
 export type ReplaceEditorialPlacementMutationError = ErrorType<ErrorResponse>;
 
 /**
- * @summary Replace a named placement's entries — requires website.posts:edit. All posts must match the placement channel; a post appears at most once.
+ * @summary Replace a named placement's entries — requires website.posts:edit. The slot replaced is (`channel` from the body, `key` from the query): entries in the SAME key under a DIFFERENT channel are never read, replaced or removed. All posts must match the placement channel; a post appears at most once.
  */
 export const useReplaceEditorialPlacement = <
   TError = ErrorType<ErrorResponse>,

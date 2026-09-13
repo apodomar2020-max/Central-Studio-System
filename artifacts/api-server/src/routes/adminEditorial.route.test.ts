@@ -1399,10 +1399,168 @@ test("placements: a valid placement round-trips in position order and is audited
     body: JSON.stringify({ channel: "news", items: [{ postId: b }, { postId: a }] }),
   });
   assert.equal(res.status, 200);
-  const read = await json(await asSuper(`/admin/editorial/placements?key=${key}`));
+  const read = await json(await asSuper(`/admin/editorial/placements?channel=news&key=${key}`));
   assert.deepEqual(read.map((e: { postId: number }) => e.postId), [b, a]);
   assert.deepEqual(read.map((e: { postTitle: string }) => e.postTitle), ["Placed B", "Placed A"]);
-  assert.equal(await auditCount("placement_changed", key), 1);
+  // The audited entity is the SLOT, and a slot is (channel, key) — Wave 2.0.
+  assert.equal(await auditCount("placement_changed", `news:${key}`), 1);
+});
+
+// ─── Issue #23: placements are scoped by (channel, key), never key alone ─────
+//
+// `key` is free text and "featured" is the obvious slot name in BOTH
+// channels. Wave 1 identified a slot by `key` alone in the UNIQUE, the
+// index, the service DELETE predicate and the route SELECT predicate, so
+// news:featured and experience:featured were one slot: writing either
+// destroyed the other, and reading either returned both interleaved.
+//
+// Each test below asserts on the REAL ROWS as well as the wire response, so
+// a fix that merely filtered the response while still deleting the other
+// channel's rows would fail.
+
+async function placementRows(channel: string, key: string): Promise<number[]> {
+  const { rows } = await pool.query(
+    `SELECT post_id FROM editorial_placements WHERE channel = $1 AND key = $2 ORDER BY position, id`,
+    [channel, key],
+  );
+  return rows.map((row: { post_id: number }) => row.post_id);
+}
+
+/** PUT a slot; returns the response so a caller can assert on its status. */
+function putPlacement(channel: string, key: string, postIds: number[]): Promise<Response> {
+  return asSuper(`/admin/editorial/placements?channel=${channel}&key=${key}`, {
+    method: "PUT",
+    body: JSON.stringify({ channel, items: postIds.map((postId) => ({ postId })) }),
+  });
+}
+
+test("placements #23: the same key is usable in BOTH channels at once", async () => {
+  const key = `shared-featured-a-${RUN}`;
+  const newsPost = await newPost({ channel: "news", authorId: await newAuthor("news") });
+  const expPost = await newPost({ channel: "experience", authorId: await newAuthor("experience") });
+
+  assert.equal((await putPlacement("news", key, [newsPost])).status, 200);
+  assert.equal((await putPlacement("experience", key, [expPost])).status, 200);
+
+  // Both slots exist independently, in the database, under the same key.
+  assert.deepEqual(await placementRows("news", key), [newsPost]);
+  assert.deepEqual(await placementRows("experience", key), [expPost]);
+});
+
+test("placements #23: replacing a slot in one channel leaves the other channel's rows untouched", async () => {
+  const key = `shared-featured-b-${RUN}`;
+  const newsA = await newPost({ channel: "news", authorId: await newAuthor("news") });
+  const newsB = await newPost({ channel: "news", authorId: await newAuthor("news") });
+  const expA = await newPost({ channel: "experience", authorId: await newAuthor("experience") });
+
+  await putPlacement("news", key, [newsA, newsB]);
+  await putPlacement("experience", key, [expA]);
+
+  // Re-curate the EXPERIENCE slot — under Wave 1 this DELETEd the news rows.
+  assert.equal((await putPlacement("experience", key, [])).status, 200);
+
+  assert.deepEqual(await placementRows("news", key), [newsA, newsB], "news slot survived an experience write");
+  assert.deepEqual(await placementRows("experience", key), []);
+});
+
+test("placements #23: clearing a slot in one channel does not clear the other", async () => {
+  const key = `shared-featured-c-${RUN}`;
+  const newsA = await newPost({ channel: "news", authorId: await newAuthor("news") });
+  const expA = await newPost({ channel: "experience", authorId: await newAuthor("experience") });
+
+  await putPlacement("news", key, [newsA]);
+  await putPlacement("experience", key, [expA]);
+  assert.equal((await putPlacement("news", key, [])).status, 200);
+
+  assert.deepEqual(await placementRows("news", key), []);
+  assert.deepEqual(await placementRows("experience", key), [expA], "experience slot survived a news clear");
+});
+
+test("placements #23: a read in one channel never returns the other channel's entries", async () => {
+  const key = `shared-featured-d-${RUN}`;
+  const newsA = await newPost({ channel: "news", authorId: await newAuthor("news") });
+  const expA = await newPost({ channel: "experience", authorId: await newAuthor("experience") });
+  await newTranslation(newsA, enId, { title: "News entry" });
+  await newTranslation(expA, enId, { title: "Experience entry" });
+
+  await putPlacement("news", key, [newsA]);
+  await putPlacement("experience", key, [expA]);
+
+  const newsRead = await json(await asSuper(`/admin/editorial/placements?channel=news&key=${key}`));
+  const expRead = await json(await asSuper(`/admin/editorial/placements?channel=experience&key=${key}`));
+
+  assert.deepEqual(newsRead.map((e: { postId: number }) => e.postId), [newsA]);
+  assert.deepEqual(expRead.map((e: { postId: number }) => e.postId), [expA]);
+  assert.ok(newsRead.every((e: { channel: string }) => e.channel === "news"));
+  assert.ok(expRead.every((e: { channel: string }) => e.channel === "experience"));
+});
+
+test("placements #23: a read without a channel is rejected", async () => {
+  const res = await asSuper(`/admin/editorial/placements?key=anything-${RUN}`);
+  assert.equal(res.status, 400);
+  assert.match((await json(res)).error, /channel/i);
+});
+
+test("placements #23: duplicate post in the SAME channel+key is still rejected", async () => {
+  const key = `same-channel-dupe-${RUN}`;
+  const postId = await newPost({ channel: "news", authorId: await newAuthor("news") });
+  const res = await putPlacement("news", key, [postId, postId]);
+  assert.equal(res.status, 400);
+  assert.match((await json(res)).error, /at most once/i);
+});
+
+test("placements #23: each channel's slot is audited as its own entity", async () => {
+  const key = `audit-scope-${RUN}`;
+  const newsA = await newPost({ channel: "news", authorId: await newAuthor("news") });
+  const expA = await newPost({ channel: "experience", authorId: await newAuthor("experience") });
+  await putPlacement("news", key, [newsA]);
+  await putPlacement("experience", key, [expA]);
+
+  assert.equal(await auditCount("placement_changed", `news:${key}`), 1);
+  assert.equal(await auditCount("placement_changed", `experience:${key}`), 1);
+});
+
+test("placements #23: CONCURRENT writes to the same key in different channels both succeed", async () => {
+  // Before the fix these two requests raced for the same rows and one
+  // silently destroyed the other's work. After it they touch disjoint row
+  // sets under disjoint (channel, key) predicates, so both must commit
+  // fully — no interleaving, no lost update, no deadlock.
+  const key = `concurrent-${RUN}`;
+  const newsA = await newPost({ channel: "news", authorId: await newAuthor("news") });
+  const newsB = await newPost({ channel: "news", authorId: await newAuthor("news") });
+  const expA = await newPost({ channel: "experience", authorId: await newAuthor("experience") });
+  const expB = await newPost({ channel: "experience", authorId: await newAuthor("experience") });
+
+  const [newsRes, expRes] = await Promise.all([
+    putPlacement("news", key, [newsA, newsB]),
+    putPlacement("experience", key, [expA, expB]),
+  ]);
+
+  assert.equal(newsRes.status, 200);
+  assert.equal(expRes.status, 200);
+  assert.deepEqual(await placementRows("news", key), [newsA, newsB]);
+  assert.deepEqual(await placementRows("experience", key), [expA, expB]);
+});
+
+test("placements #23: permission behavior is unchanged by channel scoping", async () => {
+  const key = `perm-${RUN}`;
+  // view-only may READ but not WRITE; no-access may do neither.
+  assert.equal((await asViewer(`/admin/editorial/placements?channel=news&key=${key}`)).status, 200);
+  assert.equal(
+    (await asViewer(`/admin/editorial/placements?channel=news&key=${key}`, {
+      method: "PUT",
+      body: JSON.stringify({ channel: "news", items: [] }),
+    })).status,
+    403,
+  );
+  assert.equal((await asNoAccess(`/admin/editorial/placements?channel=news&key=${key}`)).status, 403);
+  assert.equal(
+    (await asEditor(`/admin/editorial/placements?channel=news&key=${key}`, {
+      method: "PUT",
+      body: JSON.stringify({ channel: "news", items: [] }),
+    })).status,
+    200,
+  );
 });
 
 // ─── Media validation through the route ─────────────────────────────────────
