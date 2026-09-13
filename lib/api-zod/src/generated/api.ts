@@ -7571,9 +7571,10 @@ export const UpdateEditorialAuthorResponse = zod.object({
 });
 
 /**
- * @summary Read one named placement's entries in order — requires website.posts:view
+ * @summary Read one named placement's entries in order — requires website.posts:view. A placement is identified by BOTH `channel` and `key`. `key` is free text and the same slot name ("featured") is used independently in each channel, so a key-only read would return both channels' entries interleaved.
  */
 export const GetEditorialPlacementQueryParams = zod.object({
+  channel: zod.enum(["news", "experience"]),
   key: zod.coerce.string(),
 });
 
@@ -7593,7 +7594,7 @@ export const GetEditorialPlacementResponse = zod.array(
 );
 
 /**
- * @summary Replace a named placement's entries — requires website.posts:edit. All posts must match the placement channel; a post appears at most once.
+ * @summary Replace a named placement's entries — requires website.posts:edit. The slot replaced is (`channel` from the body, `key` from the query): entries in the SAME key under a DIFFERENT channel are never read, replaced or removed. All posts must match the placement channel; a post appears at most once.
  */
 export const ReplaceEditorialPlacementQueryParams = zod.object({
   key: zod.coerce.string(),

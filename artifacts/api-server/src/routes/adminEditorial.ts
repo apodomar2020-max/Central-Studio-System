@@ -1359,7 +1359,16 @@ router.patch(
 
 // ─── Placements ─────────────────────────────────────────────────────────────
 
-async function loadPlacement(key: string) {
+/**
+ * Read one slot's entries in order.
+ *
+ * CHANNEL SCOPING (Wave 2.0 — Issue #23). A placement is identified by
+ * (channel, key), never by `key` alone: `key` is free text and both
+ * channels naturally want a slot called "featured", so a key-only predicate
+ * returned BOTH channels' rows interleaved — and, via the `before` snapshot
+ * below, wrote the other channel's post ids into this channel's audit row.
+ */
+async function loadPlacement(channel: EditorialChannel, key: string) {
   const rows = await db
     .select({
       id: editorialPlacementsTable.id,
@@ -1371,7 +1380,12 @@ async function loadPlacement(key: string) {
       endAt: editorialPlacementsTable.endAt,
     })
     .from(editorialPlacementsTable)
-    .where(eq(editorialPlacementsTable.key, key))
+    .where(
+      and(
+        eq(editorialPlacementsTable.channel, channel),
+        eq(editorialPlacementsTable.key, key),
+      ),
+    )
     .orderBy(asc(editorialPlacementsTable.position), asc(editorialPlacementsTable.id));
 
   const labels = await postLabels(rows.map((row) => row.postId));
@@ -1392,10 +1406,14 @@ router.get(
   async (req, res): Promise<void> => {
     const query = GetEditorialPlacementQueryParams.safeParse(req.query);
     if (!query.success) {
-      res.status(400).json({ error: "A placement key is required." });
+      res.status(400).json({ error: "A placement channel and key are both required." });
       return;
     }
-    res.json(GetEditorialPlacementResponse.parse(await loadPlacement(query.data.key)));
+    res.json(
+      GetEditorialPlacementResponse.parse(
+        await loadPlacement(query.data.channel as EditorialChannel, query.data.key),
+      ),
+    );
   },
 );
 
@@ -1419,7 +1437,7 @@ router.put(
 
     try {
       await assertPlacementValid(db, channel as EditorialChannel, items);
-      const before = (await loadPlacement(key)).map((entry) => entry.postId);
+      const before = (await loadPlacement(channel as EditorialChannel, key)).map((entry) => entry.postId);
       const actor = adminActivityActor(req);
 
       await db.transaction(async (tx) => {
@@ -1427,15 +1445,22 @@ router.put(
         await auditEditorial(tx, actor, {
           action: "placement_changed",
           entityType: "editorial_placement",
-          entityId: key,
-          entityLabel: key,
+          // The audited entity is the SLOT, and a slot is (channel, key) —
+          // auditing `key` alone made news:featured and experience:featured
+          // indistinguishable in the activity log (Issue #23).
+          entityId: `${channel}:${key}`,
+          entityLabel: `${channel}:${key}`,
           before: { postIds: before },
           after: { postIds: items.map((item) => item.postId) },
           summary: `Updated editorial placement "${key}" (${channel})`,
         });
       });
 
-      res.json(ReplaceEditorialPlacementResponse.parse(await loadPlacement(key)));
+      res.json(
+        ReplaceEditorialPlacementResponse.parse(
+          await loadPlacement(channel as EditorialChannel, key),
+        ),
+      );
     } catch (err) {
       handleRouteError(err, res, "PUT /admin/editorial/placements", "Failed to update placement");
     }

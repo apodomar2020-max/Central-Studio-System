@@ -4368,8 +4368,17 @@ export const ListEditorialAuthorsStatus = {
 } as const;
 
 export type GetEditorialPlacementParams = {
+  channel: GetEditorialPlacementChannel;
   key: string;
 };
+
+export type GetEditorialPlacementChannel =
+  (typeof GetEditorialPlacementChannel)[keyof typeof GetEditorialPlacementChannel];
+
+export const GetEditorialPlacementChannel = {
+  news: "news",
+  experience: "experience",
+} as const;
 
 export type ReplaceEditorialPlacementParams = {
   key: string;

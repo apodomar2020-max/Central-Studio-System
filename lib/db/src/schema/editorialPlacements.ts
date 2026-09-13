@@ -20,7 +20,18 @@ import { type EditorialChannel } from "./editorialTopics";
  * in Wave 1, but nothing in Wave 1 reads them for public display (there are
  * no public editorial endpoints yet).
  *
- * UNIQUE (key, post_id): a post appears at most once in any given slot.
+ * CHANNEL SCOPING (Wave 2.0, migration 0127 — Issue #23). A slot is
+ * identified by (channel, key), NEVER by `key` alone. `key` is free text and
+ * the obvious slot names ("featured", "hero") are obvious in BOTH channels,
+ * so a channel-blind key namespace made news:featured and
+ * experience:featured the same slot: writing one destroyed the other, and
+ * reading one returned both interleaved. Every identity surface is
+ * therefore scoped by (channel, key) — this UNIQUE, the lookup index, the
+ * service DELETE predicate in replacePlacement(), and the route SELECT
+ * predicate in loadPlacement().
+ *
+ * UNIQUE (channel, key, post_id): a post appears at most once in any given
+ * slot of any given channel.
  */
 export const editorialPlacementsTable = pgTable("editorial_placements", {
   id:        serial("id").primaryKey(),
@@ -33,7 +44,7 @@ export const editorialPlacementsTable = pgTable("editorial_placements", {
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow().$onUpdate(() => new Date().toISOString()),
 }, (table) => [
-  unique("editorial_placements_key_post_unique").on(table.key, table.postId),
+  unique("editorial_placements_channel_key_post_unique").on(table.channel, table.key, table.postId),
   check("editorial_placements_key_not_blank", sql`length(trim(${table.key})) > 0`),
   check("editorial_placements_channel_valid", sql`${table.channel} IN ('news', 'experience')`),
   check("editorial_placements_position_non_negative", sql`${table.position} >= 0`),
@@ -41,7 +52,7 @@ export const editorialPlacementsTable = pgTable("editorial_placements", {
     "editorial_placements_window_ordered",
     sql`${table.startAt} IS NULL OR ${table.endAt} IS NULL OR ${table.startAt} < ${table.endAt}`,
   ),
-  index("editorial_placements_key_position_idx").on(table.key, table.position),
+  index("editorial_placements_channel_key_position_idx").on(table.channel, table.key, table.position),
 ]);
 
 export type EditorialPlacement = typeof editorialPlacementsTable.$inferSelect;
