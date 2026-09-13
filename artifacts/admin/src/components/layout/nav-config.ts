@@ -58,8 +58,15 @@ import {
   Image,
   Newspaper,
   Theater,
+  BookOpenText,
+  Star,
+  Languages,
+  Link2,
 } from "lucide-react";
-import { BallerinaIcon } from "@/components/icons/ballerina-icon";
+// Relative (not `@/`-aliased) so this module's graph stays resolvable outside
+// a Vite bundle — components/layout/editorialNavigation.test.ts imports
+// NAV_TREE directly to exercise permission filtering for real.
+import { BallerinaIcon } from "../icons/ballerina-icon";
 import type { PermRequirement } from "@/lib/permissions";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -336,6 +343,40 @@ export const NAV_TREE: NavNode[] = [
       link("Classes", "/website/backgrounds/classes", [["website.backgrounds", "view"]], undefined, {
         pageTitle: "Classes Backgrounds",
         description: "Classes page — Section 1 (Hero)",
+      }),
+    ]),
+    // Unified Editorial CMS — Wave 2.1A Admin foundation. Strictly ADDITIVE:
+    // the Performance / News / Backgrounds entries above are the legacy
+    // modules the public website actually reads today and are untouched.
+    // Nothing published through this group reaches the public website yet;
+    // every Editorial page repeats that in a persistent page banner.
+    group("Editorial", BookOpenText, [
+      link("Posts", "/editorial/posts", [["website.posts", "view"]], FileText, {
+        pageTitle: "Editorial Posts",
+        description:
+          "Unified Editorial CMS posts — not yet connected to the public website, which still reads the existing News and Performance sections",
+      }),
+      link("Authors", "/editorial/authors", [["website.posts", "view"]], UsersRound, {
+        pageTitle: "Editorial Authors",
+        description: "Author profiles credited on unified Editorial posts — not yet connected to the public website",
+      }),
+      link("Topics", "/editorial/topics", [["website.posts", "view"]], Tag, {
+        pageTitle: "Editorial Topics",
+        description: "Topic taxonomy used to classify unified Editorial posts — not yet connected to the public website",
+      }),
+      link("Placements", "/editorial/placements", [["website.posts", "view"]], Star, {
+        pageTitle: "Editorial Placements",
+        description: "Curated placement slots ordering featured unified Editorial posts — not yet connected to the public website",
+      }),
+    ]),
+    group("Settings", Settings2, [
+      link("Languages", "/website/settings/languages", [["website.settings", "view"]], Languages, {
+        pageTitle: "Editorial Languages",
+        description: "Editorial publishing languages and the default language used for new translations",
+      }),
+      link("Links", "/website/settings/links", [["website.settings", "view"]], Link2, {
+        pageTitle: "Website Links",
+        description: "Global public-website links referenced by Editorial content",
       }),
     ]),
   ]),

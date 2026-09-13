@@ -46,6 +46,20 @@ import WebsiteNewsListPage from "@/pages/website/news/WebsiteNewsListPage";
 import WebsiteNewsEditorPage from "@/pages/website/news/WebsiteNewsEditorPage";
 import WebsitePerformanceListPage from "@/pages/website/performances/WebsitePerformanceListPage";
 import WebsitePerformanceEditorPage from "@/pages/website/performances/WebsitePerformanceEditorPage";
+// Unified Editorial CMS — Wave 2.1A Admin foundation. Placeholder screens
+// only: they prove nav/routing/RBAC end-to-end; the real Posts, Authors,
+// Topics, Placements, Languages and Links screens land in later sub-waves.
+import {
+  EditorialPostsListPage,
+  EditorialPostCreatePage,
+  EditorialPostDetailPage,
+  EditorialPostTranslationPage,
+  EditorialAuthorsPage,
+  EditorialTopicsPage,
+  EditorialPlacementsPage,
+  WebsiteSettingsLanguagesPage,
+  WebsiteSettingsLinksPage,
+} from "@/pages/editorial/EditorialPlaceholderPages";
 import ApplicationsPage from "@/pages/ballet/ApplicationsPage";
 import ApplicationDetailPage from "@/pages/ballet/ApplicationDetailPage";
 import BalletStudentsPage from "@/pages/ballet/BalletStudentsPage";
@@ -169,6 +183,17 @@ const ROUTE_PERMS = {
   websiteNews: [["website.news", "view"]],
   // Same view-only-route-guard pattern as websiteNews above.
   websitePerformance: [["website.performance", "view"]],
+  // Unified Editorial CMS (Wave 2.1A). Same documented view-only route-guard
+  // convention as websiteNews / websitePerformance above: the route gates on
+  // VIEW, and each later sub-wave's page checks create/edit/publish in-page
+  // via can(). No role is granted website.posts / website.settings in this
+  // wave — Super Admin reaches these screens through its existing bypass and
+  // every other role is correctly denied until an owner grants them.
+  editorialPosts: [["website.posts", "view"]],
+  editorialAuthors: [["website.posts", "view"]],
+  editorialTopics: [["website.posts", "view"]],
+  editorialPlacements: [["website.posts", "view"]],
+  websiteSettings: [["website.settings", "view"]],
   systemUsers: [["adminUsers", "view"], ["roles", "view"]],
   balletApplications: [["ballet.applications", "view"]],
   balletStudents: [["ballet.applications", "view"]],
@@ -247,6 +272,16 @@ function ProtectedRouter() {
         <Route path="/website/performances/new">{guarded(ROUTE_PERMS.websitePerformance, <WebsitePerformanceEditorPage />)}</Route>
         <Route path="/website/performances/:slug/edit">{guarded(ROUTE_PERMS.websitePerformance, <WebsitePerformanceEditorPage />)}</Route>
         <Route path="/website/performances">{guarded(ROUTE_PERMS.websitePerformance, <WebsitePerformanceListPage />)}</Route>
+        {/* Unified Editorial CMS — Wave 2.1A foundation (placeholder pages). */}
+        <Route path="/editorial/posts/new">{guarded(ROUTE_PERMS.editorialPosts, <EditorialPostCreatePage />)}</Route>
+        <Route path="/editorial/posts/:id/:languageCode">{guarded(ROUTE_PERMS.editorialPosts, <EditorialPostTranslationPage />)}</Route>
+        <Route path="/editorial/posts/:id">{guarded(ROUTE_PERMS.editorialPosts, <EditorialPostDetailPage />)}</Route>
+        <Route path="/editorial/posts">{guarded(ROUTE_PERMS.editorialPosts, <EditorialPostsListPage />)}</Route>
+        <Route path="/editorial/authors">{guarded(ROUTE_PERMS.editorialAuthors, <EditorialAuthorsPage />)}</Route>
+        <Route path="/editorial/topics">{guarded(ROUTE_PERMS.editorialTopics, <EditorialTopicsPage />)}</Route>
+        <Route path="/editorial/placements">{guarded(ROUTE_PERMS.editorialPlacements, <EditorialPlacementsPage />)}</Route>
+        <Route path="/website/settings/languages">{guarded(ROUTE_PERMS.websiteSettings, <WebsiteSettingsLanguagesPage />)}</Route>
+        <Route path="/website/settings/links">{guarded(ROUTE_PERMS.websiteSettings, <WebsiteSettingsLinksPage />)}</Route>
         <Route path="/system-users">{guarded(ROUTE_PERMS.systemUsers, <SystemUsers />)}</Route>
         <Route path="/ballet/applications/:id">{guarded(ROUTE_PERMS.balletApplications, <ApplicationDetailPage />)}</Route>
         <Route path="/ballet/applications">{guarded(ROUTE_PERMS.balletApplications, <ApplicationsPage />)}</Route>
