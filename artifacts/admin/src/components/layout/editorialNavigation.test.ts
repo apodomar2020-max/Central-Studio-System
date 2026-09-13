@@ -54,8 +54,8 @@ const website = () => findGroup(NAV_TREE, "Website");
 
 // ─── Structure ───────────────────────────────────────────────────────────────
 
-test("Editorial and Settings are nested inside the existing Website group", () => {
-  assert.deepEqual(groupTitles(website().children), ["Backgrounds", "Editorial", "Settings"]);
+test("Editorial and Configuration are nested inside the existing Website group", () => {
+  assert.deepEqual(groupTitles(website().children), ["Backgrounds", "Editorial", "Configuration"]);
 });
 
 test("Editorial exposes exactly the four approved links, all on website.posts:view", () => {
@@ -79,8 +79,8 @@ test("Editorial exposes exactly the four approved links, all on website.posts:vi
   }
 });
 
-test("Website → Settings exposes Languages and Links, both on website.settings:view", () => {
-  const settings = findGroup(website().children, "Settings");
+test("Website → Configuration exposes Languages and Links, both on website.settings:view", () => {
+  const settings = findGroup(website().children, "Configuration");
   assert.deepEqual(
     settings.children.map((n) => (n.kind === "link" ? [n.title, n.href] : ["group", n.title])),
     [
@@ -104,7 +104,7 @@ test("the Editorial entry states plainly that it is not connected to the public 
   assert.match(posts.description ?? "", /News and Performance/);
 });
 
-test("every new Editorial/Settings link is reachable through NAV_ROUTES for the TopBar", () => {
+test("every new Editorial/Configuration link is reachable through NAV_ROUTES for the TopBar", () => {
   for (const href of [
     "/editorial/posts",
     "/editorial/authors",
@@ -121,7 +121,7 @@ test("every new Editorial/Settings link is reachable through NAV_ROUTES for the 
 
 test("the legacy Performance / News / Backgrounds entries are byte-identical to before this wave", () => {
   const legacy = website()
-    .children.filter((n) => !(n.kind === "group" && (n.title === "Editorial" || n.title === "Settings")))
+    .children.filter((n) => !(n.kind === "group" && (n.title === "Editorial" || n.title === "Configuration")))
     .map((n) =>
       n.kind === "link"
         ? { kind: n.kind, title: n.title, href: n.href, perm: n.perm, pageTitle: n.pageTitle, description: n.description }
@@ -166,20 +166,20 @@ test("the legacy Performance / News / Backgrounds entries are byte-identical to 
 
 // ─── Permission filtering ────────────────────────────────────────────────────
 
-test("Super Admin (can() returns true for everything) sees both Editorial and Settings", () => {
+test("Super Admin (can() returns true for everything) sees both Editorial and Configuration", () => {
   const visible = findGroup(visibleFor("all"), "Website");
-  assert.deepEqual(groupTitles(visible.children), ["Backgrounds", "Editorial", "Settings"]);
+  assert.deepEqual(groupTitles(visible.children), ["Backgrounds", "Editorial", "Configuration"]);
 });
 
-test("website.posts:view alone shows Editorial and hides Settings", () => {
+test("website.posts:view alone shows Editorial and hides Configuration", () => {
   const visible = findGroup(visibleFor(["website.posts:view"]), "Website");
   assert.deepEqual(groupTitles(visible.children), ["Editorial"]);
   assert.equal(visible.children.length, 1);
 });
 
-test("website.settings:view alone shows Settings and hides Editorial", () => {
+test("website.settings:view alone shows Configuration and hides Editorial", () => {
   const visible = findGroup(visibleFor(["website.settings:view"]), "Website");
-  assert.deepEqual(groupTitles(visible.children), ["Settings"]);
+  assert.deepEqual(groupTitles(visible.children), ["Configuration"]);
   assert.equal(visible.children.length, 1);
 });
 

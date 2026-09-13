@@ -369,7 +369,7 @@ export const NAV_TREE: NavNode[] = [
         description: "Curated placement slots ordering featured unified Editorial posts — not yet connected to the public website",
       }),
     ]),
-    group("Settings", Settings2, [
+    group("Configuration", Settings2, [
       link("Languages", "/website/settings/languages", [["website.settings", "view"]], Languages, {
         pageTitle: "Editorial Languages",
         description: "Editorial publishing languages and the default language used for new translations",
