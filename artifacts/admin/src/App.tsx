@@ -48,7 +48,8 @@ import WebsitePerformanceListPage from "@/pages/website/performances/WebsitePerf
 import WebsitePerformanceEditorPage from "@/pages/website/performances/WebsitePerformanceEditorPage";
 // Unified Editorial CMS — Wave 2.1A Admin foundation. Placeholder screens
 // only: they prove nav/routing/RBAC end-to-end; the real Posts, Authors,
-// Topics, Placements, Languages and Links screens land in later sub-waves.
+// Topics, Placements and Links screens land in later sub-waves. Website →
+// Configuration → Languages is real as of Wave 2.1B and has its own module.
 import {
   EditorialPostsListPage,
   EditorialPostCreatePage,
@@ -57,9 +58,9 @@ import {
   EditorialAuthorsPage,
   EditorialTopicsPage,
   EditorialPlacementsPage,
-  WebsiteSettingsLanguagesPage,
   WebsiteSettingsLinksPage,
 } from "@/pages/editorial/EditorialPlaceholderPages";
+import WebsiteSettingsLanguagesPage from "@/pages/website/settings/WebsiteSettingsLanguagesPage";
 import ApplicationsPage from "@/pages/ballet/ApplicationsPage";
 import ApplicationDetailPage from "@/pages/ballet/ApplicationDetailPage";
 import BalletStudentsPage from "@/pages/ballet/BalletStudentsPage";
