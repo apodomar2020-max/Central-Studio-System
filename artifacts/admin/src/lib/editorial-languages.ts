@@ -168,6 +168,10 @@ export function deactivateConfirmation(language: LanguageSummary): LanguageConfi
       `What changes: no NEW translation can be created in ${language.name}, and nothing new can be published in it, until the language is activated again.`,
     ].join(" "),
     confirmLabel: "Deactivate language",
+    // Deactivation is not destructive — nothing is deleted, per the copy
+    // above — so this must not render with the shared confirm's default
+    // destructive/red styling.
+    destructive: false,
   };
 }
 

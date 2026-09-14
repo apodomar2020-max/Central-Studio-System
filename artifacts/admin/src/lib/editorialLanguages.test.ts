@@ -152,6 +152,15 @@ test("deactivation copy states retention, live-and-editable publishing, and the 
   assert.match(copy.description, /until the language is activated again/);
 });
 
+test("deactivation confirmation explicitly opts out of the shared confirm's destructive/red default", () => {
+  // useAdminConfirm() renders destructive (red) styling unless `destructive`
+  // is explicitly `false` — omitting it is not neutral, it defaults to red.
+  // Deactivating a language is not destructive (nothing is deleted, per the
+  // copy above), so this must be pinned explicitly rather than left to infer.
+  const copy = deactivateConfirmation(summary());
+  assert.equal(copy.destructive, false, "deactivating a language is not a destructive action");
+});
+
 test("deactivation copy surfaces the language's published-translation count", () => {
   assert.match(deactivateConfirmation(summary({ published: 5 })).description, /Its 5 published translations/);
   assert.match(deactivateConfirmation(summary({ published: 1 })).description, /Its 1 published translation stays live/);
