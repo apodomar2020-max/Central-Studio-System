@@ -1,16 +1,18 @@
 /**
  * Editorial placeholder pages — Wave 2.1A foundation.
  *
- * These nine components exist to prove navigation, routing and RBAC work
+ * These components exist to prove navigation, routing and RBAC work
  * end-to-end for the unified Editorial CMS before any real screen is built.
  * They render no table, no form and no CRUD logic on purpose: each real
- * screen arrives in its own later Wave 2.1 sub-wave.
+ * screen arrives in its own later Wave 2.1 sub-wave. (Website → Configuration
+ * → Languages has since been delivered for real in Wave 2.1B and is no longer
+ * in this file.)
  *
- * The four Editorial pages render inside <EditorialPageShell> so they carry
- * the approved legacy-coexistence banner. The two Website → Settings pages
- * (Languages, Links) use plain Admin page chrome: the approved IA scopes that
- * banner to the Editorial group, and those two screens configure shared
- * website settings rather than publish Editorial content.
+ * The Editorial pages render inside <EditorialPageShell> so they carry
+ * the approved legacy-coexistence banner. The Website → Settings placeholder
+ * (Links) uses plain Admin page chrome: the approved IA scopes that
+ * banner to the Editorial group, and that screen configures shared
+ * website settings rather than publishing Editorial content.
  */
 import { EditorialPageShell } from "@/components/editorial/editorial-page-shell";
 import "@/pages/admin2-final.css";
@@ -136,15 +138,9 @@ export function EditorialPlacementsPage() {
 
 // ─── Website → Settings ──────────────────────────────────────────────────────
 
-export function WebsiteSettingsLanguagesPage() {
-  return (
-    <SettingsPlaceholder
-      heading="Languages"
-      description="Editorial publishing languages and the default language for new translations."
-      body="Language management is delivered in a later Wave 2.1 sub-wave. This page currently exists only to confirm navigation, routing and permissions."
-    />
-  );
-}
+// Website → Configuration → Languages is no longer a placeholder: the real
+// screen shipped in Wave 2.1B and lives in
+// pages/website/settings/WebsiteSettingsLanguagesPage.tsx.
 
 export function WebsiteSettingsLinksPage() {
   return (
