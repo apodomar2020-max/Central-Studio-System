@@ -116,15 +116,8 @@ export function EditorialAuthorsPage() {
   );
 }
 
-export function EditorialTopicsPage() {
-  return (
-    <EditorialPlaceholder
-      heading="Topics"
-      description="The topic taxonomy used to classify unified Editorial posts."
-      body="Topic management is delivered in a later Wave 2.1 sub-wave. This page currently exists only to confirm navigation, routing and permissions."
-    />
-  );
-}
+// Website → Editorial → Topics is no longer a placeholder: the real screen
+// shipped in Wave 2.1C and lives in pages/editorial/EditorialTopicsPage.tsx.
 
 export function EditorialPlacementsPage() {
   return (

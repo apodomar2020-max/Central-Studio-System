@@ -277,15 +277,25 @@ test("the Website Links placeholder is exactly as Wave 2.1A left it", () => {
   assert.match(app, /<Route path="\/website\/settings\/links">\{guarded\(ROUTE_PERMS\.websiteSettings, <WebsiteSettingsLinksPage \/>\)\}<\/Route>/);
 });
 
+/**
+ * Wave 2.1C retired the Topics and Authors placeholders (they became real
+ * screens under pages/editorial/). This assertion tracks the placeholders
+ * that REMAIN — Wave 2.1B's own screen and copy are unaffected either way.
+ */
+const REMAINING_PLACEHOLDERS = [
+  "EditorialPostsListPage", "EditorialPostCreatePage", "EditorialPostDetailPage",
+  "EditorialPostTranslationPage", "EditorialAuthorsPage", "EditorialPlacementsPage",
+  "WebsiteSettingsLinksPage",
+];
+
 test("no other Wave 2.1A placeholder was touched", () => {
-  for (const component of [
-    "EditorialPostsListPage", "EditorialPostCreatePage", "EditorialPostDetailPage",
-    "EditorialPostTranslationPage", "EditorialAuthorsPage", "EditorialTopicsPage",
-    "EditorialPlacementsPage",
-  ]) {
+  for (const component of REMAINING_PLACEHOLDERS) {
     assert.match(placeholders, new RegExp(`export function ${component}\\(`));
   }
-  assert.equal((placeholders.match(/delivered in a later Wave 2\.1 sub-wave/g) ?? []).length, 8);
+  assert.equal(
+    (placeholders.match(/delivered in a later Wave 2\.1 sub-wave/g) ?? []).length,
+    REMAINING_PLACEHOLDERS.length,
+  );
 });
 
 test("navigation is untouched — Editorial, News, Performance and Backgrounds entries are unchanged", () => {
