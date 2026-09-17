@@ -30,6 +30,7 @@ import {
   channelLabel,
   filterAuthors,
   hasAuthorFormErrors,
+  isAvatarMediaError,
   isBylineReady,
   reactivateAuthorMessage,
   toAuthorCreatePayload,
@@ -172,6 +173,43 @@ test("the client NEVER blocks on the host allowlist — the server is the trust 
     validateAuthorForm(form({ avatarUrl: "https://example.com/not-allowed.png" }), { requireChannel: true }).avatarUrl,
     undefined,
   );
+});
+
+// --- isAvatarMediaError: precise 400 routing (fixes the misattribution the
+// Final Owner Review flagged — ANY 400 with a non-empty avatar field used to
+// be shown as an avatar error, even when the failure was about another
+// field entirely). The backend's media validator has one stable contract:
+// on failure it returns `"<the exact submitted url>: <reason>"`.
+
+test("a genuine avatar media 400 — the message is prefixed with the exact submitted URL — routes to the avatar field", () => {
+  const url = "https://images.unsplash.com/photo-1.jpg";
+  assert.equal(isAvatarMediaError(`${url}: The image URL returned an error (HTTP 404).`, url), true);
+});
+
+test("an unrelated 400 with a non-empty avatar field does NOT route to the avatar field", () => {
+  const url = "https://images.unsplash.com/photo-1.jpg";
+  // Same request, same non-empty avatarUrl — but the message is some other
+  // field's validation failure, not the media validator's own "<url>: " shape.
+  assert.equal(isAvatarMediaError("Public name must be 200 characters or fewer.", url), false);
+  assert.equal(isAvatarMediaError("Invalid body", url), false);
+});
+
+test("a message that merely CONTAINS the avatar url, but is not prefixed by it, does not route to the avatar field", () => {
+  const url = "https://images.unsplash.com/photo-1.jpg";
+  assert.equal(isAvatarMediaError(`See ${url} for details.`, url), false);
+});
+
+test("an empty submitted avatar URL never classifies as an avatar media error, regardless of message", () => {
+  assert.equal(isAvatarMediaError("https://example.com/x.jpg: some reason", ""), false);
+  assert.equal(isAvatarMediaError("https://example.com/x.jpg: some reason", "   "), false);
+});
+
+test("the media error prefix is matched against the URL as actually submitted (trimmed), not a stale value", () => {
+  const url = "https://images.unsplash.com/photo-1.jpg";
+  // Leading/trailing whitespace in the form field must not break the match.
+  assert.equal(isAvatarMediaError(`${url}: DNS resolution failed.`, `  ${url}  `), true);
+  // A DIFFERENT url than the one actually submitted must not match.
+  assert.equal(isAvatarMediaError(`${url}: DNS resolution failed.`, "https://images.unsplash.com/photo-2.jpg"), false);
 });
 
 test("the allowed-hosts hint restates the server constant it must be hand-synced with", () => {

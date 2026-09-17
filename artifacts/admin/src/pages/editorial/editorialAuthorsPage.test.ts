@@ -270,12 +270,21 @@ test("the avatar field has a preview image that is decorative", () => {
 });
 
 test("a media-validation 400 is rendered verbatim INLINE under the avatar field", () => {
-  assert.match(pageCode, /if \(status === 400 && form\.avatarUrl\.trim\(\)\.length > 0\) \{\s*setAvatarServerError\(message\);/);
+  assert.match(pageCode, /if \(status === 400 && isAvatarMediaError\(message, form\.avatarUrl\)\) \{\s*setAvatarServerError\(message\);/);
   assert.match(pageCode, /id="author-avatar-url-help"/);
   assert.match(pageCode, /\{errors\.avatarUrl \?\? avatarServerError \?\?/);
   assert.match(pageCode, /aria-describedby="author-avatar-url-help"/);
   // Both create and edit route through the same handler.
   assert.equal((pageCode.match(/onError: routeMutationError\(/g) ?? []).length, 2);
+});
+
+test("a 400 is routed to the avatar field only by the server's own url-prefixed message — never merely because the avatar field is non-empty", () => {
+  // The old, imprecise heuristic (any 400 + a non-empty avatar field) must
+  // be genuinely gone, not just no-longer-the-primary-path.
+  assert.doesNotMatch(pageCode, /form\.avatarUrl\.trim\(\)\.length > 0/);
+  assert.match(pageCode, /isAvatarMediaError/);
+  // The classifier is imported from the lib module, not reimplemented here.
+  assert.match(pageCode, /isAvatarMediaError,?\s*\n/); // present in the import block
 });
 
 test("the client does a shape check only — the host allowlist never blocks a save", () => {

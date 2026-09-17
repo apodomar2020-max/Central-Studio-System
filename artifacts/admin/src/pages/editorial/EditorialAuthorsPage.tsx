@@ -88,6 +88,7 @@ import {
   channelLabel,
   filterAuthors,
   hasAuthorFormErrors,
+  isAvatarMediaError,
   reactivateAuthorMessage,
   toAuthorCreatePayload,
   toAuthorUpdatePayload,
@@ -199,13 +200,17 @@ export default function EditorialAuthorsPage() {
 
   /**
    * A media 400 is the one failure that belongs next to a field rather than
-   * only in a toast — it is always about the avatar link, and the operator
-   * needs to see which value to change.
+   * only in a toast — but ONLY when the message is actually about the
+   * avatar. A 400 is routed there solely by checking the server's own
+   * "<url>: <reason>" prefix against the URL this form actually submitted
+   * (see isAvatarMediaError) — not merely "status is 400 and the avatar
+   * field happens to be non-empty", which would misattribute an unrelated
+   * 400 (e.g. a future validation rule on another field) to this one.
    */
   const routeMutationError = (title: string) => (err: unknown) => {
     const message = editorialErrorMessage(err);
     const status = (err as { status?: number } | null)?.status;
-    if (status === 400 && form.avatarUrl.trim().length > 0) {
+    if (status === 400 && isAvatarMediaError(message, form.avatarUrl)) {
       setAvatarServerError(message);
       return;
     }

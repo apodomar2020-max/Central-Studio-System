@@ -153,6 +153,27 @@ export function avatarUrlShapeError(raw: string): string | undefined {
 }
 
 /**
+ * Is a 400 error message actually about the submitted avatar URL, rather
+ * than some other field on the same request?
+ *
+ * The backend's media validator (`validateEditorialMediaUrls`, called with
+ * `[body.avatarUrl]` and nothing else on both the author create and update
+ * routes) has one stable, source-verified contract: on failure it always
+ * returns `{ error: "<the offending url>: <reason>" }` — the exact URL is
+ * the message's own prefix. That is the only thing on this page's 400 path
+ * that reliably identifies "this failure is about the avatar", so this
+ * checks the real submitted value against that exact prefix rather than
+ * assuming any 400 must be about avatarUrl merely because the field is
+ * non-empty (a publicName/role validation 400, or any other future 400,
+ * would otherwise be misattributed here too).
+ */
+export function isAvatarMediaError(message: string, submittedAvatarUrl: string): boolean {
+  const url = submittedAvatarUrl.trim();
+  if (url.length === 0) return false;
+  return message.startsWith(`${url}: `);
+}
+
+/**
  * Client-side validation limited to what the generated schema actually states:
  * publicName 1–200, role 1–200, biography optional with NO maximum, avatarUrl
  * optional. Channel is required on create and structurally absent from the
