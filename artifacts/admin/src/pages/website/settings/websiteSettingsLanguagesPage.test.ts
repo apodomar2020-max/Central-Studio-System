@@ -284,7 +284,7 @@ test("the Website Links placeholder is exactly as Wave 2.1A left it", () => {
  */
 const REMAINING_PLACEHOLDERS = [
   "EditorialPostsListPage", "EditorialPostCreatePage", "EditorialPostDetailPage",
-  "EditorialPostTranslationPage", "EditorialAuthorsPage", "EditorialPlacementsPage",
+  "EditorialPostTranslationPage", "EditorialPlacementsPage",
   "WebsiteSettingsLinksPage",
 ];
 

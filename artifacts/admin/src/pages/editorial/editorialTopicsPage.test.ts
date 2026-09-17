@@ -56,11 +56,11 @@ test("App.tsx binds the real page module, not the placeholder file", () => {
 
 test("the Topics placeholder component is gone from EditorialPlaceholderPages", () => {
   assert.doesNotMatch(placeholderCode, /EditorialTopicsPage/);
-  // The Authors, Posts, Placements and Links placeholders are untouched here.
+  // The Posts, Placements and Links placeholders are untouched. (Authors also
+  // became a real page in this same wave — see editorialAuthorsPage.test.ts.)
   for (const component of [
     "EditorialPostsListPage", "EditorialPostCreatePage", "EditorialPostDetailPage",
-    "EditorialPostTranslationPage", "EditorialAuthorsPage", "EditorialPlacementsPage",
-    "WebsiteSettingsLinksPage",
+    "EditorialPostTranslationPage", "EditorialPlacementsPage", "WebsiteSettingsLinksPage",
   ]) {
     assert.match(placeholders, new RegExp(`export function ${component}\\(`));
   }

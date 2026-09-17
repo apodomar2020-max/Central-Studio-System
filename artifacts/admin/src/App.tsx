@@ -55,10 +55,10 @@ import {
   EditorialPostCreatePage,
   EditorialPostDetailPage,
   EditorialPostTranslationPage,
-  EditorialAuthorsPage,
   EditorialPlacementsPage,
   WebsiteSettingsLinksPage,
 } from "@/pages/editorial/EditorialPlaceholderPages";
+import EditorialAuthorsPage from "@/pages/editorial/EditorialAuthorsPage";
 import EditorialTopicsPage from "@/pages/editorial/EditorialTopicsPage";
 import WebsiteSettingsLanguagesPage from "@/pages/website/settings/WebsiteSettingsLanguagesPage";
 import ApplicationsPage from "@/pages/ballet/ApplicationsPage";

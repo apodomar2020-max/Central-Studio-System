@@ -84,7 +84,11 @@ test("the global QueryClient instantiation is untouched by this wave", () => {
  * Wave 2.1C did the same for Topics (pages/editorial/EditorialTopicsPage.tsx)
  * and Authors (pages/editorial/EditorialAuthorsPage.tsx).
  */
-const REAL_PAGE_COMPONENTS = ["WebsiteSettingsLanguagesPage", "EditorialTopicsPage"];
+const REAL_PAGE_COMPONENTS = [
+  "WebsiteSettingsLanguagesPage",
+  "EditorialTopicsPage",
+  "EditorialAuthorsPage",
+];
 
 const PLACEHOLDER_ROUTES = EDITORIAL_ROUTES.filter(
   ([, , component]) => !REAL_PAGE_COMPONENTS.includes(component),
@@ -104,10 +108,12 @@ test("Languages is a real page, not a placeholder (Wave 2.1B)", () => {
   assert.match(app, /\sWebsiteSettingsLinksPage,/);
 });
 
-test("Topics is a real page, not a placeholder (Wave 2.1C)", () => {
+test("Topics and Authors are real pages, not placeholders (Wave 2.1C)", () => {
   const pagesCode = pages.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
   assert.doesNotMatch(pagesCode, /EditorialTopicsPage/);
+  assert.doesNotMatch(pagesCode, /EditorialAuthorsPage/);
   assert.match(app, /import EditorialTopicsPage from "@\/pages\/editorial\/EditorialTopicsPage";/);
+  assert.match(app, /import EditorialAuthorsPage from "@\/pages\/editorial\/EditorialAuthorsPage";/);
 });
 
 test("every placeholder component referenced by a route is exported", () => {

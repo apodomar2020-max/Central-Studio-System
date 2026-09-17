@@ -106,18 +106,10 @@ export function EditorialPostTranslationPage() {
   );
 }
 
-export function EditorialAuthorsPage() {
-  return (
-    <EditorialPlaceholder
-      heading="Authors"
-      description="Author profiles credited on unified Editorial posts."
-      body="Author management is delivered in a later Wave 2.1 sub-wave. This page currently exists only to confirm navigation, routing and permissions."
-    />
-  );
-}
-
-// Website → Editorial → Topics is no longer a placeholder: the real screen
-// shipped in Wave 2.1C and lives in pages/editorial/EditorialTopicsPage.tsx.
+// Website → Editorial → Authors and Website → Editorial → Topics are no
+// longer placeholders: both real screens shipped in Wave 2.1C and live in
+// pages/editorial/EditorialAuthorsPage.tsx and
+// pages/editorial/EditorialTopicsPage.tsx.
 
 export function EditorialPlacementsPage() {
   return (
