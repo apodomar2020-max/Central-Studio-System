@@ -81,9 +81,17 @@ test("the global QueryClient instantiation is untouched by this wave", () => {
  * Wave 2.1B replaced the Languages placeholder with the real screen at
  * pages/website/settings/WebsiteSettingsLanguagesPage.tsx. Its ROUTE and
  * GUARD assertions above are unchanged — only its file membership moved.
+ * Wave 2.1C did the same for Topics (pages/editorial/EditorialTopicsPage.tsx)
+ * and Authors (pages/editorial/EditorialAuthorsPage.tsx).
  */
+const REAL_PAGE_COMPONENTS = [
+  "WebsiteSettingsLanguagesPage",
+  "EditorialTopicsPage",
+  "EditorialAuthorsPage",
+];
+
 const PLACEHOLDER_ROUTES = EDITORIAL_ROUTES.filter(
-  ([, , component]) => component !== "WebsiteSettingsLanguagesPage",
+  ([, , component]) => !REAL_PAGE_COMPONENTS.includes(component),
 );
 
 test("Languages is a real page, not a placeholder (Wave 2.1B)", () => {
@@ -98,6 +106,14 @@ test("Languages is a real page, not a placeholder (Wave 2.1B)", () => {
   // The Links placeholder stays exactly where Wave 2.1A left it.
   assert.match(pages, /export function WebsiteSettingsLinksPage\(/);
   assert.match(app, /\sWebsiteSettingsLinksPage,/);
+});
+
+test("Topics and Authors are real pages, not placeholders (Wave 2.1C)", () => {
+  const pagesCode = pages.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  assert.doesNotMatch(pagesCode, /EditorialTopicsPage/);
+  assert.doesNotMatch(pagesCode, /EditorialAuthorsPage/);
+  assert.match(app, /import EditorialTopicsPage from "@\/pages\/editorial\/EditorialTopicsPage";/);
+  assert.match(app, /import EditorialAuthorsPage from "@\/pages\/editorial\/EditorialAuthorsPage";/);
 });
 
 test("every placeholder component referenced by a route is exported", () => {
@@ -118,7 +134,7 @@ test("the four Editorial placeholders render inside EditorialPageShell", () => {
 test("placeholders state they are delivered in a later sub-wave and carry no CRUD", () => {
   assert.equal(
     (pages.match(/delivered in a later Wave 2\.1 sub-wave/g) ?? []).length,
-    8,
+    PLACEHOLDER_ROUTES.length,
     "each remaining placeholder must say a later sub-wave delivers it",
   );
   assert.doesNotMatch(pages, /useMutation|useQuery|<Table|<form|onSubmit/);
