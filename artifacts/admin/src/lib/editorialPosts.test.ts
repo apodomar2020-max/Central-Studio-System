@@ -10,6 +10,7 @@ import {
   CHANNEL_OPTIONS,
   DEFAULT_POST_LIST_FILTERS,
   EDITORIAL_SLUG_RE,
+  FROZEN_BYLINE_EXPLANATION,
   INACTIVE_LANGUAGE_ADD_BLOCKED,
   INACTIVE_LANGUAGE_EDIT_NOTICE,
   LIVE_CONTENT_WARNING,
@@ -21,13 +22,16 @@ import {
   activePostFilterCount,
   allowedTransitions,
   archivePublishedConfirmation,
+  authorReassignmentConfirmation,
   buildLanguageSlots,
   canAddTranslation,
   channelLabel,
   describeSlugProblem,
   formatDate,
+  isEditorialPostTranslationKey,
   isSlugLocked,
   languageCodesLabel,
+  publishedLanguageNames,
   listRowTitle,
   pageRangeLabel,
   postCapabilities,
@@ -339,4 +343,167 @@ test("status badges and dates render safely", () => {
   assert.equal(formatDate(null), "—");
   assert.equal(formatDate("nonsense"), "—");
   assert.equal(formatDate("2026-03-04T10:00:00.000Z"), "2026-03-04");
+});
+
+// ─── Frozen byline: copy, confirmation, invalidation predicate ───────────────
+// Regression cover for the Wave 2.1D release blocker: the editor used to tell
+// operators that reassigning a post's author "changes it on the next publish".
+// updatePostSharedFields rewrites `authorSnapshot` on every published
+// translation inside the shared save's own transaction, so the change is live
+// immediately.
+
+test("the frozen-byline copy never reintroduces deferred-effect wording", () => {
+  assert.doesNotMatch(FROZEN_BYLINE_EXPLANATION, /next publish/i);
+  assert.doesNotMatch(FROZEN_BYLINE_EXPLANATION, /re-?publish/i);
+  assert.doesNotMatch(FROZEN_BYLINE_EXPLANATION, /future publication/i);
+  // Nor any other "later" framing.
+  assert.doesNotMatch(FROZEN_BYLINE_EXPLANATION, /will be applied|takes effect later|once you publish/i);
+});
+
+test("the frozen-byline copy states the change is immediate and live", () => {
+  assert.match(FROZEN_BYLINE_EXPLANATION, /the moment shared settings are saved/);
+  assert.match(FROZEN_BYLINE_EXPLANATION, /rewrites the byline on every published language/);
+});
+
+test("the frozen-byline copy never implies the effect is draft-only", () => {
+  // It must not scope the consequence to drafts, and must not claim that any
+  // published translation is spared.
+  assert.doesNotMatch(FROZEN_BYLINE_EXPLANATION, /only.{0,20}draft/i);
+  assert.doesNotMatch(FROZEN_BYLINE_EXPLANATION, /published.{0,40}(unchanged|not affected|keep)/i);
+});
+
+test("the frozen-byline copy keeps the author-ENTITY guarantee intact", () => {
+  assert.match(FROZEN_BYLINE_EXPLANATION, /Editing the author's profile in Authors never rewrites it/);
+  // It attributes the rewrite to reassigning THIS POST's author, not to
+  // editing the author record.
+  assert.match(FROZEN_BYLINE_EXPLANATION, /reassigning this post's author/);
+});
+
+test("the frozen-byline copy does not claim historical revisions are rewritten", () => {
+  assert.doesNotMatch(FROZEN_BYLINE_EXPLANATION, /revision/i);
+});
+
+test("the frozen-byline copy is backed by the real backend behaviour", () => {
+  const service = readFileSync(
+    new URL("../../../api-server/src/lib/editorialPostsService.ts", import.meta.url),
+    "utf8",
+  );
+  assert.ok(
+    /if \(authorChanged\) \{[\s\S]{0,600}authorSnapshot: snapshot/.test(service),
+    "updatePostSharedFields no longer rewrites authorSnapshot on author change — the copy may be wrong",
+  );
+});
+
+test("the author-reassignment confirmation names every live language", () => {
+  const one = authorReassignmentConfirmation({ languageNames: ["English"] });
+  assert.match(one.title, /live post/);
+  assert.match(one.description, /English/);
+  assert.match(one.description, /that language is/);
+  assert.doesNotMatch(one.description, /next publish/i);
+  assert.equal(one.destructive, false);
+
+  const many = authorReassignmentConfirmation({ languageNames: ["English", "Arabic"] });
+  assert.match(many.title, /every live language/);
+  assert.match(many.description, /English, Arabic/);
+  assert.match(many.description, /those languages are/);
+  assert.match(many.description, /a revision is recorded for each language/);
+});
+
+test("publishedLanguageNames returns only the live slots", () => {
+  const slots = buildLanguageSlots(
+    [
+      { code: "en", name: "English", isActive: true, displayOrder: 1 },
+      { code: "ar", name: "Arabic", isActive: true, displayOrder: 2 },
+      { code: "fr", name: "French", isActive: true, displayOrder: 3 },
+      { code: "de", name: "German", isActive: true, displayOrder: 4 },
+    ],
+    [
+      { languageCode: "en", title: "A", status: "published" },
+      { languageCode: "ar", title: "B", status: "published" },
+      { languageCode: "fr", title: "C", status: "draft" },
+      { languageCode: "de", title: "D", status: "archived" },
+    ],
+  );
+  assert.deepEqual(publishedLanguageNames(slots), ["English", "Arabic"]);
+  assert.deepEqual(publishedLanguageNames([]), []);
+});
+
+test("the translation-key predicate matches EVERY cached language of one post", () => {
+  const en = [`/api/admin/editorial/posts/7/translations/en`];
+  const ar = [`/api/admin/editorial/posts/7/translations/ar`];
+  assert.equal(isEditorialPostTranslationKey(7, en), true);
+  assert.equal(isEditorialPostTranslationKey(7, ar), true);
+});
+
+test("the translation-key predicate never reaches another post or another query", () => {
+  // Prefix confusion: 7 must not match 70 or 77.
+  assert.equal(isEditorialPostTranslationKey(7, ["/api/admin/editorial/posts/70/translations/en"]), false);
+  assert.equal(isEditorialPostTranslationKey(7, ["/api/admin/editorial/posts/77/translations/en"]), false);
+  // The post detail and the translations LIST are separate keys with their
+  // own explicit invalidations — the predicate must not swallow them.
+  assert.equal(isEditorialPostTranslationKey(7, ["/api/admin/editorial/posts/7"]), false);
+  assert.equal(isEditorialPostTranslationKey(7, ["/api/admin/editorial/posts/7/translations"]), false);
+  assert.equal(isEditorialPostTranslationKey(7, ["/api/admin/editorial/authors"]), false);
+  assert.equal(isEditorialPostTranslationKey(7, [{ url: "x" }]), false);
+  assert.equal(isEditorialPostTranslationKey(7, []), false);
+});
+
+test("the predicate is needed because the generated key is one opaque string", () => {
+  // If the generator ever emits [path, id, languageCode], a plain prefix key
+  // becomes possible and this predicate should be revisited.
+  const api = readFileSync(
+    new URL("../../../../lib/api-client-react/src/generated/api.ts", import.meta.url),
+    "utf8",
+  );
+  assert.ok(
+    api.includes("`/api/admin/editorial/posts/${id}/translations/${languageCode}`,\n  ] as const;"),
+    "the generated translation query key shape changed — re-check the invalidation strategy",
+  );
+});
+
+// ─── Dirty-state preservation across a shared-save refetch ───────────────────
+// The editor re-baselines the translation form from an EFFECT keyed on
+// `translationRow?.id`. A refetch caused by the shared save returns the SAME
+// row id, so the effect does not re-run and unsaved prose survives. This test
+// simulates that dependency semantics rather than trusting the comment.
+
+test("a same-row refetch does not re-run the translation re-baseline effect", () => {
+  let lastDeps: unknown[] | null = null;
+  let runs = 0;
+  const form = { title: "unsaved title", body: "unsaved body" };
+  /** Mirrors React's dependency comparison for the re-baseline effect. */
+  const runEffect = (deps: unknown[], reset: () => void) => {
+    if (lastDeps === null || deps.some((dep, i) => !Object.is(dep, lastDeps![i]))) {
+      runs += 1;
+      reset();
+    }
+    lastDeps = deps;
+  };
+  const resetFromServer = (row: { title: string; body: string }) => {
+    form.title = row.title;
+    form.body = row.body;
+  };
+
+  // First load of translation row 42.
+  let row = { id: 42, title: "server title", body: "server body" };
+  runEffect([row.id], () => resetFromServer(row));
+  assert.equal(runs, 1);
+
+  // Operator types. Nothing is saved.
+  form.title = "unsaved title";
+  form.body = "unsaved body";
+
+  // The shared save lands; the predicate invalidation refetches translation
+  // 42 and the server answers with a NEW authorSnapshot but the same row id.
+  row = { id: 42, title: "server title", body: "server body" };
+  runEffect([row.id], () => resetFromServer(row));
+  assert.equal(runs, 1, "the re-baseline effect must not re-run for the same row id");
+  assert.equal(form.title, "unsaved title", "unsaved title was clobbered by the refetch");
+  assert.equal(form.body, "unsaved body", "unsaved body was clobbered by the refetch");
+
+  // Switching language IS a different row, and must re-baseline.
+  row = { id: 43, title: "arabic title", body: "arabic body" };
+  runEffect([row.id], () => resetFromServer(row));
+  assert.equal(runs, 2);
+  assert.equal(form.title, "arabic title");
 });

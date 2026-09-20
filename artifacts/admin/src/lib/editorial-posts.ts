@@ -427,6 +427,30 @@ export function translationSaveLabel(status: EditorialTranslationStatusValue): s
 export const LIVE_CONTENT_WARNING =
   "You are editing live content. Saving publishes these changes to the website immediately.";
 
+/**
+ * Sits next to the frozen byline on a PUBLISHED translation.
+ *
+ * It keeps two genuinely different operations apart, because the backend
+ * treats them differently:
+ *
+ *   • Editing the author ENTITY (name / role / biography / avatar, from
+ *     Authors management) writes only `editorial_authors`. No published
+ *     translation's `authorSnapshot` is ever touched — the Wave 2.1C
+ *     historical-byline guarantee, still enforced by
+ *     PATCH /admin/editorial/authors/:id.
+ *
+ *   • Reassigning THIS POST's author (the selector in shared settings)
+ *     rewrites `authorSnapshot` on every currently-published translation of
+ *     the post, inside the same transaction as the shared save
+ *     (updatePostSharedFields step (c)). It is live the instant that save
+ *     succeeds — there is no "next publish" step.
+ *
+ * A revision is recorded per language so no history has a gap; revisions
+ * already taken keep the byline they were taken with.
+ */
+export const FROZEN_BYLINE_EXPLANATION =
+  "Frozen when this language was published. Editing the author's profile in Authors never rewrites it — but reassigning this post's author below rewrites the byline on every published language of this post the moment shared settings are saved.";
+
 export function statusBadgeLabel(status: EditorialTranslationStatusValue): string {
   switch (status) {
     case "draft": return "Draft";
@@ -459,6 +483,67 @@ export function archivePublishedConfirmation(context: { title: string; languageN
     description: `"${context.title}" stops being readable in ${context.languageName}. Nothing is deleted — every other language is untouched, and you can restore this one to draft at any time.`,
     confirmLabel: "Archive translation",
     destructive: true,
+  };
+}
+
+/**
+ * The languages of this post that are live RIGHT NOW — exactly the set the
+ * backend loops over when a shared-field save changes the author.
+ */
+export function publishedLanguageNames(slots: readonly LanguageSlot[]): string[] {
+  return slots.filter((slot) => slot.state === "published").map((slot) => slot.name);
+}
+
+// ─── Cache-invalidation predicate for the per-language translation queries ───
+
+/**
+ * The generated key builder produces a ONE-element key holding the full
+ * request path:
+ *
+ *   getGetEditorialPostTranslationQueryKey(7, "en")
+ *     -> ["/api/admin/editorial/posts/7/translations/en"]
+ *
+ * The language is baked into that single string, so React Query's normal
+ * prefix matching (which compares array elements) cannot reach "every
+ * language of post 7" — a partial key of `["/api/admin/editorial/posts/7"]`
+ * matches nothing, because element 0 must be deep-equal, not a prefix.
+ *
+ * A `predicate` is the supported narrow escape hatch. This prefix ends with
+ * `/translations/`, which is what keeps post 7 from matching post 70: their
+ * prefixes differ at the slash.
+ */
+export function editorialPostTranslationsKeyPrefix(postId: number): string {
+  return `/api/admin/editorial/posts/${postId}/translations/`;
+}
+
+/** True for any cached translation-detail key of THIS post, in any language. */
+export function isEditorialPostTranslationKey(postId: number, queryKey: readonly unknown[]): boolean {
+  const head = queryKey[0];
+  return typeof head === "string" && head.startsWith(editorialPostTranslationsKeyPrefix(postId));
+}
+
+/**
+ * Shown before a shared save that reassigns the post's author while at least
+ * one translation is live.
+ *
+ * Why a confirmation here when a published TRANSLATION save gets only the
+ * LIVE_CONTENT_WARNING banner: that banner is honest because the edit and
+ * its consequence are the same language, both on screen. An author
+ * reassignment is not — it rewrites the byline on languages the operator
+ * may not have open (and may be performed while the open translation is a
+ * Draft with no frozen-byline box at all, so no on-screen copy can carry
+ * the warning). Confirmation gates only the genuinely live case, the same
+ * way archivePublishedConfirmation does.
+ */
+export function authorReassignmentConfirmation(context: {
+  languageNames: readonly string[];
+}): PostConfirmation {
+  const many = context.languageNames.length > 1;
+  return {
+    title: many ? "Change the byline on every live language?" : "Change the byline on the live post?",
+    description: `Saving rewrites the published byline immediately on ${context.languageNames.join(", ")} — ${many ? "those languages are" : "that language is"} on the website right now. Nothing else in the post changes, and a revision is recorded for each language so the earlier byline stays in its history.`,
+    confirmLabel: "Change author and save",
+    destructive: false,
   };
 }
 

@@ -480,3 +480,67 @@ test("the editor is two-column on desktop and stacks sidebar-first", () => {
 test("tables stay inside a horizontal-scroll container rather than widening the page", () => {
   assert.match(list, /<div className="border rounded-md overflow-x-auto">/);
 });
+
+// ─── Frozen byline / author reassignment (release-blocker regression) ────────
+
+test("the frozen byline renders the shared constant, never inline prose", () => {
+  assert.match(editor, /data-testid="frozen-byline-explanation"/);
+  assert.match(editorCode, /\{FROZEN_BYLINE_EXPLANATION\}/);
+  // The old, wrong sentence must never come back in any form.
+  assert.doesNotMatch(editor, /on the next publish/i);
+  assert.doesNotMatch(editor, /next publish|re-?publish|future publication/i);
+});
+
+test("a shared save that reassigns the author on a live post is confirmed", () => {
+  assert.match(editorCode, /const authorChanged = shared\.authorId !== sharedBaseline\.authorId/);
+  assert.match(editorCode, /publishedLanguageNames\(slots\)/);
+  assert.match(
+    editorCode,
+    /if \(authorChanged && liveLanguages\.length > 0\)[\s\S]{0,200}confirmAction\(authorReassignmentConfirmation/,
+    "the confirmation must be gated on BOTH an actual author change and at least one live language",
+  );
+  // Same useAdminConfirm hook as publish and archive — no bespoke dialog.
+  assert.match(editorCode, /const confirmAction = useAdminConfirm\(\)/);
+});
+
+test("the shared save invalidates every cached language of THIS post when the author changes", () => {
+  assert.match(editorCode, /const invalidateShared = useCallback\(\(authorChanged: boolean\) =>/);
+  assert.match(
+    editorCode,
+    /if \(authorChanged\) \{[\s\S]{0,220}predicate: \(query\) => isEditorialPostTranslationKey\(postId, query\.queryKey\)/,
+    "the translation-wide invalidation must run, and only on an author change",
+  );
+  assert.match(editorCode, /invalidateShared\(authorChanged\)/);
+});
+
+test("the shared invalidation is narrow — never global, never other posts", () => {
+  assert.doesNotMatch(editorCode, /invalidateQueries\(\)/);
+  assert.doesNotMatch(editorCode, /invalidateQueries\(\{\s*\}\)/);
+  assert.doesNotMatch(editorCode, /queryClient\.clear\(\)|removeQueries\(\)|resetQueries\(\)/);
+  assert.doesNotMatch(editorCode, /refetchQueries/);
+  // Reference data (authors list) is still spared by the shared save.
+  assert.doesNotMatch(editorCode, /getListEditorialAuthorsQueryKey/);
+});
+
+test("the shared save cannot clobber unsaved translation work", () => {
+  // The re-baseline effect is keyed on the translation row IDENTITY, so the
+  // refetch triggered above returns the same id and the effect does not run.
+  assert.match(editorCode, /\}, \[translationRow\?\.id\]\);/);
+  assert.doesNotMatch(editorCode, /\}, \[translationRow\]\);/);
+  // And the shared mutation's own success handler touches no translation state.
+  const sharedSuccess =
+    /updateShared\.mutate\([\s\S]*?onSuccess: \(saved\) => \{([\s\S]*?)\},\s*onError/.exec(editorCode);
+  assert.ok(sharedSuccess, "the shared mutation's onSuccess handler was not found");
+  const body = sharedSuccess![1]!;
+  assert.doesNotMatch(body, /setForm\(|setBaseline\(|setTopicIds\(|setTopicBaseline\(|setSlugTouched\(/);
+});
+
+test("the shared save clears the shared scope only", () => {
+  const sharedSuccess =
+    /updateShared\.mutate\([\s\S]*?onSuccess: \(saved\) => \{([\s\S]*?)\},\s*onError/.exec(editorCode);
+  const body = sharedSuccess![1]!;
+  assert.match(body, /dirty\.clearScope\("shared"\)/);
+  assert.doesNotMatch(body, /clearScope\("translation"\)/);
+  assert.doesNotMatch(body, /clearScope\("topics"\)/);
+  assert.doesNotMatch(body, /clearAll|resetAll/);
+});

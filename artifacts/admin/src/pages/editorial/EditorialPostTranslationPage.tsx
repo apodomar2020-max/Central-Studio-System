@@ -88,6 +88,7 @@ import {
   type EditableBlock,
 } from "@/lib/editorial-post-body";
 import {
+  FROZEN_BYLINE_EXPLANATION,
   INACTIVE_LANGUAGE_ADD_BLOCKED,
   INACTIVE_LANGUAGE_EDIT_NOTICE,
   LIVE_CONTENT_WARNING,
@@ -98,14 +99,17 @@ import {
   SLUG_LOCKED_EXPLANATION,
   TRANSLATION_SPECIFIC_LABEL,
   archivePublishedConfirmation,
+  authorReassignmentConfirmation,
   buildLanguageSlots,
   canAddTranslation,
   channelLabel,
   describeSlugProblem,
   formatDateTime,
+  isEditorialPostTranslationKey,
   isSlugLocked,
   postCapabilities,
   publishConfirmation,
+  publishedLanguageNames,
   slotStateLabel,
   slugPreview,
   statusBadgeLabel,
@@ -301,12 +305,29 @@ export default function EditorialPostTranslationPage() {
     queryClient.invalidateQueries({ queryKey: getListEditorialPostsQueryKey() });
   }, [queryClient, postId, languageCode]);
 
-  const invalidateShared = useCallback(() => {
+  const invalidateShared = useCallback((authorChanged: boolean) => {
     queryClient.invalidateQueries({ queryKey: getGetEditorialPostQueryKey(postId) });
     queryClient.invalidateQueries({ queryKey: getListEditorialPostsQueryKey() });
     // Reference data is NOT invalidated: changing a post's author changes no
     // author row, and re-fetching the shared 5-minute cache would undo the
     // whole point of useEditorialReferenceData().
+
+    // An author reassignment is the one shared field with a translation-level
+    // blast radius: updatePostSharedFields rewrites `authorSnapshot` on EVERY
+    // currently-published translation of this post, in the same transaction.
+    // So every cached language of THIS post has to go, not just the open one —
+    // otherwise switching to another published language shows the old byline.
+    //
+    // The generated key is a single string holding the whole path, so an array
+    // prefix cannot match across languages; a predicate on that string prefix
+    // is the narrow, supported equivalent. It is deliberately NOT a bare
+    // invalidateQueries(): other posts, the authors list and every unrelated
+    // query stay cached.
+    if (authorChanged) {
+      queryClient.invalidateQueries({
+        predicate: (query) => isEditorialPostTranslationKey(postId, query.queryKey),
+      });
+    }
   }, [queryClient, postId]);
 
   const invalidateTopics = useCallback(() => {
@@ -355,10 +376,20 @@ export default function EditorialPostTranslationPage() {
   // It can never publish.
   useSaveShortcut(dirty.flags.translation && capabilities.canEdit, saveTranslation);
 
-  const saveShared = () => {
+  const saveShared = async () => {
     if (!shared || !sharedBaseline) return;
     const payload = toSharedUpdatePayload(shared, sharedBaseline);
     if (Object.keys(payload).length === 0) return;
+
+    // The author actually moved relative to the last server answer, and at
+    // least one language of this post is live: the save rewrites those live
+    // bylines the moment it succeeds, including languages not on screen.
+    const authorChanged = shared.authorId !== sharedBaseline.authorId;
+    const liveLanguages = publishedLanguageNames(slots);
+    if (authorChanged && liveLanguages.length > 0) {
+      if (!(await confirmAction(authorReassignmentConfirmation({ languageNames: liveLanguages })))) return;
+    }
+
     setSharedError(null);
     updateShared.mutate(
       { id: postId, data: payload },
@@ -370,8 +401,12 @@ export default function EditorialPostTranslationPage() {
           };
           setShared(next);
           setSharedBaseline(next);
+          // ONLY this scope clears — translation and topics keep their own
+          // dirty state, and the refetch below cannot reset the translation
+          // form because that re-baseline effect is keyed on the translation
+          // row's id, not on its contents.
           dirty.clearScope("shared");
-          invalidateShared();
+          invalidateShared(authorChanged);
           toast({ title: "Saved", description: saveSuccessMessage("shared") });
         },
         onError: (err) => {
@@ -630,9 +665,8 @@ export default function EditorialPostTranslationPage() {
                 <p className="text-[11px] font-medium text-foreground">
                   Published byline: {translationRow.authorSnapshot.name}
                 </p>
-                <p className="text-[11px] text-muted-foreground">
-                  Frozen when this language was published. Editing the author profile does not rewrite it;
-                  choosing a different author below changes it on the next publish.
+                <p className="text-[11px] text-muted-foreground" data-testid="frozen-byline-explanation">
+                  {FROZEN_BYLINE_EXPLANATION}
                 </p>
               </div>
             )}
