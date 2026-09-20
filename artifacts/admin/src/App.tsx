@@ -46,18 +46,19 @@ import WebsiteNewsListPage from "@/pages/website/news/WebsiteNewsListPage";
 import WebsiteNewsEditorPage from "@/pages/website/news/WebsiteNewsEditorPage";
 import WebsitePerformanceListPage from "@/pages/website/performances/WebsitePerformanceListPage";
 import WebsitePerformanceEditorPage from "@/pages/website/performances/WebsitePerformanceEditorPage";
-// Unified Editorial CMS — Wave 2.1A Admin foundation. Placeholder screens
-// only: they prove nav/routing/RBAC end-to-end; the real Posts, Authors,
-// Topics, Placements and Links screens land in later sub-waves. Website →
-// Configuration → Languages is real as of Wave 2.1B and has its own module.
+// Unified Editorial CMS. Only Placements and Links are still Wave 2.1A
+// placeholders proving nav/routing/RBAC; both land in later sub-waves.
+// Website → Configuration → Languages is real as of Wave 2.1B, Topics and
+// Authors as of Wave 2.1C, and Posts + the post editor as of Wave 2.1D —
+// each with its own module below.
 import {
-  EditorialPostsListPage,
-  EditorialPostCreatePage,
-  EditorialPostDetailPage,
-  EditorialPostTranslationPage,
   EditorialPlacementsPage,
   WebsiteSettingsLinksPage,
 } from "@/pages/editorial/EditorialPlaceholderPages";
+import EditorialPostsListPage from "@/pages/editorial/EditorialPostsListPage";
+import EditorialPostCreatePage from "@/pages/editorial/EditorialPostCreatePage";
+import EditorialPostDetailPage from "@/pages/editorial/EditorialPostDetailPage";
+import EditorialPostTranslationPage from "@/pages/editorial/EditorialPostTranslationPage";
 import EditorialAuthorsPage from "@/pages/editorial/EditorialAuthorsPage";
 import EditorialTopicsPage from "@/pages/editorial/EditorialTopicsPage";
 import WebsiteSettingsLanguagesPage from "@/pages/website/settings/WebsiteSettingsLanguagesPage";
@@ -273,7 +274,7 @@ function ProtectedRouter() {
         <Route path="/website/performances/new">{guarded(ROUTE_PERMS.websitePerformance, <WebsitePerformanceEditorPage />)}</Route>
         <Route path="/website/performances/:slug/edit">{guarded(ROUTE_PERMS.websitePerformance, <WebsitePerformanceEditorPage />)}</Route>
         <Route path="/website/performances">{guarded(ROUTE_PERMS.websitePerformance, <WebsitePerformanceListPage />)}</Route>
-        {/* Unified Editorial CMS — Wave 2.1A foundation (placeholder pages). */}
+        {/* Unified Editorial CMS. Posts + editor are real (Wave 2.1D); Placements and Links remain placeholders. */}
         <Route path="/editorial/posts/new">{guarded(ROUTE_PERMS.editorialPosts, <EditorialPostCreatePage />)}</Route>
         <Route path="/editorial/posts/:id/:languageCode">{guarded(ROUTE_PERMS.editorialPosts, <EditorialPostTranslationPage />)}</Route>
         <Route path="/editorial/posts/:id">{guarded(ROUTE_PERMS.editorialPosts, <EditorialPostDetailPage />)}</Route>

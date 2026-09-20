@@ -4,11 +4,15 @@
  * These components exist to prove navigation, routing and RBAC work
  * end-to-end for the unified Editorial CMS before any real screen is built.
  * They render no table, no form and no CRUD logic on purpose: each real
- * screen arrives in its own later Wave 2.1 sub-wave. (Website → Configuration
- * → Languages has since been delivered for real in Wave 2.1B and is no longer
- * in this file.)
+ * screen arrives in its own later Wave 2.1 sub-wave.
  *
- * The Editorial pages render inside <EditorialPageShell> so they carry
+ * TWO PLACEHOLDERS REMAIN: Website → Editorial → Placements (Wave 2.1F) and
+ * Website → Settings → Links (Wave 2.1G). Everything else has shipped for
+ * real and has left this file — Configuration → Languages in Wave 2.1B,
+ * Topics and Authors in Wave 2.1C, and Posts, the post create flow and the
+ * post editor in Wave 2.1D.
+ *
+ * The Editorial placeholder renders inside <EditorialPageShell> so it carries
  * the approved legacy-coexistence banner. The Website → Settings placeholder
  * (Links) uses plain Admin page chrome: the approved IA scopes that
  * banner to the Editorial group, and that screen configures shared
@@ -66,45 +70,12 @@ function SettingsPlaceholder({
 
 // ─── Editorial ───────────────────────────────────────────────────────────────
 
-export function EditorialPostsListPage() {
-  return (
-    <EditorialPlaceholder
-      heading="Posts"
-      description="Every unified Editorial post, across channels and languages."
-      body="The Posts list — search, channel and status filters, pagination and row actions — is delivered in a later Wave 2.1 sub-wave. This page currently exists only to confirm navigation, routing and permissions."
-    />
-  );
-}
-
-export function EditorialPostCreatePage() {
-  return (
-    <EditorialPlaceholder
-      heading="New post"
-      description="Create a unified Editorial post."
-      body="The post creation form is delivered in a later Wave 2.1 sub-wave. This page currently exists only to confirm navigation, routing and permissions."
-    />
-  );
-}
-
-export function EditorialPostDetailPage() {
-  return (
-    <EditorialPlaceholder
-      heading="Post"
-      description="Shared post fields, translations, topics, recommendations and revisions."
-      body="The post detail screen is delivered in a later Wave 2.1 sub-wave. This page currently exists only to confirm navigation, routing and permissions."
-    />
-  );
-}
-
-export function EditorialPostTranslationPage() {
-  return (
-    <EditorialPlaceholder
-      heading="Translation"
-      description="One language of a unified Editorial post."
-      body="The translation editor — block body, publishing and revisions — is delivered in a later Wave 2.1 sub-wave. This page currently exists only to confirm navigation, routing and permissions."
-    />
-  );
-}
+// Website → Editorial → Posts is no longer a placeholder: the real list,
+// create flow and post editor shipped in Wave 2.1D and live in
+// pages/editorial/EditorialPostsListPage.tsx,
+// pages/editorial/EditorialPostCreatePage.tsx,
+// pages/editorial/EditorialPostDetailPage.tsx and
+// pages/editorial/EditorialPostTranslationPage.tsx.
 
 // Website → Editorial → Authors and Website → Editorial → Topics are no
 // longer placeholders: both real screens shipped in Wave 2.1C and live in

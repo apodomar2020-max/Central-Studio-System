@@ -278,13 +278,13 @@ test("the Website Links placeholder is exactly as Wave 2.1A left it", () => {
 });
 
 /**
- * Wave 2.1C retired the Topics and Authors placeholders (they became real
- * screens under pages/editorial/). This assertion tracks the placeholders
- * that REMAIN — Wave 2.1B's own screen and copy are unaffected either way.
+ * Wave 2.1C retired the Topics and Authors placeholders and Wave 2.1D the
+ * four Posts ones (all became real screens under pages/editorial/). This
+ * assertion tracks the placeholders that REMAIN — Wave 2.1B's own screen and
+ * copy are unaffected either way.
  */
 const REMAINING_PLACEHOLDERS = [
-  "EditorialPostsListPage", "EditorialPostCreatePage", "EditorialPostDetailPage",
-  "EditorialPostTranslationPage", "EditorialPlacementsPage",
+  "EditorialPlacementsPage",
   "WebsiteSettingsLinksPage",
 ];
 
