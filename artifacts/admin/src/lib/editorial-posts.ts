@@ -494,6 +494,42 @@ export function publishedLanguageNames(slots: readonly LanguageSlot[]): string[]
   return slots.filter((slot) => slot.state === "published").map((slot) => slot.name);
 }
 
+/**
+ * The same set, but derived SAFELY — the version the author-reassignment
+ * confirmation must use.
+ *
+ * `publishedLanguageNames(slots)` above reads `buildLanguageSlots`, which
+ * iterates the LANGUAGES REFERENCE LIST and only then looks a translation up
+ * by code. When that reference query fails, `languages` is `[]`, so `slots`
+ * is `[]` — and a post with live translations reports ZERO published
+ * languages. In the editor that silently skipped the "this rewrites the live
+ * byline" confirmation while the backend still rewrote every published
+ * translation's authorSnapshot on save. A reference-data outage must never
+ * be able to suppress a warning about live content.
+ *
+ * So the two concerns are separated here:
+ *   TRUTH   — whether a published translation exists, and in which code —
+ *             comes from the post's own translations (a different query).
+ *   DISPLAY — the human-readable language name — comes from the Languages
+ *             reference list, and degrades to the raw code when absent.
+ *
+ * No language data is invented: an unknown code is shown as the code.
+ */
+export function publishedTranslationLanguageLabels(
+  translations: readonly TranslationSummaryLike[],
+  languages: readonly LanguageRowLike[],
+): string[] {
+  const nameByCode = new Map(languages.map((language) => [language.code, language.name]));
+  return translations
+    .filter((translation) => translation.status === "published")
+    .map((translation) => nameByCode.get(translation.languageCode) ?? translation.languageCode);
+}
+
+/** Shown in place of the language switcher when the Languages list fails. */
+export const LANGUAGES_REFERENCE_UNAVAILABLE =
+  "Languages could not be loaded. The language switcher is unavailable until this list loads, " +
+  "and live languages are named by code. Saving is unaffected.";
+
 // ─── Cache-invalidation predicate for the per-language translation queries ───
 
 /**
@@ -546,6 +582,30 @@ export function authorReassignmentConfirmation(context: {
     destructive: false,
   };
 }
+
+/**
+ * Lifecycle toast titles, success and failure stated separately.
+ *
+ * The failure title is NOT derived from the success title by string surgery.
+ * The shipped `successTitle.replace(/ed$/, " failed")` produced "Archiv
+ * failed" for Archive, and left "Restored to draft" completely untouched
+ * because it does not end in "ed" — so a failed Restore announced itself
+ * with a success sentence. Each operation names its own failure title, and
+ * none of them contains the past-tense success wording.
+ */
+export type PostTransition = "publish" | "archive" | "restore";
+
+export const TRANSITION_SUCCESS_TITLES: Record<PostTransition, string> = {
+  publish: "Published",
+  archive: "Archived",
+  restore: "Restored to draft",
+};
+
+export const TRANSITION_FAILURE_TITLES: Record<PostTransition, string> = {
+  publish: "Publish failed — nothing was put live",
+  archive: "Archive failed — no change was made",
+  restore: "Restore failed — this language is still archived",
+};
 
 /**
  * The real transition table (ALLOWED_TRANSITIONS in editorialPostsService.ts):

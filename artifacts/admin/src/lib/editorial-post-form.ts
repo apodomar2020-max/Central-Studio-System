@@ -191,12 +191,35 @@ export function toTranslationUpdatePayload(
  * on UpdateEditorialPostTranslationBody as `zod.number().nullish()` and the
  * service copies it like any other content key. It is an override of a
  * server-derived estimate, so a blank field clears the override (null).
+ *
+ * ─── THE REAL CONTRACT (verified in this branch, not assumed) ────────────
+ *
+ * DB  lib/db/migrations/0126_editorial_foundation.sql — the column is
+ *     `integer`, and the table CHECK is
+ *       ("reading_time_override_minutes" IS NULL
+ *        OR "reading_time_override_minutes" > 0)
+ * API lib/api-zod/src/generated/api.ts — `zod.number().nullish()`. There is
+ *     NO `.int()` and NO `.min()`, so the generated request schema ACCEPTS 0.
+ * SVC editorialPostsService.updateTranslation copies the key straight onto
+ *     the UPDATE with no domain check of its own.
+ *
+ * So `0` passes request validation, reaches the UPDATE and violates the
+ * CHECK constraint inside the transaction — a raw driver error, which the
+ * Security Phase G ExposableHttpError allowlist renders as a generic 500.
+ * The real minimum is 1 and `null` (blank) is the only other legal value.
+ * This module is the last gate before the request, so BOTH helpers are
+ * pinned to that minimum rather than only the message-producing one.
  */
+export const READING_TIME_MIN_MINUTES = 1;
+
+export const READING_TIME_ERROR_MESSAGE =
+  "Enter a whole number of minutes of 1 or more, or leave blank to use the estimate.";
+
 export function readingTimeOrNull(raw: string): number | null {
   const trimmed = raw.trim();
   if (trimmed.length === 0) return null;
   const parsed = Number(trimmed);
-  if (!Number.isInteger(parsed) || parsed < 0) return null;
+  if (!Number.isInteger(parsed) || parsed < READING_TIME_MIN_MINUTES) return null;
   return parsed;
 }
 
@@ -204,8 +227,8 @@ export function readingTimeError(raw: string): string | undefined {
   const trimmed = raw.trim();
   if (trimmed.length === 0) return undefined;
   const parsed = Number(trimmed);
-  if (!Number.isInteger(parsed) || parsed < 1) {
-    return "Enter a whole number of minutes, or leave blank to use the estimate.";
+  if (!Number.isInteger(parsed) || parsed < READING_TIME_MIN_MINUTES) {
+    return READING_TIME_ERROR_MESSAGE;
   }
   return undefined;
 }

@@ -13,12 +13,15 @@ import {
   FROZEN_BYLINE_EXPLANATION,
   INACTIVE_LANGUAGE_ADD_BLOCKED,
   INACTIVE_LANGUAGE_EDIT_NOTICE,
+  LANGUAGES_REFERENCE_UNAVAILABLE,
   LIVE_CONTENT_WARNING,
   NO_PUBLISH_PERMISSION_NOTICE,
   POST_CHANNEL_IMMUTABLE_EXPLANATION,
   POST_SLUG_MAX,
   SHARED_ACROSS_LANGUAGES_LABEL,
   SLUG_LOCKED_EXPLANATION,
+  TRANSITION_FAILURE_TITLES,
+  TRANSITION_SUCCESS_TITLES,
   activePostFilterCount,
   allowedTransitions,
   archivePublishedConfirmation,
@@ -32,6 +35,7 @@ import {
   isSlugLocked,
   languageCodesLabel,
   publishedLanguageNames,
+  publishedTranslationLanguageLabels,
   listRowTitle,
   pageRangeLabel,
   postCapabilities,
@@ -426,6 +430,93 @@ test("publishedLanguageNames returns only the live slots", () => {
   );
   assert.deepEqual(publishedLanguageNames(slots), ["English", "Arabic"]);
   assert.deepEqual(publishedLanguageNames([]), []);
+});
+
+// ─── Finding C: a Languages outage must not suppress the live-byline warning ─
+
+const POST_TRANSLATIONS = [
+  { languageCode: "en", title: "A", status: "published" as const },
+  { languageCode: "ar", title: "B", status: "published" as const },
+  { languageCode: "fr", title: "C", status: "draft" as const },
+  { languageCode: "de", title: "D", status: "archived" as const },
+];
+
+test("C: the OLD slot-derived path silently reports zero live languages when Languages fails", () => {
+  // The bug, pinned. `buildLanguageSlots` iterates the reference list, so an
+  // empty (failed) Languages query collapses every slot away — and the
+  // caller concluded the post had nothing live.
+  assert.deepEqual(publishedLanguageNames(buildLanguageSlots([], POST_TRANSLATIONS)), []);
+});
+
+test("C: published languages are derived from the POST's translations, not from Languages", () => {
+  // FAILS before the fix: the helper did not exist and the caller used the
+  // slot-derived path above, which returns [].
+  assert.deepEqual(
+    publishedTranslationLanguageLabels(POST_TRANSLATIONS, []),
+    ["en", "ar"],
+    "a Languages outage must still name the live languages — by raw code",
+  );
+});
+
+test("C: the Languages list supplies display names only, and degrades per-code", () => {
+  assert.deepEqual(
+    publishedTranslationLanguageLabels(POST_TRANSLATIONS, LANGUAGES),
+    ["English", "Arabic"],
+  );
+  // A partially-known list names what it can and invents nothing.
+  assert.deepEqual(
+    publishedTranslationLanguageLabels(POST_TRANSLATIONS, [LANGUAGES[0]!]),
+    ["English", "ar"],
+  );
+});
+
+test("C: NO published translations means NO confirmation, even with Languages down", () => {
+  const none = [
+    { languageCode: "en", title: "A", status: "draft" as const },
+    { languageCode: "ar", title: "B", status: "archived" as const },
+  ];
+  assert.deepEqual(publishedTranslationLanguageLabels(none, []), []);
+  assert.deepEqual(publishedTranslationLanguageLabels([], []), []);
+});
+
+test("C: the Languages-failure notice states the outage without inventing languages", () => {
+  assert.match(LANGUAGES_REFERENCE_UNAVAILABLE, /could not be loaded/);
+  assert.match(LANGUAGES_REFERENCE_UNAVAILABLE, /by code/);
+  assert.match(LANGUAGES_REFERENCE_UNAVAILABLE, /Saving is unaffected/);
+});
+
+// ─── Finding B: lifecycle failure titles ────────────────────────────────────
+
+test("B: the old derivation mangled Archive and left a failed Restore success-sounding", () => {
+  // The exact shipped expression, reproduced — this documents WHY the
+  // derivation was removed rather than patched.
+  const derive = (successTitle: string) => successTitle.replace(/ed$/, " failed");
+  assert.equal(derive("Published"), "Publish failed");
+  assert.equal(derive("Archived"), "Archiv failed");
+  assert.equal(
+    derive("Restored to draft"),
+    "Restored to draft",
+    "a failed Restore was announced with its own success sentence",
+  );
+});
+
+test("B: every transition has its own failure title, free of success wording", () => {
+  for (const transition of ["publish", "archive", "restore"] as const) {
+    const success = TRANSITION_SUCCESS_TITLES[transition];
+    const failure = TRANSITION_FAILURE_TITLES[transition];
+    assert.match(failure, /failed/i, `${transition} failure title must say it failed`);
+    assert.doesNotMatch(
+      failure,
+      new RegExp(success.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+      `${transition} failure title must not contain the success title "${success}"`,
+    );
+    // No past-tense "it happened" wording anywhere in a failure title.
+    assert.doesNotMatch(failure, /\b(Published|Archived|Restored)\b/);
+    assert.notEqual(failure, success);
+  }
+  // And the mangled string can never be produced again.
+  assert.doesNotMatch(TRANSITION_FAILURE_TITLES.archive, /Archiv failed/);
+  assert.equal(TRANSITION_FAILURE_TITLES.publish, "Publish failed — nothing was put live");
 });
 
 test("the translation-key predicate matches EVERY cached language of one post", () => {

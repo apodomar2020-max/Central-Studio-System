@@ -14,6 +14,8 @@ import {
   EMPTY_CREATE_FORM,
   EMPTY_TRANSLATION_FORM,
   READINESS_LABELS,
+  READING_TIME_ERROR_MESSAGE,
+  READING_TIME_MIN_MINUTES,
   areTopicsDirty,
   blockingReadiness,
   isPublishReady,
@@ -129,6 +131,86 @@ test("read time is a REAL writable override; blank clears it", () => {
   assert.match(readingTimeError("0")!, /whole number of minutes/);
   const payload = toTranslationUpdatePayload({ ...ORIGINAL, readingTimeOverrideMinutes: "7" }, ORIGINAL, UNLOCKED);
   assert.equal(payload.readingTimeOverrideMinutes, 7);
+});
+
+// ─── Finding A: the reading-time override's REAL contract ───────────────────
+//
+// Verified in this branch, not assumed:
+//   DB   lib/db/migrations/0126_editorial_foundation.sql
+//          CHECK (... IS NULL OR ... > 0), column type `integer`
+//   API  lib/api-zod/src/generated/api.ts -> zod.number().nullish()
+//          no .int(), no .min() — so the request schema ACCEPTS 0
+// The client is therefore the only gate standing between `0` and a CHECK
+// violation surfacing as an opaque 500.
+
+const MIGRATION = readFileSync(
+  new URL("../../../../lib/db/migrations/0126_editorial_foundation.sql", import.meta.url),
+  "utf8",
+);
+const GENERATED_ZOD = readFileSync(
+  new URL("../../../../lib/api-zod/src/generated/api.ts", import.meta.url),
+  "utf8",
+);
+
+test("A: the DB CHECK is the real minimum, and the generated schema does NOT enforce it", () => {
+  assert.match(
+    MIGRATION,
+    /CHECK \("reading_time_override_minutes" IS NULL OR "reading_time_override_minutes" > 0\)/,
+  );
+  assert.match(MIGRATION, /"reading_time_override_minutes" integer/);
+  // No lower bound of its own on the request schema. If this ever gains
+  // `.min(1)` the server would answer 400 rather than 500 — but the client
+  // gate is still what keeps the request from being sent at all.
+  assert.match(GENERATED_ZOD, /readingTimeOverrideMinutes: zod\.number\(\)\.nullish\(\)/);
+  assert.equal(READING_TIME_MIN_MINUTES, 1);
+});
+
+test("A: blank is valid and clears the override", () => {
+  assert.equal(readingTimeError(""), undefined);
+  assert.equal(readingTimeError("   "), undefined);
+  assert.equal(readingTimeOrNull(""), null);
+  const cleared = toTranslationUpdatePayload(
+    { ...ORIGINAL, readingTimeOverrideMinutes: "" },
+    { ...ORIGINAL, readingTimeOverrideMinutes: "5" },
+    UNLOCKED,
+  );
+  assert.equal(cleared.readingTimeOverrideMinutes, null);
+});
+
+test("A: 1 — the contract minimum — is accepted and sent unchanged", () => {
+  assert.equal(readingTimeError("1"), undefined);
+  assert.equal(readingTimeOrNull("1"), 1);
+  const payload = toTranslationUpdatePayload(
+    { ...ORIGINAL, readingTimeOverrideMinutes: "1" },
+    ORIGINAL,
+    UNLOCKED,
+  );
+  assert.equal(payload.readingTimeOverrideMinutes, 1);
+});
+
+test("A: 0 is rejected with the contract-derived message and can never be sent", () => {
+  // FAILS before the fix: readingTimeOrNull("0") returned 0, which
+  // toTranslationUpdatePayload then put on the PATCH body.
+  assert.equal(readingTimeError("0"), READING_TIME_ERROR_MESSAGE);
+  assert.match(READING_TIME_ERROR_MESSAGE, /1 or more/);
+  assert.equal(readingTimeOrNull("0"), null);
+  const payload = toTranslationUpdatePayload(
+    { ...ORIGINAL, readingTimeOverrideMinutes: "0" },
+    ORIGINAL,
+    UNLOCKED,
+  );
+  assert.equal(
+    payload.readingTimeOverrideMinutes,
+    undefined,
+    "0 must never appear on the PATCH body — the DB CHECK turns it into a 500",
+  );
+});
+
+test("A: negatives and non-integers are rejected by the same single message", () => {
+  for (const raw of ["-1", "-7", "1.5", "abc", "  -2  "]) {
+    assert.equal(readingTimeError(raw), READING_TIME_ERROR_MESSAGE, `${raw} must be rejected`);
+    assert.equal(readingTimeOrNull(raw), null, `${raw} must not become a payload value`);
+  }
 });
 
 test("toTranslationFormValues maps every nullable column to a controlled string", () => {

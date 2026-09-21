@@ -11,6 +11,7 @@ import { TopBar } from "@/components/layout/top-bar";
 import { ADMIN_TOKEN_STORAGE_KEY, AdminAuthProvider, useAdminAuth } from "@/contexts/AdminAuthContext";
 import { AdminThemeProvider } from "@/contexts/AdminThemeContext";
 import { RouteGuard, type PermRequirement, type PermRequirementMode } from "@/lib/permissions";
+import { routeEntranceKey } from "@/lib/route-entrance";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { AdminConfirmProvider } from "@/components/admin/admin-confirm";
 
@@ -114,10 +115,17 @@ function Layout({ children }: { children: React.ReactNode }) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   // Motion System Foundation (page entrance, §10): the shell — sidebar,
   // top-bar — must stay put across navigation; only the route content
-  // re-animates. Keying this inner wrapper by location remounts just the
-  // content on every navigation, replaying the .admin2-route-enter CSS
-  // animation without ever unmounting Layout/Sidebar/TopBar themselves.
+  // re-animates. Keying this inner wrapper remounts just the content on every
+  // navigation, replaying the .admin2-route-enter CSS animation without ever
+  // unmounting Layout/Sidebar/TopBar themselves.
+  //
+  // The key is the PAGE identity rather than the raw location: a trailing
+  // path parameter that only selects a sub-view of the page already on screen
+  // is not a navigation, and remounting on it destroyed page-level form
+  // state. See lib/route-entrance.ts — every other route is keyed by the
+  // location verbatim and animates exactly as before.
   const [location] = useLocation();
+  const entranceKey = routeEntranceKey(location);
 
   return (
     <AdminConfirmProvider>
@@ -132,7 +140,7 @@ function Layout({ children }: { children: React.ReactNode }) {
         <TopBar onOpenMobileNav={() => setMobileNavOpen(true)} />
         <main className="admin2-main relative flex-1 overflow-y-auto overflow-x-hidden">
           <div className="admin2-page-content relative max-w-none">
-            <div key={location} className="admin2-route-enter">
+            <div key={entranceKey} className="admin2-route-enter">
               {children}
             </div>
           </div>

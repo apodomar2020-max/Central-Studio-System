@@ -91,12 +91,15 @@ import {
   FROZEN_BYLINE_EXPLANATION,
   INACTIVE_LANGUAGE_ADD_BLOCKED,
   INACTIVE_LANGUAGE_EDIT_NOTICE,
+  LANGUAGES_REFERENCE_UNAVAILABLE,
   LIVE_CONTENT_WARNING,
   NO_PUBLISH_PERMISSION_NOTICE,
   POST_CHANNEL_IMMUTABLE_EXPLANATION,
   RESTORE_EXPLANATION,
   SHARED_ACROSS_LANGUAGES_LABEL,
   SLUG_LOCKED_EXPLANATION,
+  TRANSITION_FAILURE_TITLES,
+  TRANSITION_SUCCESS_TITLES,
   TRANSLATION_SPECIFIC_LABEL,
   archivePublishedConfirmation,
   authorReassignmentConfirmation,
@@ -109,7 +112,7 @@ import {
   isSlugLocked,
   postCapabilities,
   publishConfirmation,
-  publishedLanguageNames,
+  publishedTranslationLanguageLabels,
   slotStateLabel,
   slugPreview,
   statusBadgeLabel,
@@ -186,6 +189,18 @@ export default function EditorialPostTranslationPage() {
 
   const [form, setForm] = useState<TranslationFormValues | null>(null);
   const [baseline, setBaseline] = useState<TranslationFormValues | null>(null);
+  /**
+   * Which translation row `form`/`baseline` were baselined from.
+   *
+   * The page no longer remounts when the `:languageCode` route parameter
+   * changes (see lib/route-entrance.ts — that remount was destroying the
+   * post-level shared and topics state). The re-baseline below is an effect,
+   * so it runs AFTER the render in which the new row first arrives; without
+   * this guard that one render would paint the previous language's title and
+   * body under the new language's heading. Rendering is held on the loading
+   * state until the two agree.
+   */
+  const [formRowId, setFormRowId] = useState<number | null>(null);
   const [shared, setShared] = useState<SharedFormValues | null>(null);
   const [sharedBaseline, setSharedBaseline] = useState<SharedFormValues | null>(null);
   const [topicIds, setTopicIds] = useState<number[]>([]);
@@ -210,6 +225,7 @@ export default function EditorialPostTranslationPage() {
     const next = toTranslationFormValues(translationRow, toEditableBlocks(translationRow.body));
     setForm(next);
     setBaseline(next);
+    setFormRowId(translationRow.id);
     setSlugTouched(false);
     setTranslationError(null);
     dirty.clearScope("translation");
@@ -263,6 +279,26 @@ export default function EditorialPostTranslationPage() {
         })),
       ),
     [reference.languages.data, post.data?.translations],
+  );
+
+  /**
+   * SAFETY-CRITICAL, and deliberately NOT derived from `slots`.
+   *
+   * `slots` is built by iterating the Languages REFERENCE list, so a failed
+   * Languages query collapses it to `[]` — which used to report "no live
+   * languages" for a post that has them, silently skipping the
+   * author-reassignment confirmation while the backend still rewrote every
+   * published byline. Existence and status come from the post's OWN
+   * translations here (an independent query); the Languages list only
+   * supplies display names, falling back to the raw code.
+   */
+  const publishedLanguageLabels = useMemo(
+    () =>
+      publishedTranslationLanguageLabels(
+        post.data?.translations ?? [],
+        reference.languages.data ?? [],
+      ),
+    [post.data?.translations, reference.languages.data],
   );
 
   const currentLanguage = slots.find((slot) => slot.code === languageCode);
@@ -343,6 +379,17 @@ export default function EditorialPostTranslationPage() {
       setTranslationError("Some blocks are not valid yet — fix the highlighted fields and save again.");
       return;
     }
+    // The reading-time override was validated for DISPLAY only — the inline
+    // message was rendered but never consulted here, so `0` reached the
+    // request, passed the generated schema (which has no min), and died on
+    // the DB's `> 0` CHECK as an opaque 500. Nothing is sent while the field
+    // is invalid; the field's own inline message is the explanation, and
+    // this alert says which field to look at.
+    const readTimeProblem = readingTimeError(form.readingTimeOverrideMinutes);
+    if (readTimeProblem) {
+      setTranslationError(`Reading time override: ${readTimeProblem}`);
+      return;
+    }
     const payload = toTranslationUpdatePayload(form, baseline, { slugLocked });
     if (Object.keys(payload).length === 0) return;
     setTranslationError(null);
@@ -385,7 +432,7 @@ export default function EditorialPostTranslationPage() {
     // least one language of this post is live: the save rewrites those live
     // bylines the moment it succeeds, including languages not on screen.
     const authorChanged = shared.authorId !== sharedBaseline.authorId;
-    const liveLanguages = publishedLanguageNames(slots);
+    const liveLanguages = publishedLanguageLabels;
     if (authorChanged && liveLanguages.length > 0) {
       if (!(await confirmAction(authorReassignmentConfirmation({ languageNames: liveLanguages })))) return;
     }
@@ -449,9 +496,26 @@ export default function EditorialPostTranslationPage() {
 
   // ─── Lifecycle ────────────────────────────────────────────────────────────
 
+  /**
+   * The failure title is passed in, never derived from the success title.
+   *
+   * It used to be `successTitle.replace(/ed$/, " failed")`. That happens to
+   * read correctly for "Published" -> "Publish failed" and for nothing else:
+   * "Archived" became "Archiv failed", and "Restored to draft" does not end
+   * in "ed" at all, so a FAILED restore was announced with the untouched
+   * success sentence "Restored to draft" — a success-sounding title on a
+   * destructive-variant toast, for an operation that did not happen.
+   *
+   * Nothing here mutates local state on the failure path: the transition
+   * result is only ever adopted by re-fetching (invalidateTranslation on
+   * success), so a rejected transition leaves `status`, the form, the
+   * baseline and every dirty flag exactly as they were, and surfaces the
+   * server's reason as the persistent inline alert as well as the toast.
+   */
   const runTransition = (
     mutation: { mutate: (vars: { id: number; languageCode: string }, opts: object) => void },
     successTitle: string,
+    failureTitle: string,
     description: string,
   ) => {
     mutation.mutate(
@@ -463,7 +527,7 @@ export default function EditorialPostTranslationPage() {
         },
         onError: (err: unknown) => {
           setTranslationError(editorialErrorMessage(err));
-          toast({ title: successTitle.replace(/ed$/, " failed"), description: editorialErrorMessage(err), variant: "destructive" });
+          toast({ title: failureTitle, description: editorialErrorMessage(err), variant: "destructive" });
         },
       },
     );
@@ -472,7 +536,12 @@ export default function EditorialPostTranslationPage() {
   const handlePublish = async () => {
     if (!translationRow) return;
     if (!(await confirmAction(publishConfirmation({ title: form?.title ?? translationRow.title, languageName })))) return;
-    runTransition(publish, "Published", `The ${languageName} translation is now on the website.`);
+    runTransition(
+      publish,
+      TRANSITION_SUCCESS_TITLES.publish,
+      TRANSITION_FAILURE_TITLES.publish,
+      `The ${languageName} translation is now on the website.`,
+    );
   };
 
   const handleArchive = async () => {
@@ -482,11 +551,22 @@ export default function EditorialPostTranslationPage() {
     if (translationRow.status === "published") {
       if (!(await confirmAction(archivePublishedConfirmation({ title: form?.title ?? translationRow.title, languageName })))) return;
     }
-    runTransition(archive, "Archived", `The ${languageName} translation is no longer on the website.`);
+    runTransition(
+      archive,
+      TRANSITION_SUCCESS_TITLES.archive,
+      TRANSITION_FAILURE_TITLES.archive,
+      `The ${languageName} translation is no longer on the website.`,
+    );
   };
 
   // Restore is non-destructive and immediately reversible — no confirmation.
-  const handleRestore = () => runTransition(restore, "Restored to draft", RESTORE_EXPLANATION);
+  const handleRestore = () =>
+    runTransition(
+      restore,
+      TRANSITION_SUCCESS_TITLES.restore,
+      TRANSITION_FAILURE_TITLES.restore,
+      RESTORE_EXPLANATION,
+    );
 
   // ─── Guarded navigation (wouter has no blocker — we route our own leaves) ──
 
@@ -527,7 +607,16 @@ export default function EditorialPostTranslationPage() {
     );
   }
 
-  if (post.isLoading || translation.isLoading || !form || !shared || !translationRow || !postRow) {
+  if (
+    post.isLoading ||
+    translation.isLoading ||
+    !form ||
+    !shared ||
+    !translationRow ||
+    !postRow ||
+    // The form still belongs to the language we just left — see formRowId.
+    formRowId !== translationRow.id
+  ) {
     return (
       <EditorialPageShell heading="Post">
         <div className="rounded-md border border-border bg-card px-4 py-8 text-sm text-muted-foreground">
@@ -604,6 +693,15 @@ export default function EditorialPostTranslationPage() {
             );
           })}
         </div>
+        {/* The Languages reference list failing used to render an empty box
+            and nothing else. It is now stated, with the repo's own
+            "X could not be loaded." error-state wording. No language data is
+            invented to fill the gap. */}
+        {reference.languages.isError && (
+          <p role="alert" className="mt-2 text-xs text-destructive" data-testid="languages-reference-error">
+            {LANGUAGES_REFERENCE_UNAVAILABLE}
+          </p>
+        )}
         {slots.some((slot) => slot.state === "missing-inactive") && (
           <p className="mt-2 text-xs text-muted-foreground" data-testid="inactive-language-add-note">
             {INACTIVE_LANGUAGE_ADD_BLOCKED}

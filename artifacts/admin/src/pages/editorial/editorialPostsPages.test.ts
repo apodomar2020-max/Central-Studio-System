@@ -312,7 +312,7 @@ test("the readiness checklist is advisory and states the server has the final sa
 test("publish and archive-a-published-translation are confirmed; restore and update are not", () => {
   assert.match(editor, /publishConfirmation\(/);
   assert.match(editor, /translationRow\.status === "published"[\s\S]{0,200}archivePublishedConfirmation/);
-  assert.match(editor, /const handleRestore = \(\) => runTransition\(restore/);
+  assert.match(editor, /const handleRestore = \(\) =>\s*runTransition\(\s*restore,/);
   // The ordinary save has no confirmation.
   assert.doesNotMatch(editor, /confirmAction[\s\S]{0,120}saveTranslation/);
 });
@@ -493,7 +493,9 @@ test("the frozen byline renders the shared constant, never inline prose", () => 
 
 test("a shared save that reassigns the author on a live post is confirmed", () => {
   assert.match(editorCode, /const authorChanged = shared\.authorId !== sharedBaseline\.authorId/);
-  assert.match(editorCode, /publishedLanguageNames\(slots\)/);
+  // Derived from the post's OWN translations, never from the Languages
+  // reference query — see the C tests below and in editorialPosts.test.ts.
+  assert.match(editorCode, /const liveLanguages = publishedLanguageLabels;/);
   assert.match(
     editorCode,
     /if \(authorChanged && liveLanguages\.length > 0\)[\s\S]{0,200}confirmAction\(authorReassignmentConfirmation/,
@@ -543,4 +545,97 @@ test("the shared save clears the shared scope only", () => {
   assert.doesNotMatch(body, /clearScope\("translation"\)/);
   assert.doesNotMatch(body, /clearScope\("topics"\)/);
   assert.doesNotMatch(body, /clearAll|resetAll/);
+});
+
+// ─── Final pre-PR hardening: A, B, C, D wired into the screen ───────────────
+
+test("A: the read-time error BLOCKS the save — it is no longer display-only", () => {
+  const save = /const saveTranslation = useCallback\(\(\) => \{([\s\S]*?)\n  \}, \[/.exec(editorCode);
+  assert.ok(save, "saveTranslation was not found");
+  const body = save![1]!;
+  const gate = body.indexOf("readingTimeError(");
+  const request = body.indexOf("updateTranslation.mutate(");
+  assert.notEqual(gate, -1, "saveTranslation must consult readingTimeError");
+  assert.notEqual(request, -1);
+  assert.ok(gate < request, "the read-time gate must run BEFORE the PATCH is issued");
+  // And it must actually return, not merely compute.
+  assert.match(body, /if \(readTimeProblem\) \{[\s\S]{0,200}?return;/);
+  assert.match(body, /setTranslationError\(`Reading time override: \$\{readTimeProblem\}`\)/);
+});
+
+test("A: the inline message is still rendered on the field itself", () => {
+  assert.match(editor, /read-time-message/);
+  assert.match(editor, /readingTimeError\(form\.readingTimeOverrideMinutes\)/);
+});
+
+test("B: failure titles are PASSED IN, never derived from the success title", () => {
+  assert.doesNotMatch(
+    editorCode,
+    /successTitle\.replace/,
+    "string surgery produced 'Archiv failed' and left a failed Restore success-sounding",
+  );
+  assert.match(editorCode, /failureTitle: string/);
+  assert.match(editorCode, /toast\(\{ title: failureTitle,[\s\S]{0,120}variant: "destructive" \}\)/);
+  for (const key of ["publish", "archive", "restore"]) {
+    assert.match(
+      editorCode,
+      new RegExp(`TRANSITION_FAILURE_TITLES\\.${key}`),
+      `${key} must pass its own failure title`,
+    );
+    assert.match(editorCode, new RegExp(`TRANSITION_SUCCESS_TITLES\\.${key}`));
+  }
+  // No transition still hard-codes a success-sounding literal.
+  assert.doesNotMatch(editorCode, /runTransition\([\s\S]{0,80}"Restored to draft",\s*`?\w/);
+});
+
+test("B: a rejected transition changes no local state and clears no dirty flag", () => {
+  const onError = /const runTransition =[\s\S]*?onError: \(err: unknown\) => \{([\s\S]*?)\},\s*\n\s*\},/.exec(editorCode);
+  assert.ok(onError, "runTransition's onError was not found");
+  const body = onError![1]!;
+  assert.match(body, /setTranslationError\(/);
+  assert.doesNotMatch(body, /setForm\(|setBaseline\(|setShared\(|setTopicIds\(|setFormRowId\(/);
+  assert.doesNotMatch(body, /clearScope|dirty\./);
+  assert.doesNotMatch(body, /invalidate/);
+});
+
+test("C: the live-byline confirmation is NOT derived from the Languages query", () => {
+  // The gate must read the post's own translations, not the reference-data
+  // -derived slots.
+  assert.match(editorCode, /publishedTranslationLanguageLabels\(\s*post\.data\?\.translations \?\? \[\]/);
+  assert.doesNotMatch(
+    editorCode,
+    /publishedLanguageNames\(slots\)/,
+    "slots collapse to [] when the Languages query fails, silently skipping the warning",
+  );
+  assert.match(editorCode, /const liveLanguages = publishedLanguageLabels;/);
+  assert.match(editorCode, /authorChanged && liveLanguages\.length > 0/);
+});
+
+test("C: a Languages failure is stated, not silently rendered as an empty box", () => {
+  assert.match(editorCode, /reference\.languages\.isError/);
+  assert.match(editor, /languages-reference-error/);
+  assert.match(editorCode, /LANGUAGES_REFERENCE_UNAVAILABLE/);
+  assert.match(editorCode, /role="alert"[\s\S]{0,160}languages-reference-error/);
+});
+
+test("D: the switch guard covers the translation scope only, which is now accurate", () => {
+  const fn = /const switchLanguage = async \(code: string\) => \{([\s\S]*?)\n  \};/.exec(editorCode);
+  assert.ok(fn, "switchLanguage was not found");
+  const body = fn![1]!;
+  assert.match(body, /dirty\.flags\.translation/);
+  assert.doesNotMatch(body, /dirty\.anyDirty/);
+  assert.match(body, /UNSAVED_LANGUAGE_SWITCH_CONFIRMATION/);
+  // Switching must never clear the post-level scopes.
+  assert.doesNotMatch(body, /clearScope\("shared"\)|clearScope\("topics"\)/);
+});
+
+test("D: no cross-language flash — the form must belong to the row being rendered", () => {
+  assert.match(editorCode, /const \[formRowId, setFormRowId\] = useState<number \| null>\(null\)/);
+  assert.match(editorCode, /setFormRowId\(translationRow\.id\)/);
+  assert.match(editorCode, /formRowId !== translationRow\.id/);
+});
+
+test("D: the post-level re-baseline effect is still keyed on the POST, not the language", () => {
+  assert.match(editorCode, /\}, \[postRow\?\.id\]\);/);
+  assert.doesNotMatch(editorCode, /\}, \[postRow\?\.id, languageCode\]\);/);
 });
