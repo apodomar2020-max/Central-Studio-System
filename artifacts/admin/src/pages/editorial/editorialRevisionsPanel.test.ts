@@ -1,0 +1,383 @@
+/**
+ * Wave 2.1E — source-inspection of the two React surfaces.
+ *
+ * Used ONLY for what genuinely cannot be executed: the drawer, the card and
+ * the editor page all import React, and this repo has no jsdom and no
+ * testing-library. Every rule that CAN be executed — actor wording, event
+ * labels, bounding, the field split, the block comparison, the confirmation
+ * copy, ordering, the cap, the dirty comparison and the payload — lives in
+ * lib/editorialRevisions.test.ts and lib/editorialRecommendations.test.ts and
+ * is run for real there.
+ *
+ * What is asserted here is wiring: which query is gated, which scope is
+ * cleared where, which keys are invalidated, and — most importantly — that
+ * the restore's onSuccess re-baselines from the MUTATION RESPONSE rather than
+ * trusting a refetch, because a restore changes the content of the same row
+ * id and the re-baseline effect is keyed on that id.
+ */
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import test from "node:test";
+
+/** Strip comments, so prose ABOUT a rule is never mistaken for the rule. */
+const codeOf = (source: string) =>
+  source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+
+const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
+
+const editor = read("./EditorialPostTranslationPage.tsx");
+const editorCode = codeOf(editor);
+const drawer = read("../../components/editorial/revision-history-drawer.tsx");
+const drawerCode = codeOf(drawer);
+const card = read("../../components/editorial/recommendations-card.tsx");
+const cardCode = codeOf(card);
+const app = read("../../App.tsx");
+const routeEntrance = read("../../lib/route-entrance.ts");
+
+// ─── D5: a drawer, not a route ───────────────────────────────────────────────
+
+test("2.1E adds NO route — the editor's URL is unchanged, so it can never remount", () => {
+  assert.doesNotMatch(app, /\/editorial\/posts\/:id\/:languageCode\/revisions/);
+  assert.doesNotMatch(app, /revisions/i, "no revision route may be registered");
+  // The wave must not have widened the entrance allowlist either.
+  assert.doesNotMatch(routeEntrance, /revision/i);
+  assert.doesNotMatch(routeEntrance, /recommend/i);
+  assert.doesNotMatch(routeEntrance, /2\.1E/);
+  // And the editor must not have gained a routeEntranceKey dependency.
+  assert.doesNotMatch(editorCode, /routeEntranceKey/);
+});
+
+test("history is a Sheet rendered beside the layout, not a modal over a remounted page", () => {
+  assert.match(drawerCode, /<Sheet open=\{props\.open\}/);
+  assert.match(drawerCode, /SheetTitle/, "the drawer needs an accessible name");
+  assert.match(editorCode, /<RevisionHistoryDrawer/);
+  assert.match(drawerCode, /aria-haspopup="dialog"/, "the trigger announces what it opens");
+  assert.match(drawerCode, /aria-expanded=\{open\}/);
+});
+
+// ─── §31: the drawer costs nothing until it is opened ────────────────────────
+
+test("the revisions list is enabled-gated on the drawer being open", () => {
+  assert.match(
+    drawerCode,
+    /useListEditorialPostRevisions\([\s\S]{0,400}enabled: props\.open && props\.postId > 0/,
+    "the endpoint is unpaginated — it must never fire on page load",
+  );
+  assert.match(drawerCode, /queryKey: getListEditorialPostRevisionsQueryKey\(props\.postId, params\)/);
+});
+
+test("the revision DETAIL is gated on a selection and cached forever, because rows are immutable", () => {
+  assert.match(drawerCode, /enabled: props\.open && selectedId != null/);
+  assert.match(drawerCode, /staleTime: Infinity/);
+});
+
+test("the trigger's count comes from the list the drawer already loaded — no eager request", () => {
+  assert.match(editorCode, /onCountKnown=\{setRevisionCount\}/);
+  assert.match(drawerCode, /onCountKnown\(loadedCount\)/);
+  // There is no count endpoint, so nothing may pretend there is one.
+  assert.doesNotMatch(editorCode, /revisionCount.*useQuery|useRevisionCount/);
+});
+
+// ─── D1: actor ───────────────────────────────────────────────────────────────
+
+test("no privileged admin-directory lookup is made anywhere in 2.1E", () => {
+  for (const [name, source] of [["editor", editorCode], ["drawer", drawerCode], ["card", cardCode]] as const) {
+    assert.doesNotMatch(source, /adminUsers/, name);
+    assert.doesNotMatch(source, /admin\/users/, name);
+    assert.doesNotMatch(source, /useListAdminUsers/, name);
+  }
+  // "You" is resolved from the session the editor already holds.
+  assert.match(editorCode, /currentAdminId=\{user\?\.id \?\? null\}/);
+});
+
+// ─── D6/§13: RBAC ────────────────────────────────────────────────────────────
+
+test("restore is gated on canPublish, and everyone else still sees the history", () => {
+  assert.match(editorCode, /canPublish=\{capabilities\.canPublish\}/);
+  assert.match(drawerCode, /canPublish \? \([\s\S]{0,900}data-testid="button-restore-revision"/);
+  assert.match(drawerCode, /NO_PUBLISH_PERMISSION_NOTICE/, "the existing notice is reused, not re-written");
+  assert.match(editorCode, /if \(!translationRow \|\| !capabilities\.canPublish\) return;/);
+});
+
+test("saving recommendations is gated on canEdit, matching the endpoint's own permission", () => {
+  assert.match(editorCode, /<RecommendationsCard[\s\S]{0,700}disabled=\{readOnly\}/);
+});
+
+// ─── §14: the re-baseline trap — the highest-value assertion in the wave ─────
+
+test("restore re-baselines the form from the MUTATION RESPONSE, not from a refetch", () => {
+  const handler = editorCode.slice(
+    editorCode.indexOf("restoreRevision.mutate("),
+    editorCode.indexOf("const runTransition"),
+  );
+  assert.match(handler, /onSuccess: \(restored\) => \{[\s\S]{0,200}rebaselineTranslation\(restored\)/);
+  assert.match(
+    editorCode,
+    /const rebaselineTranslation = useCallback\(\(row: NonNullable<typeof translationRow>\) => \{[\s\S]{0,600}setFormRowId\(row\.id\)/,
+    "one function re-baselines, reused by the effect and by the restore",
+  );
+});
+
+test("restore clears ONLY the translation scope — the other three survive it untouched", () => {
+  assert.match(editorCode, /dirty\.clearScope\("translation"\);/);
+  const rebaseline = editorCode.slice(
+    editorCode.indexOf("const rebaselineTranslation"),
+    editorCode.indexOf("useEffect(() => {\n    if (!translationRow) return;"),
+  );
+  for (const scope of ["shared", "topics", "recommendations"]) {
+    assert.doesNotMatch(
+      rebaseline,
+      new RegExp(`clearScope\\("${scope}"\\)`),
+      `a restore must never clear the ${scope} scope — the server did not write it`,
+    );
+  }
+});
+
+test("a REJECTED restore touches no dirty flag, no form state and raises no success toast", () => {
+  const handler = editorCode.slice(
+    editorCode.indexOf("restoreRevision.mutate("),
+    editorCode.indexOf("const runTransition"),
+  );
+  const onError = handler.slice(handler.indexOf("onError:"));
+  assert.doesNotMatch(onError, /clearScope|setForm|setBaseline|rebaselineTranslation|setFormRowId/);
+  assert.doesNotMatch(onError, /toast\(/, "a rejection is a persistent inline message, not a toast");
+  assert.match(onError, /setRestoreError\(editorialErrorMessage\(err\)\)/);
+  // ...and it is rendered persistently, inside the drawer, with role=alert.
+  assert.match(drawerCode, /data-testid="revision-restore-error"/);
+  assert.match(drawer, /role="alert"[\s\S]{0,200}data-testid="revision-restore-error"/);
+});
+
+test("the restore confirmation is built from real state, including the dirty translation scope", () => {
+  assert.match(editorCode, /restoreConfirmation\(\{[\s\S]{0,500}translationDirty: dirty\.flags\.translation/);
+  assert.match(editorCode, /status: translationRow\.status/);
+  assert.match(editorCode, /currentByline: translationRow\.authorSnapshot\?\.name \?\? null/);
+  assert.match(editorCode, /if \(!confirmed\) return;/);
+});
+
+// ─── §30: invalidation is targeted ───────────────────────────────────────────
+
+test("NO global invalidateQueries() exists anywhere in the three files", () => {
+  for (const [name, source] of [["editor", editorCode], ["drawer", drawerCode], ["card", cardCode]] as const) {
+    assert.doesNotMatch(source, /invalidateQueries\(\s*\)/, name);
+    assert.doesNotMatch(source, /invalidateQueries\(\{\s*\}\)/, name);
+    assert.doesNotMatch(source, /resetQueries|clear\(\)/, name);
+  }
+});
+
+test("the revisions list is invalidated by its generated key prefix, with no predicate", () => {
+  assert.match(
+    editorCode,
+    /invalidateQueries\(\{ queryKey: getListEditorialPostRevisionsQueryKey\(postId\) \}\)/,
+  );
+  const invalidator = editorCode.slice(
+    editorCode.indexOf("const invalidateRevisions"),
+    editorCode.indexOf("const invalidateRecommendations"),
+  );
+  assert.doesNotMatch(invalidator, /predicate/, "the key is [path, params] — array prefix matching works here");
+  assert.doesNotMatch(invalidator, /isEditorialPostTranslationKey/);
+});
+
+test("a successful restore invalidates the translation, the lists, the post and the history — and nothing else", () => {
+  const handler = editorCode.slice(
+    editorCode.indexOf("restoreRevision.mutate("),
+    editorCode.indexOf("const runTransition"),
+  );
+  assert.match(handler, /invalidateTranslation\(\)/);
+  assert.match(handler, /invalidateRevisions\(\)/);
+  // Restore writes exactly ONE translation row, chosen from the snapshot's own
+  // languageId, so the cross-language predicate would evict good cache for
+  // nothing. The revision detail is append-only and can never change.
+  assert.doesNotMatch(handler, /isEditorialPostTranslationKey/);
+  assert.doesNotMatch(handler, /getGetEditorialPostRevisionQueryKey/);
+  assert.doesNotMatch(handler, /reference|invalidateShared/);
+});
+
+test("saving recommendations invalidates the post detail (which embeds them) and the history", () => {
+  const invalidator = editorCode.slice(
+    editorCode.indexOf("const invalidateRecommendations"),
+    editorCode.indexOf("const invalidateTopics"),
+  );
+  assert.match(invalidator, /getGetEditorialPostQueryKey\(postId\)/);
+  assert.match(invalidator, /invalidateRevisions\(\)/);
+  assert.doesNotMatch(invalidator, /getGetEditorialPostTranslationQueryKey/, "no translation row is touched");
+});
+
+test("the revision-producing saves refresh history; publish and restore-to-draft need no such refresh", () => {
+  // publish and restoreTranslationToDraft write NO revision, and both go
+  // through runTransition alongside archive — invalidating there is a cheap
+  // no-op for them rather than a false claim.
+  assert.match(editorCode, /invalidateTranslation\(\);\s*invalidateRevisions\(\);/);
+});
+
+// ─── D7: one PUT, only on Save ───────────────────────────────────────────────
+
+test("no recommendation mutation fires from add, remove or move — only from Save", () => {
+  assert.doesNotMatch(cardCode, /mutate\(/, "the card holds no mutation at all");
+  assert.doesNotMatch(cardCode, /useReplaceEditorialPostRecommendations/);
+  const save = editorCode.slice(
+    editorCode.indexOf("const saveRecommendations"),
+    editorCode.indexOf("const handleRestoreRevision"),
+  );
+  assert.equal(
+    (save.match(/replaceRecommendations\.mutate\(/g) ?? []).length,
+    1,
+    "exactly one PUT per explicit save",
+  );
+  assert.equal(
+    (editorCode.match(/replaceRecommendations\.mutate\(/g) ?? []).length,
+    1,
+    "and nowhere else in the page",
+  );
+  assert.match(editorCode, /onSave=\{saveRecommendations\}/);
+});
+
+test("the payload is the pure helper's, so array order is the order and position is omitted", () => {
+  assert.match(editorCode, /toRecommendationsPayload\(recommendations\)/);
+  assert.doesNotMatch(editorCode, /position:/);
+});
+
+test("a successful save clears ONLY the recommendations scope; a failure leaves it dirty", () => {
+  const save = editorCode.slice(
+    editorCode.indexOf("const saveRecommendations"),
+    editorCode.indexOf("const handleRestoreRevision"),
+  );
+  assert.match(save, /dirty\.clearScope\("recommendations"\)/);
+  for (const scope of ["translation", "shared", "topics"]) {
+    assert.doesNotMatch(save, new RegExp(`clearScope\\("${scope}"\\)`));
+  }
+  const onError = save.slice(save.indexOf("onError:"));
+  assert.doesNotMatch(onError, /clearScope|setRecommendationsBaseline|setRecommendations\(/);
+  assert.match(onError, /setRecommendationsError/);
+  // No aggregate verdict anywhere.
+  assert.doesNotMatch(editorCode, /"Post saved"/);
+});
+
+// ─── §17/§31: no redundant read ──────────────────────────────────────────────
+
+test("recommendations are read from the post detail the editor already fetches", () => {
+  assert.match(editorCode, /toRecommendationIds\(post\.data\?\.recommendations \?\? \[\]\)/);
+  assert.match(editorCode, /saved=\{post\.data\?\.recommendations \?\? \[\]\}/);
+  assert.doesNotMatch(editorCode, /useListEditorialPostRecommendations/);
+  assert.doesNotMatch(cardCode, /useListEditorialPostRecommendations/);
+  // Baselined in the SAME post-level effect as topics, so it survives a
+  // language switch exactly as topics does.
+  assert.match(
+    editorCode,
+    /setTopicBaseline\(ids\);[\s\S]{0,300}setRecommendationsBaseline\(targets\);[\s\S]{0,120}\}, \[postRow\?\.id\]\);/,
+  );
+});
+
+// ─── §19: candidate search ───────────────────────────────────────────────────
+
+test("the picker searches the SERVER, scoped to this post's channel, debounced", () => {
+  assert.match(cardCode, /toCandidateQuery\(\{ channel, search: debounced, publishedOnly \}\)/);
+  assert.match(cardCode, /useDebouncedValue\(search, 250\)/);
+  assert.match(cardCode, /useListEditorialPosts\(params/);
+  assert.match(cardCode, /queryKey: getListEditorialPostsQueryKey\(params\)/);
+  assert.match(editorCode, /channel=\{postRow\.channel\}/);
+});
+
+test("the picker is opt-in, so the editor's initial load gains NO request", () => {
+  // Found in the browser: without this gate the candidate search fired on
+  // every editor page load, whether or not anyone intended to add anything.
+  assert.match(cardCode, /enabled: postId > 0 && \(pickerOpen \|\| debounced\.trim\(\)\.length > 0\)/);
+  assert.match(cardCode, /onFocus=\{\(\) => setPickerOpen\(true\)\}/);
+  assert.match(cardCode, /data-testid="recommendation-picker-closed"/);
+});
+
+test("focus after a removal is deterministic — it runs AFTER React commits", () => {
+  assert.match(cardCode, /window\.setTimeout\(\(\) => \{/);
+  assert.doesNotMatch(cardCode, /requestAnimationFrame/);
+  assert.match(cardCode, /data-remove-recommendation/);
+});
+
+test("the comparison STACKS below sm rather than scrolling sideways", () => {
+  assert.match(drawerCode, /block border-b border-border\/60 py-1 align-top sm:table-row/);
+  assert.match(drawerCode, /hidden sm:table-header-group/);
+  // Each stacked value keeps its own visible label, so a cell is never orphaned.
+  assert.match(drawerCode, /sm:hidden">In this revision<\/span>/);
+  assert.match(drawerCode, /sm:hidden">Now<\/span>/);
+  assert.doesNotMatch(drawerCode, /overflow-x-auto/);
+});
+
+test("the only client-side exclusion is self plus already-selected", () => {
+  assert.match(cardCode, /filterCandidates\(candidateItems, \{ sourcePostId: postId, selected \}\)/);
+  // No client-side text filtering pretending to be a search.
+  assert.doesNotMatch(cardCode, /toLowerCase\(\)\.includes/);
+});
+
+test("the cap disables Add while Move and Remove stay available, with a reason", () => {
+  assert.match(cardCode, /const atCap = !canAddRecommendation\(selected\)/);
+  assert.match(cardCode, /disabled=\{atCap\}/);
+  assert.match(cardCode, /title=\{atCap \? RECOMMENDATIONS_CAP_MESSAGE : undefined\}/);
+  const rows = card.slice(card.indexOf("data-testid=\"recommendation-rows\""), card.indexOf("</ul>"));
+  assert.doesNotMatch(rows, /atCap/, "removing and reordering must keep working at the cap");
+});
+
+// ─── §32: accessibility ──────────────────────────────────────────────────────
+
+test("reordering and removal are keyboard-operable and announced", () => {
+  assert.match(card, /aria-label=\{`Move \$\{info\.label\} up`\}/);
+  assert.match(card, /aria-label=\{`Move \$\{info\.label\} down`\}/);
+  assert.match(card, /aria-label=\{`Remove recommended post \$\{info\.label\}`\}/);
+  assert.match(card, /aria-live="polite"/);
+  assert.match(cardCode, /moveAnnouncement\(/);
+  assert.doesNotMatch(cardCode, /draggable|onDragStart/, "no drag-and-drop: it is not keyboard-operable here");
+});
+
+test("the comparison never relies on colour alone and uses ins/del semantics", () => {
+  assert.match(drawerCode, /\{block\.label\}/, "every block carries a TEXT label");
+  assert.match(drawer, /<del /);
+  assert.match(drawer, /<ins /);
+  assert.match(drawer, /<th scope="col"/, "the field comparison is a real table");
+  assert.match(drawer, /<time dateTime=/);
+  assert.match(drawer, /dir="auto"/, "Arabic is a first-class language here");
+});
+
+test("the recorded-but-not-restored group is a separate tbody with its own caption", () => {
+  assert.match(drawer, /<tbody className="block sm:table-row-group" data-testid="revision-recorded-not-restored">/);
+  assert.match(drawerCode, /RECORDED_NOT_RESTORED_CAPTION/);
+});
+
+// ─── §33: responsive ─────────────────────────────────────────────────────────
+
+test("the drawer is full-width on a phone and wide enough for a real comparison on desktop", () => {
+  assert.match(drawerCode, /w-full sm:max-w-3xl/);
+  assert.match(drawerCode, /overflow-y-auto/);
+});
+
+// ─── Honesty ─────────────────────────────────────────────────────────────────
+
+test("nothing claims restored images were re-checked, and nothing says 'Related posts'", () => {
+  // Comments stripped: the 2.1D header legitimately says the readiness gate is
+  // "re-run", and what matters is what the operator is SHOWN.
+  for (const source of [drawerCode, cardCode, editorCode]) {
+    assert.doesNotMatch(source, /re-?validated|re-?verified|re-?checked and safe/i);
+    assert.doesNotMatch(source, /Related posts/);
+  }
+  assert.match(drawerCode, /RESTORE_MEDIA_CAVEAT/);
+});
+
+test("a shared revision is labelled Shared, offers no Restore, and shows the backend's sentence", () => {
+  assert.match(drawerCode, /snapshot\.scope === "shared"/);
+  const shared = drawerCode.slice(
+    drawerCode.indexOf('if (snapshot.scope === "shared")'),
+    drawerCode.indexOf("const fields = compareTranslationSnapshot"),
+  );
+  assert.doesNotMatch(shared, /button-restore-revision/, "a shared revision must never offer Restore");
+  assert.match(shared, /SHARED_REVISION_NOT_RESTORABLE/);
+  // Topic and author ids resolve against the cached reference lists, with an
+  // honest #id fallback — never a request per id.
+  assert.match(shared, /`Topic #\$\{id\}`/);
+  assert.match(shared, /`Author #\$\{snapshot\.authorId\}`/);
+});
+
+test("the drawer writes nothing: no setForm, no clearScope, no mutation of its own", () => {
+  assert.doesNotMatch(drawerCode, /setForm|setBaseline|clearScope|setDirty/);
+  assert.doesNotMatch(drawerCode, /\.mutate\(/);
+});
+
+test("the comparison's baseline is the SAVED row, and says so when the form is dirty", () => {
+  assert.match(drawerCode, /compareTranslationSnapshot\(snapshot, translationRow\)/);
+  assert.match(drawerCode, /props\.translationDirty && \([\s\S]{0,300}COMPARING_AGAINST_SAVED_NOTICE/);
+});
