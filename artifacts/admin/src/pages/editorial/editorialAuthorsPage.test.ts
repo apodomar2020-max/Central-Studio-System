@@ -46,13 +46,12 @@ test("App.tsx binds the real page module, not the placeholder file", () => {
   assert.doesNotMatch(placeholderImport, /EditorialAuthorsPage/);
 });
 
-test("the Authors placeholder component is gone, and only Posts/Placements/Links remain", () => {
+test("the Authors placeholder component is gone, and the remaining placeholders are untouched", () => {
   assert.doesNotMatch(placeholderCode, /EditorialAuthorsPage/);
   assert.doesNotMatch(placeholderCode, /EditorialTopicsPage/);
-  for (const component of [
-    "EditorialPostsListPage", "EditorialPostCreatePage", "EditorialPostDetailPage",
-    "EditorialPostTranslationPage", "EditorialPlacementsPage", "WebsiteSettingsLinksPage",
-  ]) {
+  // The four Posts placeholders left this file in Wave 2.1D (see
+  // pages/editorial/editorialPostsPages.test.ts); Placements and Links stay.
+  for (const component of ["EditorialPlacementsPage", "WebsiteSettingsLinksPage"]) {
     assert.match(placeholders, new RegExp(`export function ${component}\\(`), `${component} must be untouched`);
   }
 });

@@ -82,12 +82,19 @@ test("the global QueryClient instantiation is untouched by this wave", () => {
  * pages/website/settings/WebsiteSettingsLanguagesPage.tsx. Its ROUTE and
  * GUARD assertions above are unchanged — only its file membership moved.
  * Wave 2.1C did the same for Topics (pages/editorial/EditorialTopicsPage.tsx)
- * and Authors (pages/editorial/EditorialAuthorsPage.tsx).
+ * and Authors (pages/editorial/EditorialAuthorsPage.tsx), and Wave 2.1D for
+ * all four Posts routes.
+ *
+ * Only Placements (2.1F) and Links (2.1G) are still placeholders.
  */
 const REAL_PAGE_COMPONENTS = [
   "WebsiteSettingsLanguagesPage",
   "EditorialTopicsPage",
   "EditorialAuthorsPage",
+  "EditorialPostsListPage",
+  "EditorialPostCreatePage",
+  "EditorialPostDetailPage",
+  "EditorialPostTranslationPage",
 ];
 
 const PLACEHOLDER_ROUTES = EDITORIAL_ROUTES.filter(
@@ -116,6 +123,33 @@ test("Topics and Authors are real pages, not placeholders (Wave 2.1C)", () => {
   assert.match(app, /import EditorialAuthorsPage from "@\/pages\/editorial\/EditorialAuthorsPage";/);
 });
 
+test("all four Posts routes are real pages, not placeholders (Wave 2.1D)", () => {
+  const pagesCode = pages.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  for (const component of [
+    "EditorialPostsListPage",
+    "EditorialPostCreatePage",
+    "EditorialPostDetailPage",
+    "EditorialPostTranslationPage",
+  ]) {
+    assert.doesNotMatch(pagesCode, new RegExp(component), `${component} must have left the placeholder file`);
+    assert.match(
+      app,
+      new RegExp(`import ${component} from "@\\/pages\\/editorial\\/${component}";`),
+      `${component} must be imported from its own module`,
+    );
+  }
+});
+
+test("exactly two placeholders remain — Placements (2.1F) and Links (2.1G)", () => {
+  assert.deepEqual(
+    PLACEHOLDER_ROUTES.map(([, , component]) => component).sort(),
+    ["EditorialPlacementsPage", "WebsiteSettingsLinksPage"],
+  );
+  // Neither was touched by this wave.
+  assert.match(pages, /export function EditorialPlacementsPage\(/);
+  assert.match(pages, /export function WebsiteSettingsLinksPage\(/);
+});
+
 test("every placeholder component referenced by a route is exported", () => {
   for (const [, , component] of PLACEHOLDER_ROUTES) {
     assert.match(pages, new RegExp(`export function ${component}\\(`), `missing export: ${component}`);
@@ -123,7 +157,7 @@ test("every placeholder component referenced by a route is exported", () => {
   }
 });
 
-test("the four Editorial placeholders render inside EditorialPageShell", () => {
+test("the remaining Editorial placeholder renders inside EditorialPageShell", () => {
   assert.match(pages, /import \{ EditorialPageShell \} from "@\/components\/editorial\/editorial-page-shell";/);
   assert.match(pages, /<EditorialPageShell heading=\{heading\} description=\{description\}>/);
   // Settings placeholders deliberately use plain admin page chrome instead.
