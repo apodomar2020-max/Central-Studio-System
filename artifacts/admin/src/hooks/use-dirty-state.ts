@@ -10,10 +10,11 @@
  *
  * ─── WHY SCOPES, NOT ONE FLAG (D2 + the scoped save model) ───────────────
  *
- * The Post Editor writes through THREE independent endpoints:
- *   translation → PATCH /posts/:id/translations/:code
- *   shared      → PATCH /posts/:id            (author + feature image URL)
- *   topics      → PUT   /posts/:id/topics
+ * The Post Editor writes through FOUR independent endpoints:
+ *   translation     → PATCH /posts/:id/translations/:code
+ *   shared          → PATCH /posts/:id        (author + feature image URL)
+ *   topics          → PUT   /posts/:id/topics
+ *   recommendations → PUT   /posts/:id/recommendations   (Wave 2.1E)
  * Each can succeed or fail on its own. One global flag would either clear on
  * a partial success (losing the record that topics never saved) or stay set
  * after a successful translation save. So each scope owns its own flag, each

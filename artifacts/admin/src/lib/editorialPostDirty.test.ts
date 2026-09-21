@@ -31,8 +31,11 @@ const hook = readFileSync(new URL("../hooks/use-dirty-state.ts", import.meta.url
 // ─── Scopes ──────────────────────────────────────────────────────────────────
 
 test("there is one scope per independent save endpoint — no more, no fewer", () => {
-  assert.deepEqual([...DIRTY_SCOPES], ["translation", "shared", "topics"]);
-  assert.deepEqual(Object.keys(NO_DIRTY_SCOPES).sort(), ["shared", "topics", "translation"]);
+  assert.deepEqual([...DIRTY_SCOPES], ["translation", "shared", "topics", "recommendations"]);
+  assert.deepEqual(
+    Object.keys(NO_DIRTY_SCOPES).sort(),
+    ["recommendations", "shared", "topics", "translation"],
+  );
   assert.equal(anyDirtyFrom(NO_DIRTY_SCOPES), false);
 });
 
@@ -50,12 +53,22 @@ test("the unsaved summary names exactly which scopes are outstanding", () => {
     "Unsaved changes in this language.",
   );
   assert.equal(
-    describeDirtyScopes({ translation: true, shared: false, topics: true }),
+    describeDirtyScopes({ ...NO_DIRTY_SCOPES, translation: true, topics: true }),
     "Unsaved changes in this language and topics.",
   );
   assert.equal(
-    describeDirtyScopes({ translation: true, shared: true, topics: true }),
+    describeDirtyScopes({ ...NO_DIRTY_SCOPES, translation: true, shared: true, topics: true }),
     "Unsaved changes in this language, shared settings and topics.",
+  );
+  // Wave 2.1E — the fourth scope appears in the summary with no change to
+  // describeDirtyScopes itself, which iterates DIRTY_SCOPES.
+  assert.equal(
+    describeDirtyScopes({ ...NO_DIRTY_SCOPES, recommendations: true }),
+    "Unsaved changes in recommended posts.",
+  );
+  assert.equal(
+    describeDirtyScopes({ translation: true, shared: true, topics: true, recommendations: true }),
+    "Unsaved changes in this language, shared settings, topics and recommended posts.",
   );
   assert.equal(UNSAVED_INDICATOR_LABEL, "Unsaved changes");
 });
@@ -73,6 +86,12 @@ test("NO message ever claims the whole post saved", () => {
     assert.doesNotMatch(message, /everything|all changes/i);
   }
   assert.match(saveSuccessMessage("shared"), /Other languages are unaffected/);
+});
+
+test("the recommendations scope reports its own save outcome, never an aggregate", () => {
+  assert.equal(saveSuccessMessage("recommendations"), "Recommended posts were saved.");
+  assert.equal(saveFailureTitle("recommendations"), "Recommended posts were not saved");
+  assert.equal(SCOPE_LABELS.recommendations, "recommended posts");
 });
 
 test("each scope has its own failure title, so a toast names what did not save", () => {
@@ -103,7 +122,21 @@ test("the leave confirmation is honest that nothing is kept in the background (D
 });
 
 test("the language-switch confirmation says shared scopes are unaffected", () => {
-  assert.match(UNSAVED_LANGUAGE_SWITCH_CONFIRMATION.description, /Shared settings and topics are unaffected/);
+  assert.match(
+    UNSAVED_LANGUAGE_SWITCH_CONFIRMATION.description,
+    /Shared settings, topics and recommended posts are unaffected/,
+  );
+  // Truthfulness check: the switch copy must not name a scope the switch does
+  // not actually preserve, and must not have gone stale when a scope was added.
+  for (const scope of DIRTY_SCOPES) {
+    if (scope === "translation") continue;
+    assert.ok(
+      UNSAVED_LANGUAGE_SWITCH_CONFIRMATION.description
+        .toLowerCase()
+        .includes(SCOPE_LABELS[scope].toLowerCase()),
+      `the switch confirmation must account for the ${scope} scope`,
+    );
+  }
 });
 
 // ─── Hook behaviour (source-inspected) ───────────────────────────────────────

@@ -14,15 +14,21 @@
  *   translation -> PATCH /posts/:id/translations/:code
  *   shared      -> PATCH /posts/:id            (author + feature image URL)
  *   topics      -> PUT   /posts/:id/topics
+ *   recommendations -> PUT /posts/:id/recommendations   (Wave 2.1E)
  * Each can succeed or fail on its own. One global flag would either clear on
  * a partial success (losing the record that topics never saved) or stay set
  * after a successful translation save. So each scope owns its own flag, each
  * clears ONLY on its own success, and a failed save leaves its scope dirty.
  */
 
-export type DirtyScope = "translation" | "shared" | "topics";
+export type DirtyScope = "translation" | "shared" | "topics" | "recommendations";
 
-export const DIRTY_SCOPES: readonly DirtyScope[] = ["translation", "shared", "topics"];
+export const DIRTY_SCOPES: readonly DirtyScope[] = [
+  "translation",
+  "shared",
+  "topics",
+  "recommendations",
+];
 
 export type DirtyFlags = Record<DirtyScope, boolean>;
 
@@ -30,6 +36,7 @@ export const NO_DIRTY_SCOPES: DirtyFlags = {
   translation: false,
   shared: false,
   topics: false,
+  recommendations: false,
 };
 
 /** The exact wording of the in-app leave confirmation. */
@@ -44,7 +51,7 @@ export const UNSAVED_LEAVE_CONFIRMATION = {
 export const UNSAVED_LANGUAGE_SWITCH_CONFIRMATION = {
   title: "Switch language without saving?",
   description:
-    "The changes to this language have not been saved. Switching now discards them. Shared settings and topics are unaffected.",
+    "The changes to this language have not been saved. Switching now discards them. Shared settings, topics and recommended posts are unaffected.",
   confirmLabel: "Discard and switch",
   destructive: true,
 } as const;
@@ -56,6 +63,7 @@ export const SCOPE_LABELS: Record<DirtyScope, string> = {
   translation: "this language",
   shared: "shared settings",
   topics: "topics",
+  recommendations: "recommended posts",
 };
 
 /**
@@ -88,6 +96,7 @@ export function saveSuccessMessage(scope: DirtyScope): string {
     case "translation": return "This language's content was saved.";
     case "shared": return "Shared settings were saved. Other languages are unaffected.";
     case "topics": return "Topics were saved.";
+    case "recommendations": return "Recommended posts were saved.";
   }
 }
 
@@ -96,6 +105,7 @@ export function saveFailureTitle(scope: DirtyScope): string {
     case "translation": return "This language's content was not saved";
     case "shared": return "Shared settings were not saved";
     case "topics": return "Topics were not saved";
+    case "recommendations": return "Recommended posts were not saved";
   }
 }
 
