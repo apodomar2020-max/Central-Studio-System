@@ -170,7 +170,7 @@ test("an EXISTING translation in an inactive language is NEVER hidden (Wave 2.0)
   const french = slots.find((slot) => slot.code === "fr")!;
   assert.equal(french.state, "published", "it stays live");
   assert.equal(french.inLanguageThatIsInactive, true);
-  assert.match(INACTIVE_LANGUAGE_EDIT_NOTICE, /stays live and stays editable/);
+  assert.match(INACTIVE_LANGUAGE_EDIT_NOTICE, /stays published and stays editable/);
   assert.match(INACTIVE_LANGUAGE_EDIT_NOTICE, /cannot be published/);
 });
 
@@ -319,8 +319,13 @@ test("save labels are status-dependent — never one generic 'Save'", () => {
   assert.equal(labels.has("Save"), false);
 });
 
-test("editing a published translation carries a persistent live-content warning", () => {
-  assert.match(LIVE_CONTENT_WARNING, /You are editing live content\./);
+test("editing a published translation carries a persistent published-content warning", () => {
+  // The SAFETY point must survive: this warns that a save takes effect
+  // immediately on already-published content, with no separate publish step.
+  assert.match(LIVE_CONTENT_WARNING, /Published Editorial content/);
+  assert.match(LIVE_CONTENT_WARNING, /immediately/);
+  // What it must NOT claim, while Editorial is still in coexistence mode.
+  assert.doesNotMatch(LIVE_CONTENT_WARNING, /public website|to the website|visitors/i);
 });
 
 test("the transition table matches the server's exactly — no unpublish", () => {
@@ -334,7 +339,8 @@ test("the transition table matches the server's exactly — no unpublish", () =>
 
 test("publish and archive confirmations state the real consequences", () => {
   const publish = publishConfirmation({ title: "Opening night", languageName: "English" });
-  assert.match(publish.description, /public address is fixed/);
+  assert.match(publish.description, /address is fixed/);
+  assert.doesNotMatch(publish.description, /public website|visitors|readable on/i);
   assert.match(publish.description, /byline is frozen/);
   assert.equal(publish.destructive, false);
   const archive = archivePublishedConfirmation({ title: "Opening night", languageName: "English" });
@@ -400,14 +406,14 @@ test("the frozen-byline copy is backed by the real backend behaviour", () => {
 
 test("the author-reassignment confirmation names every live language", () => {
   const one = authorReassignmentConfirmation({ languageNames: ["English"] });
-  assert.match(one.title, /live post/);
+  assert.match(one.title, /published post/);
   assert.match(one.description, /English/);
   assert.match(one.description, /that language is/);
   assert.doesNotMatch(one.description, /next publish/i);
   assert.equal(one.destructive, false);
 
   const many = authorReassignmentConfirmation({ languageNames: ["English", "Arabic"] });
-  assert.match(many.title, /every live language/);
+  assert.match(many.title, /every published language/);
   assert.match(many.description, /English, Arabic/);
   assert.match(many.description, /those languages are/);
   assert.match(many.description, /a revision is recorded for each language/);
@@ -516,7 +522,7 @@ test("B: every transition has its own failure title, free of success wording", (
   }
   // And the mangled string can never be produced again.
   assert.doesNotMatch(TRANSITION_FAILURE_TITLES.archive, /Archiv failed/);
-  assert.equal(TRANSITION_FAILURE_TITLES.publish, "Publish failed — nothing was put live");
+  assert.equal(TRANSITION_FAILURE_TITLES.publish, "Publish failed — nothing was published");
 });
 
 test("the translation-key predicate matches EVERY cached language of one post", () => {

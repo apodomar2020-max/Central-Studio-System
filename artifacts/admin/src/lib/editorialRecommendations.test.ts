@@ -281,3 +281,87 @@ test("the baseline is derived from the post detail's own recommendations, in its
   assert.deepEqual(ids, [5, 9]);
   assert.equal(areRecommendationsDirty(ids, [5, 9]), false);
 });
+
+// ─── 2.1E pre-PR: a SAVED recommendation's display is deterministic ──────────
+//
+// THE TRUTHFULNESS DEFECT.
+//
+// `GET|PUT /posts/:id/recommendations` returns targetPostId, position,
+// targetTitle, targetSlug and targetLanguageCode — verified against the
+// generated contract below. It carries NO status for the target. The card used
+// to fill that gap with whatever the candidate PICKER happened to have cached,
+// so a saved row's state annotation appeared, changed or vanished depending on
+// unrelated search activity in the same session. This models the exact
+// sequence and asserts the saved row never moves.
+
+test("the recommendations response genuinely carries NO target status field", () => {
+  const block = generated.slice(
+    generated.indexOf("export interface EditorialRecommendation {"),
+    generated.indexOf("}", generated.indexOf("export interface EditorialRecommendation {")),
+  );
+  assert.match(block, /targetPostId/);
+  assert.match(block, /targetTitle/);
+  assert.match(block, /targetSlug/);
+  assert.match(block, /targetLanguageCode/);
+  assert.doesNotMatch(block, /status/i, "there is no status to render, and none may be invented");
+});
+
+/**
+ * The card's `display()` for a SAVED entry, modelled exactly: the saved
+ * recommendations response and the open language code, and NOTHING from the
+ * picker's session cache.
+ */
+const savedDisplay = (
+  entry: { targetPostId: number; position: number; targetTitle: string; targetSlug: string; targetLanguageCode?: string | null },
+  openLanguageCode: string,
+) => ({
+  label: recommendationLabel(entry as never),
+  languageTag: recommendationLanguageTag(entry as never, openLanguageCode),
+  annotation: null,
+});
+
+test("a saved recommendation's display never changes across picker searches, closes or filter toggles", () => {
+  const saved = {
+    targetPostId: 42, position: 0,
+    targetTitle: "Opening night", targetSlug: "opening-night", targetLanguageCode: "en",
+  };
+
+  // 1. Rendered BEFORE the picker has ever opened.
+  const before = savedDisplay(saved, "en");
+
+  // 2..6 — the picker opens and the session cache fills with real, but
+  // IRRELEVANT, search results. Each step re-renders the saved row.
+  const pickerCacheStates = [
+    // opened, nothing searched yet
+    {},
+    // searched something unrelated
+    { 99: { annotation: targetStateAnnotation([{ languageCode: "en", title: "Other", status: "draft" as const }]) } },
+    // searched the already-recommended target ITSELF — the case that used to
+    // make "(not published)" suddenly appear on the saved row
+    { 42: { annotation: targetStateAnnotation([{ languageCode: "en", title: "Opening night", status: "archived" as const }]) } },
+    // picker closed
+    { 42: { annotation: "archived" } },
+    // filter toggled Published -> Any, then back
+    { 42: { annotation: null }, 99: { annotation: "not published" } },
+  ];
+
+  for (const [index] of pickerCacheStates.entries()) {
+    const after = savedDisplay(saved, "en");
+    assert.deepEqual(after, before, `the saved row moved at step ${index + 1}`);
+    assert.equal(after.annotation, null, "a saved row never shows a status it cannot vouch for");
+  }
+
+  assert.equal(before.label, "Opening night");
+  assert.equal(before.languageTag, null, "the label already came from the open language");
+  // The language tag is still real, and still comes from the SAVED response.
+  assert.equal(savedDisplay(saved, "ar").languageTag, "en");
+});
+
+test("CANDIDATE rows may still show real state, because their own search response supplies it", () => {
+  // Unchanged: the picker's rows come from GET /posts, which returns each
+  // post's translations with their real statuses.
+  assert.equal(targetStateAnnotation([{ languageCode: "en", title: "x", status: "published" }]), null);
+  assert.equal(targetStateAnnotation([{ languageCode: "en", title: "x", status: "draft" }]), "not published");
+  assert.equal(targetStateAnnotation([{ languageCode: "en", title: "x", status: "archived" }]), "archived");
+  assert.equal(targetStateAnnotation(undefined), null, "unknown state is still never asserted as a problem");
+});

@@ -110,7 +110,7 @@ test("restore re-baselines the form from the MUTATION RESPONSE, not from a refet
     editorCode.indexOf("restoreRevision.mutate("),
     editorCode.indexOf("const runTransition"),
   );
-  assert.match(handler, /onSuccess: \(restored\) => \{[\s\S]{0,200}rebaselineTranslation\(restored\)/);
+  assert.match(handler, /onSuccess: \(restored\) => \{[\s\S]{0,600}rebaselineTranslation\(restored\)/);
   assert.match(
     editorCode,
     /const rebaselineTranslation = useCallback\(\(row: NonNullable<typeof translationRow>\) => \{[\s\S]{0,600}setFormRowId\(row\.id\)/,
@@ -380,4 +380,216 @@ test("the drawer writes nothing: no setForm, no clearScope, no mutation of its o
 test("the comparison's baseline is the SAVED row, and says so when the form is dirty", () => {
   assert.match(drawerCode, /compareTranslationSnapshot\(snapshot, translationRow\)/);
   assert.match(drawerCode, /props\.translationDirty && \([\s\S]{0,300}COMPARING_AGAINST_SAVED_NOTICE/);
+});
+
+// ─── 2.1E pre-PR: cross-language revision context ────────────────────────────
+
+test("the detail panel derives the revision's language from its OWN snapshot", () => {
+  assert.match(drawerCode, /revisionSnapshotLanguageCode\(snapshot\)/);
+  assert.match(drawerCode, /languageDisplayName\(revisionLanguageCode, languages\)/);
+  assert.match(drawerCode, /canRestoreRevisionHere\(revisionLanguageCode, languageCode\)/);
+  // It must NEVER infer the language from the open translation or the scope.
+  assert.doesNotMatch(drawerCode, /revisionLanguage\w* = (props\.)?languageCode/);
+  assert.doesNotMatch(drawerCode, /translationRow\.languageCode/);
+  assert.doesNotMatch(drawerCode, /scope === "all" \?[\s\S]{0,80}language/);
+});
+
+test("a cross-language revision builds NO comparison — it previews its own snapshot instead", () => {
+  const cross = drawerCode.slice(
+    drawerCode.indexOf("if (!canRestoreRevisionHere(revisionLanguageCode, languageCode))"),
+    drawerCode.indexOf("const fields = compareTranslationSnapshot"),
+  );
+  assert.ok(cross.length > 0, "the cross-language branch must return before any comparison is built");
+  assert.doesNotMatch(cross, /compareTranslationSnapshot|compareBodyBlocks|summariseBodyComparison/);
+  assert.doesNotMatch(cross, /translationRow/, "nothing from the OPEN translation may appear in it");
+  // The revision's own content is shown, read-only, from data already fetched.
+  assert.match(cross, /data-testid="revision-cross-language-preview"/);
+  assert.match(cross, /data-testid="revision-cross-language-body"/);
+  assert.match(cross, /crossLanguageRevisionExplanation\(revisionLanguageName\)/);
+  assert.match(cross, /data-testid="revision-cross-language-name"/);
+  // And it costs no extra request: no hook, no fetch, inside the branch.
+  assert.doesNotMatch(cross, /use[A-Z]\w*\(/);
+});
+
+test("a cross-language revision offers NO restore control, only a language CTA", () => {
+  const cross = drawerCode.slice(
+    drawerCode.indexOf("if (!canRestoreRevisionHere(revisionLanguageCode, languageCode))"),
+    drawerCode.indexOf("const fields = compareTranslationSnapshot"),
+  );
+  assert.doesNotMatch(cross, /button-restore-revision/);
+  assert.doesNotMatch(cross, /onRestore\(/);
+  assert.doesNotMatch(cross, /restorePending/);
+  assert.match(cross, /data-testid="button-open-revision-language"/);
+  assert.match(cross, /crossLanguageRestoreLabel\(revisionLanguageName\)/);
+});
+
+test("the CTA calls the editor's REAL language switcher — never a parallel navigate", () => {
+  assert.match(drawerCode, /onSwitchLanguage\(revisionLanguageCode\)/);
+  // The drawer must own no navigation of its own, so the CTA inherits the
+  // translation dirty-state guard and the no-remount behaviour for free.
+  assert.doesNotMatch(drawerCode, /setLocation|useLocation|navigate\(|useNavigate|wouter/);
+  // The editor hands it the same function the Languages switcher calls.
+  assert.match(editorCode, /onSwitchLanguage=\{switchLanguage\}/);
+  const switcher = editorCode.slice(
+    editorCode.indexOf("const switchLanguage = async"),
+    editorCode.indexOf("if (!match || postId <= 0) return null;"),
+  );
+  assert.match(switcher, /dirty\.flags\.translation && !\(await confirmAction\(\{ \.\.\.UNSAVED_LANGUAGE_SWITCH_CONFIRMATION \}\)\)/);
+  assert.match(switcher, /navigate\(`\/editorial\/posts\/\$\{postId\}\/\$\{code\}`\)/);
+  // ONLY the translation scope is guarded: shared, topics and recommendations
+  // belong to the post and survive the switch untouched.
+  for (const scope of ["shared", "topics", "recommendations"]) {
+    assert.doesNotMatch(switcher, new RegExp(`dirty\\.flags\\.${scope}`));
+    assert.doesNotMatch(switcher, new RegExp(`clearScope\\("${scope}"\\)`));
+  }
+  assert.doesNotMatch(switcher, /setShared|setTopicIds|setRecommendations/);
+  // And the CTA must not chain switch + restore, or auto-discard edits.
+  assert.doesNotMatch(drawerCode, /onSwitchLanguage\([\s\S]{0,80}onRestore/);
+});
+
+test("the restore handler fails closed on a language mismatch BEFORE confirming or mutating", () => {
+  const handler = editorCode.slice(
+    editorCode.indexOf("const handleRestoreRevision"),
+    editorCode.indexOf("restoreRevision.mutate("),
+  );
+  assert.match(handler, /if \(revision\.languageCode !== languageCode\) \{[\s\S]{0,120}setRestoreError\(RESTORE_LANGUAGE_MISMATCH_ERROR\);[\s\S]{0,40}return;/);
+  assert.ok(
+    handler.indexOf("RESTORE_LANGUAGE_MISMATCH_ERROR") < handler.indexOf("confirmAction("),
+    "the invariant must run before the confirmation dialog, not after it",
+  );
+});
+
+test("the confirmation and the success toast name the REVISION's language, not the page's", () => {
+  const handler = editorCode.slice(
+    editorCode.indexOf("const handleRestoreRevision"),
+    editorCode.indexOf("const runTransition"),
+  );
+  assert.match(handler, /languageName: revision\.languageName/);
+  assert.match(handler, /The \$\{revision\.languageName\} content was restored/);
+  assert.doesNotMatch(handler, /^\s*languageName,\s*$/m, "the page-level languageName must not be passed implicitly");
+  // The drawer supplies it from the revision's own snapshot.
+  assert.match(drawerCode, /languageCode: revisionLanguageCode!/);
+  assert.match(drawerCode, /languageName: revisionLanguageName/);
+});
+
+test("a mismatched restore RESPONSE re-baselines nothing — the Loading… wedge is unreachable", () => {
+  const restoreHandler = editorCode.slice(
+    editorCode.indexOf("restoreRevision.mutate("),
+    editorCode.indexOf("const runTransition"),
+  );
+  const onSuccess = restoreHandler.slice(
+    restoreHandler.indexOf("onSuccess:"),
+    restoreHandler.indexOf("onError:"),
+  );
+  assert.match(onSuccess, /restoredRowMatchesOpenTranslation\(restored, \{/);
+  assert.match(onSuccess, /id: translationRow\.id,/);
+  assert.match(onSuccess, /postId,/);
+  assert.match(onSuccess, /languageCode,/);
+  assert.ok(
+    onSuccess.indexOf("restoredRowMatchesOpenTranslation") < onSuccess.indexOf("rebaselineTranslation(restored)"),
+    "the identity check must run BEFORE the re-baseline",
+  );
+  assert.match(onSuccess, /setRestoreError\(RESTORE_RESPONSE_MISMATCH_ERROR\);\s*\n\s*return;/);
+  // The guard it protects is still the one the editor actually renders on.
+  assert.match(editorCode, /formRowId !== translationRow\.id/);
+});
+
+test("a SHARED revision is untouched by the language work — no CTA, no language claim", () => {
+  const shared = drawerCode.slice(
+    drawerCode.indexOf('if (snapshot.scope === "shared")'),
+    drawerCode.indexOf("const revisionLanguageCode"),
+  );
+  assert.ok(shared.length > 0, "the shared branch must still return before any language logic");
+  assert.match(shared, /SHARED_REVISION_NOT_RESTORABLE/);
+  assert.doesNotMatch(shared, /button-restore-revision/);
+  assert.doesNotMatch(shared, /button-open-revision-language|crossLanguage|onSwitchLanguage/);
+});
+
+test("cross-language revisions stay VISIBLE under 'All changes' — nothing is hidden", () => {
+  // The list renders every row the server returned; only the DETAIL panel
+  // branches on language. No language filter may be applied to the list.
+  const list = drawerCode.slice(
+    drawerCode.indexOf("const rows: EditorialRevisionSummary[]"),
+    drawerCode.indexOf("function RevisionDetailPanel"),
+  );
+  assert.doesNotMatch(list, /canRestoreRevisionHere|revisionSnapshotLanguageCode/);
+  assert.match(list, /rows\.map\(\(row\) => toRevisionRowView\(row, props\.currentAdminId\)\)/);
+  assert.match(list, /view\.languageCode && \(/, "each row still shows its own language code");
+});
+
+// ─── 2.1E pre-PR: Published ≠ on the public website ──────────────────────────
+
+test("no Editorial Posts surface claims public-website exposure while coexistence is on", () => {
+  const shell = read("../../components/editorial/editorial-page-shell.tsx");
+  const posts = read("../../lib/editorial-posts.ts");
+  const revisions = read("../../lib/editorial-revisions.ts");
+  const create = read("./EditorialPostCreatePage.tsx");
+  const detail = read("./EditorialPostDetailPage.tsx");
+
+  const banned = [
+    /on the website right now/i,
+    /becomes readable on the public website/i,
+    /the URL is public/i,
+    /visitors see this/i,
+    /live website content/i,
+    /publishes these changes to the website/i,
+    /put live/i,
+  ];
+  const surfaces: Array<[string, string]> = [
+    ["editorial-posts", codeOf(posts)],
+    ["editorial-revisions", codeOf(revisions)],
+    ["translation editor", editorCode],
+    ["create page", codeOf(create)],
+    ["detail page", codeOf(detail)],
+    ["revision drawer", drawerCode],
+    ["recommendations card", cardCode],
+  ];
+  for (const [name, source] of surfaces) {
+    for (const pattern of banned) {
+      assert.doesNotMatch(source, pattern, `${name} must not claim ${pattern}`);
+    }
+  }
+
+  // The ONE place the coexistence fact is stated is the shell's banner, and it
+  // must not be removed or weakened by this correction.
+  assert.match(shell, /EDITORIAL_COEXISTENCE_NOTICE/);
+  assert.match(shell, /The public website still reads the existing News and Performance sections\. Content published here is not live yet\./);
+  assert.match(shell, /data-testid="editorial-coexistence-banner"/);
+  assert.match(editorCode, /<EditorialPageShell/, "the editor renders inside the shell that carries it");
+});
+
+test("the corrected copy keeps every real warning about editing PUBLISHED content", () => {
+  const posts = codeOf(read("../../lib/editorial-posts.ts"));
+  // The safety point is intact: a save on published content takes effect now.
+  assert.match(posts, /You are editing Published Editorial content/);
+  assert.match(posts, /Saving changes this published translation immediately/);
+  // The slug lock is still explained, and still keyed on it being published.
+  assert.match(posts, /slug cannot be changed[\s\S]{0,80}already been published/);
+  // The author-reassignment confirmation still fires and still says "immediately".
+  assert.match(posts, /Saving rewrites the published byline immediately/);
+});
+
+// ─── 2.1E pre-PR: a saved recommendation shows no cached status ──────────────
+
+test("a SAVED recommendation row renders no status sourced from the picker's cache", () => {
+  const savedBranch = cardCode.slice(
+    cardCode.indexOf("const entry = savedById.get(targetPostId);"),
+    cardCode.indexOf("return sessionLabels[targetPostId]"),
+  );
+  assert.match(savedBranch, /annotation: null/);
+  assert.doesNotMatch(savedBranch, /sessionLabels/, "the ephemeral picker cache may not reach a saved row");
+  assert.doesNotMatch(savedBranch, /targetStateAnnotation/);
+  // Candidate rows still show their own search response's real state.
+  assert.match(cardCode, /annotation: targetStateAnnotation\(item\.translations\)/);
+});
+
+// ─── 2.1E pre-PR: the route-entrance contract is untouched ───────────────────
+
+test("route-entrance is not modified, and the drawer still adds no route", () => {
+  // Comments legitimately DISCUSS the :languageCode tail; the CODE must carry
+  // no revision/recommendation knowledge and no new language behaviour.
+  const routeEntranceCode = codeOf(routeEntrance);
+  assert.doesNotMatch(routeEntranceCode, /revision|recommend/i);
+  assert.doesNotMatch(editorCode, /routeEntranceKey/);
+  assert.doesNotMatch(drawerCode, /routeEntranceKey|useRoute\(/);
 });

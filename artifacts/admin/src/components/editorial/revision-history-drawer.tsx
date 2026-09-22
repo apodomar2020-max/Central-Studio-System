@@ -54,13 +54,27 @@ import {
   REVISIONS_NOT_AN_AUDIT_NOTE,
   SHARED_REVISION_NOT_RESTORABLE,
   boundRevisions,
+  canRestoreRevisionHere,
   compareBodyBlocks,
   compareTranslationSnapshot,
+  crossLanguageRestoreExplanation,
+  crossLanguageRestoreLabel,
+  crossLanguageRevisionExplanation,
+  languageDisplayName,
   restoreImpactSummary,
+  revisionSnapshotLanguageCode,
   summariseBodyComparison,
   toRevisionRowView,
 } from "@/lib/editorial-revisions";
+import { blockNoun, type StoredBlock } from "@/lib/editorial-post-body";
+import { blockText } from "@/lib/editorial-revisions";
 import { History } from "lucide-react";
+
+/** Read-only snapshot value rendering — the same "—" placeholder the table uses. */
+function snapshotText(value: string | null | undefined): string {
+  const trimmed = (value ?? "").trim();
+  return trimmed.length > 0 ? trimmed : "—";
+}
 
 type ScopeFilter = "language" | "all";
 
@@ -78,8 +92,30 @@ export interface RevisionHistoryDrawerProps {
   /** Reference data the editor already holds — no request of our own. */
   authors: ReadonlyArray<{ id: number; publicName: string }>;
   topics: ReadonlyArray<{ id: number; name: string }>;
+  /**
+   * The Languages reference list the editor already holds, used ONLY to turn a
+   * revision's own `snapshot.languageCode` into a display name. Never a new
+   * request, and never a source of truth for WHICH language a revision is.
+   */
+  languages: ReadonlyArray<{ code: string; name: string }>;
+  /**
+   * The editor's REAL language-switch function (the same one the Languages
+   * switcher calls), so the cross-language CTA inherits the translation
+   * dirty-state guard and the no-remount route behaviour for free. This
+   * drawer must never call setLocation/navigate itself.
+   */
+  onSwitchLanguage: (languageCode: string) => void;
   /** Owned by the page: it re-baselines the form and invalidates the caches. */
-  onRestore: (revision: { id: number; revisionNumber: number; createdAt: string; actorLabel: string; revisionByline: string | null }) => void;
+  onRestore: (revision: {
+    id: number;
+    revisionNumber: number;
+    createdAt: string;
+    actorLabel: string;
+    revisionByline: string | null;
+    /** The REVISION's own language, from its snapshot — never the open editor's. */
+    languageCode: string;
+    languageName: string;
+  }) => void;
   restorePending: boolean;
   /** The server's authoritative message, rendered persistently in here. */
   restoreError: string | null;
@@ -296,10 +332,13 @@ function RevisionDetailPanel({
   detail,
   view,
   translationRow,
+  languageCode,
   languageName,
+  languages,
   canPublish,
   authors,
   topics,
+  onSwitchLanguage,
   onRestore,
   restorePending,
   restoreError,
@@ -341,6 +380,94 @@ function RevisionDetailPanel({
         <p className="text-[11px] text-muted-foreground" data-testid="revision-shared-not-restorable">
           {SHARED_REVISION_NOT_RESTORABLE}
         </p>
+      </div>
+    );
+  }
+
+  // ── The revision's OWN language, read from its own snapshot ────────────
+  //
+  // NOT from the route, NOT from `translationRow`, NOT from the scope toggle.
+  // "All changes to this post" deliberately lists every language's revisions,
+  // so the selected one is frequently NOT the one open in the editor. Diffing
+  // those two would compare two different documents — that is exactly the
+  // fabricated diff, wrong-language confirmation and wedged-editor blocker
+  // this branch exists to make unrepresentable.
+  const revisionLanguageCode = revisionSnapshotLanguageCode(snapshot);
+  const revisionLanguageName = languageDisplayName(revisionLanguageCode, languages);
+
+  if (!canRestoreRevisionHere(revisionLanguageCode, languageCode)) {
+    return (
+      <div className="space-y-3" data-testid="revision-cross-language-panel">
+        <dl className="grid grid-cols-[8rem_minmax(0,1fr)] gap-x-2 gap-y-1 text-[11px]">
+          <dt className="text-muted-foreground">Language</dt>
+          <dd data-testid="revision-cross-language-name">
+            {revisionLanguageName}
+            {revisionLanguageCode && (
+              <span className="ml-1 uppercase text-muted-foreground">({revisionLanguageCode})</span>
+            )}
+          </dd>
+          <dt className="text-muted-foreground">Recorded</dt>
+          <dd><time dateTime={view.timestamp} className="tabular-nums">{view.timestampLabel}</time></dd>
+          <dt className="text-muted-foreground">By</dt>
+          <dd>{view.actorLabel}</dd>
+          <dt className="text-muted-foreground">Change</dt>
+          <dd>{view.eventLabel}</dd>
+        </dl>
+
+        <p className="text-[11px] text-muted-foreground" data-testid="revision-cross-language-explanation">
+          {crossLanguageRevisionExplanation(revisionLanguageName)}
+        </p>
+
+        {/* A read-only PREVIEW of what this revision itself holds — no "Now"
+            column anywhere, because there is nothing comparable to put in it.
+            Everything rendered here came with the detail response; no request
+            is made for the other language's current translation. */}
+        <dl
+          className="grid grid-cols-[8rem_minmax(0,1fr)] gap-x-2 gap-y-1 text-[11px]"
+          data-testid="revision-cross-language-preview"
+        >
+          <dt className="text-muted-foreground">Title</dt>
+          <dd className="break-words" dir="auto">{snapshotText(snapshot.title)}</dd>
+          <dt className="text-muted-foreground">Deck</dt>
+          <dd className="break-words" dir="auto">{snapshotText(snapshot.deck)}</dd>
+          <dt className="text-muted-foreground">Context label</dt>
+          <dd className="break-words" dir="auto">{snapshotText(snapshot.contextLabel)}</dd>
+          <dt className="text-muted-foreground">Published byline</dt>
+          <dd className="break-words" dir="auto">{snapshotText(snapshot.authorSnapshot?.name)}</dd>
+        </dl>
+
+        <div className="space-y-1" data-testid="revision-cross-language-body">
+          <p className="text-[11px] font-medium text-muted-foreground">Body in this revision</p>
+          {((snapshot.body?.blocks ?? []) as StoredBlock[]).length === 0 ? (
+            <p className="text-[11px] text-muted-foreground">This revision has an empty body.</p>
+          ) : (
+            <ul className="space-y-1">
+              {((snapshot.body?.blocks ?? []) as StoredBlock[]).map((block, index) => (
+                <li key={index} className="rounded-md border border-border px-2 py-1">
+                  <span className="text-[10px] uppercase text-muted-foreground">{blockNoun(block.type)}</span>
+                  <p className="mt-0.5 break-words text-[11px]" dir="auto">{blockText(block)}</p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        {/* ── NO Restore control. The action is "go to the right editor". ── */}
+        <div className="space-y-1.5 border-t border-border pt-2">
+          <p className="text-[11px] text-muted-foreground" data-testid="revision-cross-language-restore-note">
+            {crossLanguageRestoreExplanation(revisionLanguageName)}
+          </p>
+          {revisionLanguageCode && (
+            <Button
+              type="button"
+              variant="outline"
+              data-testid="button-open-revision-language"
+              onClick={() => onSwitchLanguage(revisionLanguageCode)}
+            >
+              {crossLanguageRestoreLabel(revisionLanguageName)}
+            </Button>
+          )}
+        </div>
       </div>
     );
   }
@@ -499,13 +626,15 @@ function RevisionDetailPanel({
                 createdAt: detail.createdAt,
                 actorLabel: view.actorLabel,
                 revisionByline: snapshot.authorSnapshot?.name ?? null,
+                languageCode: revisionLanguageCode!,
+                languageName: revisionLanguageName,
               })
             }
           >
             {restorePending
               ? "Restoring…"
               : translationRow.status === "published"
-                ? "Restore live content"
+                ? "Restore published content"
                 : "Restore this version"}
           </Button>
         ) : (

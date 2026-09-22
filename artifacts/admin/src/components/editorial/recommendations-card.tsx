@@ -163,9 +163,25 @@ export function RecommendationsCard({
       return {
         label: recommendationLabel(entry),
         languageTag: recommendationLanguageTag(entry, openLanguageCode),
-        // An existing entry whose target has since been unpublished stays
-        // visible and removable, annotated — the Topics archived-chip rule.
-        annotation: sessionLabels[targetPostId]?.annotation ?? null,
+        /**
+         * DELIBERATELY NULL — truthfulness fix, 2.1E pre-PR pass.
+         *
+         * `GET|PUT /posts/:id/recommendations` returns targetPostId, position,
+         * targetTitle, targetSlug and targetLanguageCode. It carries NO status
+         * for the target, and there is no backend field to add here.
+         *
+         * This used to read `sessionLabels[...].annotation`, which is learned
+         * from whatever the candidate PICKER happened to have cached. That made
+         * a saved row's displayed state a function of unrelated search activity
+         * in the same session: search something else and the annotation stayed
+         * absent; search the target itself and "(not published)" appeared;
+         * toggle Published/Any and it could change again. A status that appears
+         * and disappears depending on what you typed elsewhere is worse than no
+         * status, so a SAVED row shows only what the recommendations response
+         * itself vouches for. Candidate rows inside the picker still show real
+         * state, because their own search response genuinely supplies it.
+         */
+        annotation: null,
       };
     }
     return sessionLabels[targetPostId] ?? { label: `Post #${targetPostId}`, languageTag: null, annotation: null };

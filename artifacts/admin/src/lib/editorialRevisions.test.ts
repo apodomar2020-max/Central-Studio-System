@@ -23,13 +23,23 @@ import {
   RECORDED_NOT_RESTORED_CAPTION,
   REMOVED_ACTOR_LABEL,
   RESTORABLE_FIELD_KEYS,
+  RESTORE_LANGUAGE_MISMATCH_ERROR,
   RESTORE_MEDIA_CAVEAT,
+  RESTORE_RESPONSE_MISMATCH_ERROR,
   REVISION_EVENT_LABELS,
   REVISION_RENDER_LIMIT,
   REVISIONS_EMPTY_STATE,
   SHARED_REVISION_NOT_RESTORABLE,
   blockText,
   boundRevisions,
+  canRestoreRevisionHere,
+  crossLanguageRestoreExplanation,
+  crossLanguageRestoreLabel,
+  crossLanguageRevisionExplanation,
+  languageDisplayName,
+  restoredRowMatchesOpenTranslation,
+  revisionLanguageRelation,
+  revisionSnapshotLanguageCode,
   changedFields,
   compareBodyBlocks,
   compareTranslationSnapshot,
@@ -153,11 +163,11 @@ test("shared_field_change is labelled NON-specifically — it cannot be attribut
   assert.doesNotMatch(label, /topic/i);
 });
 
-test("translation_status_change is named for what actually writes it — archiving live content", () => {
+test("translation_status_change is named for what actually writes it — archiving published content", () => {
   // Verified in the service: the only caller is archiveTranslation, and only
   // from `published`.
   assert.match(service, /recordTranslationRevisionIfPublished\([\s\S]{0,200}translation_status_change/);
-  assert.equal(REVISION_EVENT_LABELS.translation_status_change, "Taken off the website");
+  assert.equal(REVISION_EVENT_LABELS.translation_status_change, "Taken out of publication");
 });
 
 // ─── Scope ───────────────────────────────────────────────────────────────────
@@ -452,13 +462,13 @@ const baseConfirmation = {
   translationDirty: false,
 } as const;
 
-test("a PUBLISHED restore says plainly that live content changes immediately, and is destructive", () => {
+test("a PUBLISHED restore says plainly that the Published translation changes immediately, and is destructive", () => {
   const confirmation = restoreConfirmation({ ...baseConfirmation, status: "published" });
-  assert.match(confirmation.description, /on the website right now/);
+  assert.match(confirmation.description, /is Published right now/);
   assert.match(confirmation.description, /immediately/);
   assert.match(confirmation.description, /stays published/);
   assert.equal(confirmation.destructive, true);
-  assert.equal(confirmation.confirmLabel, "Restore live content");
+  assert.equal(confirmation.confirmLabel, "Restore published content");
 });
 
 test("the confirm label never collides with the archived -> draft 'Restore to draft' button", () => {
@@ -469,14 +479,14 @@ test("the confirm label never collides with the archived -> draft 'Restore to dr
   }
 });
 
-test("a DRAFT restore makes no live-content claim", () => {
+test("a DRAFT restore makes no published-content claim", () => {
   const confirmation = restoreConfirmation({ ...baseConfirmation, status: "draft" });
-  assert.match(confirmation.description, /nothing on the website changes/);
-  assert.doesNotMatch(confirmation.description, /on the website right now/);
+  assert.match(confirmation.description, /no published content changes/);
+  assert.doesNotMatch(confirmation.description, /is Published right now/);
   assert.equal(confirmation.destructive, false);
 });
 
-test("an ARCHIVED restore says the website is unaffected until it is published again", () => {
+test("an ARCHIVED restore says nothing is published until it is published again", () => {
   const confirmation = restoreConfirmation({ ...baseConfirmation, status: "archived" });
   assert.match(confirmation.description, /archived/);
   assert.match(confirmation.description, /restored to draft and published again/);
@@ -542,7 +552,7 @@ test("the unsaved-work clause appears ONLY when the translation scope is dirty, 
 test("a dirty DRAFT restore is still flagged destructive because unsaved work is lost", () => {
   const dirtyDraft = restoreConfirmation({ ...baseConfirmation, status: "draft", translationDirty: true });
   assert.equal(dirtyDraft.destructive, true);
-  assert.match(dirtyDraft.description, /nothing on the website changes/);
+  assert.match(dirtyDraft.description, /no published content changes/);
 });
 
 test("the confirmation names the revision, when it was taken and who took it", () => {
@@ -553,19 +563,37 @@ test("the confirmation names the revision, when it was taken and who took it", (
 });
 
 test("the non-modal impact summary matches the lifecycle state it describes", () => {
-  assert.match(restoreImpactSummary({ status: "published", languageName: "English" }), /live English page immediately/);
-  assert.match(restoreImpactSummary({ status: "draft", languageName: "English" }), /without changing anything on the website/);
+  assert.match(restoreImpactSummary({ status: "published", languageName: "English" }), /Published English translation immediately/);
+  assert.match(restoreImpactSummary({ status: "draft", languageName: "English" }), /without changing any published content/);
   assert.match(restoreImpactSummary({ status: "archived", languageName: "English" }), /archived/);
 });
 
-test("the media caveat is honest, non-alarming and free of security jargon", () => {
-  assert.match(RESTORE_MEDIA_CAVEAT, /not re-checked/);
-  assert.doesNotMatch(RESTORE_MEDIA_CAVEAT, /SSRF|allowlist|host/i);
-  // And it is TRUE: the restore path writes snapshot.body verbatim with no
-  // media validation of its own.
+test("the media caveat is honest, non-alarming and free of implementation jargon", () => {
+  // CORRECTED in the 2.1E pre-PR pass. The old sentence said images are "not
+  // re-checked" full stop, which is too broad: a PUBLISHED restore runs the
+  // D3 readiness gate, which includes the static media rules. What a restore
+  // does not do is the fuller link testing a normal media edit performs.
+  assert.doesNotMatch(RESTORE_MEDIA_CAVEAT, /not re-checked|not checked/i);
+  assert.match(RESTORE_MEDIA_CAVEAT, /still has to pass the same image checks/);
+  assert.match(RESTORE_MEDIA_CAVEAT, /does not re-test the links/);
+  // No implementation jargon reaches the operator.
+  assert.doesNotMatch(RESTORE_MEDIA_CAVEAT, /SSRF|allowlist|host|DNS|HEAD/i);
+
+  // And BOTH halves are TRUE in the service:
   const body = service.slice(service.indexOf("export async function restoreTranslationRevision"));
+  //  (a) the restore path itself runs no media validation of its own;
   assert.ok(!body.includes("validateEditorialMediaUrls"));
   assert.ok(!body.includes("collectBodyImageUrls"));
+  //  (b) but a PUBLISHED restore goes through the D3 readiness gate, which
+  //      reuses assertTranslationPublishReady (static media rules included)
+  //      with only the live network check skipped. Unchanged by this task.
+  assert.match(body, /assertPublishedTranslationStillReady\(tx, post, updated, language\.code, ctx\.deps\)/);
+  const gate = service.slice(
+    service.indexOf("export async function assertPublishedTranslationStillReady"),
+    service.indexOf("export async function loadPostTopicIds"),
+  );
+  assert.match(gate, /assertTranslationPublishReady/);
+  assert.match(gate, /skipLiveCheck: true/);
 });
 
 test("the comparison is labelled honestly when the editor has unsaved work", () => {
@@ -584,4 +612,217 @@ test("restore now runs the published-readiness gate, exactly as an edit does", (
     /\.returning\(\);[\s\S]{0,900}await assertPublishedTranslationStillReady\(tx, post, updated, language\.code, ctx\.deps\);[\s\S]{0,200}await auditEditorial\(/,
     "the gate must sit after the UPDATE, against its result, and before the audit — inside the transaction",
   );
+});
+
+// ─── 2.1E pre-PR: cross-language revision safety ─────────────────────────────
+//
+// THE BLOCKER, MODELLED END TO END.
+//
+// A post with EN + AR translations, the editor open on EN, and an AR
+// translation revision selected under "All changes to this post". Under the
+// original bug that combination produced a fabricated EN-vs-AR comparison, a
+// confirmation and toast naming English, and — fatally — a re-baseline from
+// the restored ARABIC row, which set `formRowId` to a value
+// `translationRow.id` could never equal and wedged the editor on "Loading…"
+// with the operator's unsaved English work gone.
+
+const EN_ROW = { id: 11, postId: 7, languageCode: "en" } as const;
+const AR_ROW = { id: 12, postId: 7, languageCode: "ar" } as const;
+
+const arSnapshot = {
+  scope: "translation" as const,
+  languageId: 2,
+  languageCode: "ar",
+  title: "ليلة الافتتاح",
+};
+const enSnapshot = {
+  scope: "translation" as const,
+  languageId: 1,
+  languageCode: "en",
+  title: "Opening night",
+};
+const sharedSnapshot = { scope: "shared" as const, authorId: 3, featureImageUrl: null, topics: [] };
+
+const LANGUAGES = [
+  { code: "en", name: "English" },
+  { code: "ar", name: "Arabic" },
+];
+
+test("a revision's language comes from its OWN snapshot, and a shared revision has none", () => {
+  assert.equal(revisionSnapshotLanguageCode(arSnapshot), "ar");
+  assert.equal(revisionSnapshotLanguageCode(enSnapshot), "en");
+  assert.equal(revisionSnapshotLanguageCode(sharedSnapshot), null);
+  assert.equal(revisionSnapshotLanguageCode(null), null);
+  // A blank code is treated as unknown, never as "the open one".
+  assert.equal(revisionSnapshotLanguageCode({ scope: "translation", languageCode: "  " }), null);
+});
+
+test("the language display name comes from reference data the page already holds, with a code fallback", () => {
+  assert.equal(languageDisplayName("ar", LANGUAGES), "Arabic");
+  assert.equal(languageDisplayName("en", LANGUAGES), "English");
+  // Unregistered / reference query failed: the RAW CODE, never a guess and
+  // never a blank — and never a new network request to resolve it.
+  assert.equal(languageDisplayName("de", LANGUAGES), "de");
+  assert.equal(languageDisplayName("ar", []), "ar");
+});
+
+test("restore eligibility is same-language ONLY, and is never inferred from the open route", () => {
+  assert.equal(revisionLanguageRelation("ar", "en"), "other");
+  assert.equal(revisionLanguageRelation("en", "en"), "same");
+  assert.equal(revisionLanguageRelation(null, "en"), "not-language-scoped");
+
+  // THE BLOCKER CASE: editor on EN, revision is AR.
+  assert.equal(canRestoreRevisionHere(revisionSnapshotLanguageCode(arSnapshot), "en"), false);
+  // The same revision IS restorable from the Arabic editor.
+  assert.equal(canRestoreRevisionHere(revisionSnapshotLanguageCode(arSnapshot), "ar"), true);
+  // Shared revisions stay non-restorable everywhere (unchanged behaviour).
+  for (const open of ["en", "ar"]) {
+    assert.equal(canRestoreRevisionHere(revisionSnapshotLanguageCode(sharedSnapshot), open), false);
+  }
+});
+
+test("the cross-language explanation names the REAL language and refuses to compare", () => {
+  const text = crossLanguageRevisionExplanation(languageDisplayName("ar", LANGUAGES));
+  assert.match(text, /Arabic translation/);
+  assert.match(text, /not compared against the open translation/);
+  assert.match(text, /different documents/);
+  assert.doesNotMatch(text, /English/, "the open language must not be named as this revision's language");
+});
+
+test("the cross-language action is 'open that language', never 'Restore <open language>'", () => {
+  const label = crossLanguageRestoreLabel(languageDisplayName("ar", LANGUAGES));
+  assert.equal(label, "Open Arabic translation to restore this revision");
+  assert.doesNotMatch(label, /Restore English/);
+  assert.doesNotMatch(label, /^Restore\b/, "it must not read as an active restore control");
+
+  const why = crossLanguageRestoreExplanation("Arabic");
+  assert.match(why, /has to be done from the Arabic editor/);
+  assert.match(why, /does not restore anything/);
+  // It must not promise to discard work or to chain a restore after the switch.
+  assert.doesNotMatch(why, /discard(s|ing)? your/i);
+  assert.doesNotMatch(why, /then restores|and restore it for you|automatically/i);
+
+  // And a code-only fallback still produces a usable, non-lying label.
+  assert.equal(crossLanguageRestoreLabel(languageDisplayName("de", LANGUAGES)), "Open de translation to restore this revision");
+});
+
+test("the fail-closed restore guard refuses a cross-language restore instead of proceeding", () => {
+  // A faithful model of handleRestoreRevision's ordering: the invariant runs
+  // BEFORE the confirmation and BEFORE the mutation.
+  const run = (openLanguageCode: string, revisionLanguageCode: string) => {
+    const calls = { confirmed: 0, mutated: 0, error: null as string | null };
+    if (revisionLanguageCode !== openLanguageCode) {
+      calls.error = RESTORE_LANGUAGE_MISMATCH_ERROR;
+      return calls;
+    }
+    calls.confirmed += 1;
+    calls.mutated += 1;
+    return calls;
+  };
+
+  const blocked = run("en", "ar");
+  assert.equal(blocked.mutated, 0, "the restore mutation must never be called from the wrong language");
+  assert.equal(blocked.confirmed, 0, "no confirmation dialog is even raised");
+  assert.equal(blocked.error, RESTORE_LANGUAGE_MISMATCH_ERROR);
+  assert.match(RESTORE_LANGUAGE_MISMATCH_ERROR, /different language/);
+  assert.match(RESTORE_LANGUAGE_MISMATCH_ERROR, /was not restored/);
+
+  const allowed = run("ar", "ar");
+  assert.equal(allowed.mutated, 1);
+  assert.equal(allowed.error, null);
+});
+
+test("the restore RESPONSE is identity-checked before the form is ever re-baselined", () => {
+  // Exactly the wedge: EN open, the response is the AR row.
+  assert.equal(restoredRowMatchesOpenTranslation(AR_ROW, EN_ROW), false);
+  assert.equal(restoredRowMatchesOpenTranslation(EN_ROW, EN_ROW), true);
+  // Every component of the identity is load-bearing.
+  assert.equal(restoredRowMatchesOpenTranslation({ ...EN_ROW, postId: 8 }, EN_ROW), false);
+  assert.equal(restoredRowMatchesOpenTranslation({ ...EN_ROW, id: 99 }, EN_ROW), false);
+  assert.equal(restoredRowMatchesOpenTranslation({ ...EN_ROW, languageCode: "ar" }, EN_ROW), false);
+});
+
+test("the wedge is unreachable: a mismatched response re-baselines NOTHING and errors visibly", () => {
+  // The editor's real render guard is `formRowId !== translationRow.id`.
+  const editor = { formRowId: EN_ROW.id, translationRowId: EN_ROW.id, error: null as string | null };
+  const onSuccess = (restored: { id: number; postId: number; languageCode: string }) => {
+    if (!restoredRowMatchesOpenTranslation(restored, EN_ROW)) {
+      editor.error = RESTORE_RESPONSE_MISMATCH_ERROR;
+      return;
+    }
+    editor.formRowId = restored.id;
+  };
+
+  onSuccess(AR_ROW);
+  assert.equal(editor.formRowId, EN_ROW.id, "the form must still belong to the open English row");
+  assert.equal(
+    editor.formRowId === editor.translationRowId,
+    true,
+    "the `formRowId !== translationRow.id` guard must NOT be left permanently false — that is the Loading… deadlock",
+  );
+  assert.equal(editor.error, RESTORE_RESPONSE_MISMATCH_ERROR);
+  assert.match(RESTORE_RESPONSE_MISMATCH_ERROR, /nothing on this screen was changed/);
+
+  // And the normal same-language path still re-baselines exactly as before.
+  editor.error = null;
+  onSuccess(EN_ROW);
+  assert.equal(editor.formRowId, EN_ROW.id);
+  assert.equal(editor.error, null);
+});
+
+test("after switching to Arabic, the SAME revision restores normally and names Arabic", () => {
+  assert.equal(canRestoreRevisionHere("ar", "ar"), true);
+  const confirmation = restoreConfirmation({
+    // The revision's OWN language, which is what the drawer now hands over.
+    languageName: languageDisplayName("ar", LANGUAGES),
+    revisionNumber: 41,
+    createdAt: "2030-02-02T10:00:00.000Z",
+    actorLabel: "Administrator #3",
+    status: "published",
+    revisionByline: null,
+    currentByline: null,
+    translationDirty: false,
+  });
+  assert.match(confirmation.title, /Arabic/);
+  assert.match(confirmation.description, /Arabic/);
+  assert.doesNotMatch(confirmation.description, /English/, "the open-editor language must never leak in");
+  assert.match(restoreImpactSummary({ status: "published", languageName: "Arabic" }), /Arabic/);
+});
+
+// ─── Copy regression: Published ≠ on the public website ──────────────────────
+
+test("no restore copy claims the public website changes while coexistence is still on", () => {
+  const strings = [
+    RESTORE_MEDIA_CAVEAT,
+    RESTORE_LANGUAGE_MISMATCH_ERROR,
+    RESTORE_RESPONSE_MISMATCH_ERROR,
+    crossLanguageRevisionExplanation("Arabic"),
+    crossLanguageRestoreExplanation("Arabic"),
+    ...(["draft", "published", "archived"] as const).flatMap((status) => [
+      restoreConfirmation({
+        languageName: "English", revisionNumber: 41, createdAt: "2030-02-02T10:00:00.000Z",
+        actorLabel: "Administrator #3", status, revisionByline: null, currentByline: null,
+        translationDirty: false,
+      }).description,
+      restoreImpactSummary({ status, languageName: "English" }),
+    ]),
+    ...Object.values(REVISION_EVENT_LABELS),
+    REVISIONS_EMPTY_STATE,
+  ];
+  for (const value of strings) {
+    assert.doesNotMatch(value, /public website/i, value);
+    assert.doesNotMatch(value, /visitors?\b/i, value);
+    assert.doesNotMatch(value, /on the website/i, value);
+    assert.doesNotMatch(value, /\blive (content|page|website|URL)\b/i, value);
+    assert.doesNotMatch(value, /the URL is public/i, value);
+  }
+  // …while the real safety point is NOT watered down.
+  const published = restoreConfirmation({
+    languageName: "English", revisionNumber: 41, createdAt: "2030-02-02T10:00:00.000Z",
+    actorLabel: "Administrator #3", status: "published", revisionByline: null, currentByline: null,
+    translationDirty: false,
+  });
+  assert.match(published.description, /Published right now/);
+  assert.match(published.description, /immediately/);
+  assert.equal(published.destructive, true);
 });

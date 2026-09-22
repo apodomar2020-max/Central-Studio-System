@@ -98,7 +98,7 @@ export function describeSlugProblem(slug: string): string | null {
 
 /** The exact server message, restated so the read-only field can explain itself. */
 export const SLUG_LOCKED_EXPLANATION =
-  "This translation's slug cannot be changed — it has already been published, and the URL is public. Create a new post if the address must change.";
+  "This translation's slug cannot be changed — it has already been published, and its address is permanently fixed. Create a new post if the address must change.";
 
 /**
  * `assertSlugEditable` keys on publishedAt, NOT on status. A translation that
@@ -127,7 +127,7 @@ export function channelLabel(channel: EditorialChannelValue): string {
  * is no write path at all, not merely a guarded one.
  */
 export const POST_CHANNEL_IMMUTABLE_EXPLANATION =
-  "A post's channel is fixed when it is created — its author, its topics and its public address all depend on it. Create a new post to publish the same story on the other channel.";
+  "A post's channel is fixed when it is created — its author, its topics and its address all depend on it. Create a new post to publish the same story on the other channel.";
 
 export const SHARED_ACROSS_LANGUAGES_LABEL = "Shared across all languages.";
 export const TRANSLATION_SPECIFIC_LABEL = "This language only.";
@@ -229,7 +229,7 @@ export const INACTIVE_LANGUAGE_ADD_BLOCKED =
   "This language has been retired, so no new translation can be created in it. Activate it again in Website → Configuration → Languages first.";
 
 export const INACTIVE_LANGUAGE_EDIT_NOTICE =
-  "This language has been retired. This translation stays live and stays editable, but it cannot be published or re-published until the language is activated again.";
+  "This language has been retired. This translation stays published and stays editable, but it cannot be published or re-published until the language is activated again.";
 
 /**
  * The translation the `/editorial/posts/:id` route should redirect to.
@@ -411,7 +411,7 @@ export function postCapabilities(
 }
 
 export const NO_PUBLISH_PERMISSION_NOTICE =
-  "You can edit this content but not change what is live. Publishing, archiving and restoring need the Publish permission on Website Editorial Posts.";
+  "You can edit this content but not change what is published. Publishing, archiving and restoring need the Publish permission on Website Editorial Posts.";
 
 // ─── Save-label copy (D7) ────────────────────────────────────────────────────
 
@@ -425,7 +425,7 @@ export function translationSaveLabel(status: EditorialTranslationStatusValue): s
 }
 
 export const LIVE_CONTENT_WARNING =
-  "You are editing live content. Saving publishes these changes to the website immediately.";
+  "You are editing Published Editorial content. Saving changes this published translation immediately — there is no separate publish step.";
 
 /**
  * Sits next to the frozen byline on a PUBLISHED translation.
@@ -471,7 +471,7 @@ export interface PostConfirmation {
 export function publishConfirmation(context: { title: string; languageName: string }): PostConfirmation {
   return {
     title: `Publish the ${context.languageName} translation?`,
-    description: `"${context.title}" becomes readable on the public website in ${context.languageName}. Its public address is fixed at this moment and cannot be changed afterwards, and the byline is frozen as it stands today.`,
+    description: `"${context.title}" becomes Published Editorial content in ${context.languageName}. Its address is fixed at this moment and cannot be changed afterwards, and the byline is frozen as it stands today.`,
     confirmLabel: "Publish",
     destructive: false,
   };
@@ -479,8 +479,8 @@ export function publishConfirmation(context: { title: string; languageName: stri
 
 export function archivePublishedConfirmation(context: { title: string; languageName: string }): PostConfirmation {
   return {
-    title: `Take the ${context.languageName} translation off the website?`,
-    description: `"${context.title}" stops being readable in ${context.languageName}. Nothing is deleted — every other language is untouched, and you can restore this one to draft at any time.`,
+    title: `Take the ${context.languageName} translation out of publication?`,
+    description: `"${context.title}" stops being published in ${context.languageName}. Nothing is deleted — every other language is untouched, and you can restore this one to draft at any time.`,
     confirmLabel: "Archive translation",
     destructive: true,
   };
@@ -576,8 +576,8 @@ export function authorReassignmentConfirmation(context: {
 }): PostConfirmation {
   const many = context.languageNames.length > 1;
   return {
-    title: many ? "Change the byline on every live language?" : "Change the byline on the live post?",
-    description: `Saving rewrites the published byline immediately on ${context.languageNames.join(", ")} — ${many ? "those languages are" : "that language is"} on the website right now. Nothing else in the post changes, and a revision is recorded for each language so the earlier byline stays in its history.`,
+    title: many ? "Change the byline on every published language?" : "Change the byline on the published post?",
+    description: `Saving rewrites the published byline immediately on ${context.languageNames.join(", ")} — ${many ? "those languages are" : "that language is"} Published right now. Nothing else in the post changes, and a revision is recorded for each language so the earlier byline stays in its history.`,
     confirmLabel: "Change author and save",
     destructive: false,
   };
@@ -602,7 +602,7 @@ export const TRANSITION_SUCCESS_TITLES: Record<PostTransition, string> = {
 };
 
 export const TRANSITION_FAILURE_TITLES: Record<PostTransition, string> = {
-  publish: "Publish failed — nothing was put live",
+  publish: "Publish failed — nothing was published",
   archive: "Archive failed — no change was made",
   restore: "Restore failed — this language is still archived",
 };
@@ -625,7 +625,7 @@ export function allowedTransitions(status: EditorialTranslationStatusValue): Edi
 }
 
 export const RESTORE_EXPLANATION =
-  "Restoring brings this translation back as a draft. It does not go live again until you publish it.";
+  "Restoring brings this translation back as a draft. It is not published again until you publish it.";
 
 // ─── Dates ───────────────────────────────────────────────────────────────────
 

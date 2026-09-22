@@ -57,7 +57,7 @@ import type {
 export const REVISION_EVENT_LABELS: Record<EditorialRevisionEventType, string> = {
   published_edit: "Content edited",
   restore: "Restored from an earlier version",
-  translation_status_change: "Taken off the website",
+  translation_status_change: "Taken out of publication",
   author_change: "Author changed",
   topics_change: "Topics changed",
   // NON-SPECIFIC ON PURPOSE. The same event type is written by a feature
@@ -102,7 +102,7 @@ export const SHARED_REVISION_SUMMARY =
   "This revision records a shared post change and cannot be restored into one language.";
 
 export const REVISIONS_EMPTY_STATE =
-  "No revision history yet. Revisions are recorded when published content is edited, when a published language is taken off the website, and when a version is restored — editing a draft records nothing.";
+  "No revision history yet. Revisions are recorded when published content is edited, when a published language is taken out of publication, and when a version is restored — editing a draft records nothing.";
 
 export const REVISIONS_NOT_AN_AUDIT_NOTE =
   "Revision history records content, not every action. The Activity Log is the full record of who did what.";
@@ -587,8 +587,13 @@ export interface RestoreConfirmationContext {
  *
  * Does NOT state, because they are not true: that the lifecycle is rolled back,
  * that the URL changes, that other languages are affected, that anything is
- * deleted, or that restored images were re-checked (they are not — see
- * editorial-revisions' media caveat and the wave report).
+ * deleted, that the public website changes (it does not — Editorial is still
+ * in coexistence mode, and the page shell's banner is the ONE place that fact
+ * is stated), or that restored images were re-tested the way a normal media
+ * edit re-tests them (see RESTORE_MEDIA_CAVEAT).
+ *
+ * `languageName` MUST be the REVISION's own language, resolved from its
+ * snapshot — never the open editor's language read off page state.
  */
 export function restoreConfirmation(context: RestoreConfirmationContext): RestoreConfirmation {
   const when = formatDateTime(context.createdAt);
@@ -596,15 +601,15 @@ export function restoreConfirmation(context: RestoreConfirmationContext): Restor
 
   if (context.status === "published") {
     sentences.push(
-      `This language is on the website right now. Restoring replaces the live ${context.languageName} content with revision #${context.revisionNumber} immediately — it stays published, with the older content.`,
+      `This ${context.languageName} translation is Published right now. Restoring replaces its current Published content with revision #${context.revisionNumber} immediately — it stays published, with the older content.`,
     );
   } else if (context.status === "archived") {
     sentences.push(
-      `This language is archived, so nothing changes on the website until it is restored to draft and published again. Revision #${context.revisionNumber} replaces its saved ${context.languageName} content.`,
+      `This ${context.languageName} translation is archived, so nothing is published until it is restored to draft and published again. Revision #${context.revisionNumber} replaces its saved content.`,
     );
   } else {
     sentences.push(
-      `Revision #${context.revisionNumber} replaces the saved ${context.languageName} content. This language is a draft, so nothing on the website changes.`,
+      `Revision #${context.revisionNumber} replaces the saved ${context.languageName} content. This translation is a draft, so no published content changes.`,
     );
   }
 
@@ -634,7 +639,7 @@ export function restoreConfirmation(context: RestoreConfirmationContext): Restor
     title: context.translationDirty
       ? "Restore and discard your unsaved changes?"
       : context.status === "published"
-        ? `Restore the live ${context.languageName} content?`
+        ? `Restore the Published ${context.languageName} content?`
         : `Restore this ${context.languageName} version?`,
     description: sentences.join(" "),
     // "Restore" alone would collide with the archived -> draft "Restore to
@@ -643,7 +648,7 @@ export function restoreConfirmation(context: RestoreConfirmationContext): Restor
     confirmLabel: context.translationDirty
       ? "Discard and restore"
       : context.status === "published"
-        ? "Restore live content"
+        ? "Restore published content"
         : "Restore this version",
     destructive: context.status === "published" || context.translationDirty,
   };
@@ -659,18 +664,159 @@ export function restoreImpactSummary(context: {
 }): string {
   switch (context.status) {
     case "published":
-      return `Restoring changes the live ${context.languageName} page immediately. It stays published; the address, the state and the publication date do not change.`;
+      return `Restoring changes this Published ${context.languageName} translation immediately. It stays published; the address, the state and the publication date do not change.`;
     case "archived":
-      return `This language is archived, so restoring changes its saved content without changing anything on the website.`;
+      return `This ${context.languageName} translation is archived, so restoring changes its saved content without changing any published content.`;
     case "draft":
-      return `This language is a draft, so restoring changes its saved content without changing anything on the website.`;
+      return `This ${context.languageName} translation is a draft, so restoring changes its saved content without changing any published content.`;
   }
 }
 
 /**
- * Honest, non-alarming, and free of security jargon: restore writes the
- * revision's body verbatim and re-checks no image link, so a link that has
- * since stopped being allowed comes back with it.
+ * Honest, non-alarming, and free of implementation jargon.
+ *
+ * Corrected in the 2.1E pre-PR pass. The earlier sentence said images are
+ * "not re-checked", which is too broad: restoring a PUBLISHED translation
+ * goes through the same publish-readiness assertion a publish does, and that
+ * assertion includes the static image rules. What a restore does NOT do is
+ * the fuller link testing a normal image edit performs. Both halves are said,
+ * neither is overclaimed, and no backend behaviour was changed to make the
+ * sentence true.
  */
 export const RESTORE_MEDIA_CAVEAT =
-  "Images in an older version are restored exactly as they were and are not re-checked. If an image link has stopped working since, it comes back as it was.";
+  "Images in an older version come back exactly as they were. Published content still has to pass the same image checks as a normal publish, but a restore does not re-test the links the way editing an image does — so a link that has stopped working since can come back as it was.";
+
+// ─── Language safety (2.1E pre-PR blocker) ───────────────────────────────────
+//
+// THE BUG THIS SECTION EXISTS TO MAKE UNREPRESENTABLE
+//
+// "All changes to this post" legitimately lists translation revisions from
+// EVERY language. The detail panel used to diff whatever was selected against
+// the OPEN translation row, regardless of the snapshot's own language. For an
+// Arabic revision opened from the English editor that produced:
+//
+//   * a fabricated field/body comparison between two different documents;
+//   * a confirmation and a toast naming English for an Arabic restore;
+//   * and — the release blocker — a re-baseline from the restored ARABIC row,
+//     which set `formRowId` to the Arabic row's id while `translationRow.id`
+//     stayed English, permanently failing the editor's
+//     `formRowId !== translationRow.id` render guard and wedging the page on
+//     "Loading…" with the operator's unsaved English edits gone.
+//
+// The backend was never wrong: it resolves the target purely from
+// `revision.snapshot.languageId` and never from client input. Everything below
+// is Admin-side context discipline: a revision's language is ALWAYS read from
+// the revision's own data (`snapshot.languageCode` on the detail, `languageCode`
+// on the list row — both are in the generated contract), never from the route,
+// the open translation, or the drawer's scope toggle.
+
+/** A translation snapshot always carries BOTH `languageId` and `languageCode`. */
+export interface TranslationSnapshotLanguageLike {
+  scope: "translation" | "shared";
+  languageCode?: string | null;
+}
+
+/**
+ * The revision's OWN language code, or null for a shared-scope revision (which
+ * belongs to no single language and must never be offered a language CTA).
+ */
+export function revisionSnapshotLanguageCode(
+  snapshot: TranslationSnapshotLanguageLike | null | undefined,
+): string | null {
+  if (!snapshot || snapshot.scope !== "translation") return null;
+  const code = snapshot.languageCode ?? null;
+  return code && code.trim().length > 0 ? code : null;
+}
+
+export interface LanguageNameLike {
+  code: string;
+  name: string;
+}
+
+/**
+ * The registered display name for a code, from reference data the editor
+ * ALREADY holds. Falls back to the raw code — never a request of its own, and
+ * never a blank.
+ */
+export function languageDisplayName(
+  code: string | null | undefined,
+  languages: readonly LanguageNameLike[],
+): string {
+  if (!code) return "another language";
+  const name = languages.find((language) => language.code === code)?.name;
+  return name && name.trim().length > 0 ? name : code;
+}
+
+export type RevisionLanguageRelation = "same" | "other" | "not-language-scoped";
+
+export function revisionLanguageRelation(
+  revisionLanguageCode: string | null,
+  openLanguageCode: string,
+): RevisionLanguageRelation {
+  if (revisionLanguageCode == null) return "not-language-scoped";
+  return revisionLanguageCode === openLanguageCode ? "same" : "other";
+}
+
+/**
+ * THE eligibility rule. A translation revision is restorable only from the
+ * editor that is open on its own language. Shared revisions are never
+ * restorable (unchanged 2.1E behaviour).
+ */
+export function canRestoreRevisionHere(
+  revisionLanguageCode: string | null,
+  openLanguageCode: string,
+): boolean {
+  return revisionLanguageRelation(revisionLanguageCode, openLanguageCode) === "same";
+}
+
+/**
+ * Shown INSTEAD of a comparison for a cross-language revision.
+ *
+ * The comparison is omitted rather than faked: the revision and the open
+ * translation are two different documents, so "In this revision / Now" has no
+ * meaning across them. The revision's own snapshot is previewed instead, which
+ * needs no extra request — the detail GET already carries it.
+ */
+export function crossLanguageRevisionExplanation(revisionLanguageName: string): string {
+  return `This revision belongs to the ${revisionLanguageName} translation, which is not the one open here. Its content is shown as it was recorded, not compared against the open translation — they are different documents.`;
+}
+
+/** The action shown where Restore would otherwise be. Never "Restore <open language>". */
+export function crossLanguageRestoreLabel(revisionLanguageName: string): string {
+  return `Open ${revisionLanguageName} translation to restore this revision`;
+}
+
+export function crossLanguageRestoreExplanation(revisionLanguageName: string): string {
+  return `Restoring writes the ${revisionLanguageName} translation, so it has to be done from the ${revisionLanguageName} editor. Opening it here does not restore anything — nothing is saved, and unsaved work in the open language is handled by the usual language-switch prompt.`;
+}
+
+/**
+ * The fail-closed message. Defensive: after the UI gating above this is
+ * unreachable, and it exists so a future regression surfaces as a visible
+ * refusal rather than as a silent wrong-language write.
+ */
+export const RESTORE_LANGUAGE_MISMATCH_ERROR =
+  "This revision belongs to a different language than the one open here, so it was not restored. Open that language's translation and restore it from there.";
+
+/**
+ * The last line of defence, applied to the restore mutation's OWN response.
+ *
+ * The response is a full translation row carrying `postId`, `languageCode` and
+ * its row `id` (verified against RestoreEditorialPostRevisionResponse in the
+ * generated contract). If any of the three disagrees with the translation the
+ * editor has open, the form is NOT re-baselined: adopting it is precisely what
+ * wedged the editor on "Loading…".
+ */
+export function restoredRowMatchesOpenTranslation(
+  restored: { id: number; postId: number; languageCode: string },
+  open: { id: number; postId: number; languageCode: string },
+): boolean {
+  return (
+    restored.postId === open.postId &&
+    restored.languageCode === open.languageCode &&
+    restored.id === open.id
+  );
+}
+
+export const RESTORE_RESPONSE_MISMATCH_ERROR =
+  "The restore came back for a different translation than the one open here, so nothing on this screen was changed. Reload the post before trying again.";

@@ -87,7 +87,12 @@ import {
   RevisionHistoryDrawer, RevisionHistoryTrigger,
 } from "@/components/editorial/revision-history-drawer";
 import { RecommendationsCard } from "@/components/editorial/recommendations-card";
-import { restoreConfirmation } from "@/lib/editorial-revisions";
+import {
+  RESTORE_LANGUAGE_MISMATCH_ERROR,
+  RESTORE_RESPONSE_MISMATCH_ERROR,
+  restoreConfirmation,
+  restoredRowMatchesOpenTranslation,
+} from "@/lib/editorial-revisions";
 import {
   areRecommendationsDirty,
   toRecommendationIds,
@@ -649,11 +654,32 @@ export default function EditorialPostTranslationPage() {
     createdAt: string;
     actorLabel: string;
     revisionByline: string | null;
+    languageCode: string;
+    languageName: string;
   }) => {
     if (!translationRow || !capabilities.canPublish) return;
+
+    /**
+     * FAIL-CLOSED LANGUAGE INVARIANT.
+     *
+     * The drawer already refuses to render a restore control for a revision
+     * whose snapshot language is not the open one, so this is defensive. It
+     * exists because the alternative failure — restoring a sibling language
+     * and then re-baselining the form from its row — is what wedged the
+     * editor on "Loading…" and destroyed unsaved work. A future regression in
+     * the drawer must surface as a visible refusal, not as a silent
+     * wrong-language write.
+     */
+    if (revision.languageCode !== languageCode) {
+      setRestoreError(RESTORE_LANGUAGE_MISMATCH_ERROR);
+      return;
+    }
+
     const confirmed = await confirmAction(
       restoreConfirmation({
-        languageName,
+        // The REVISION's own language, not the page's — they are equal by the
+        // invariant above, and reading the authoritative one keeps it true.
+        languageName: revision.languageName,
         revisionNumber: revision.revisionNumber,
         createdAt: revision.createdAt,
         actorLabel: revision.actorLabel,
@@ -670,13 +696,30 @@ export default function EditorialPostTranslationPage() {
       { id: postId, revisionId: revision.id },
       {
         onSuccess: (restored) => {
+          /**
+           * LAST LINE OF DEFENCE. The response is a full translation row; if
+           * its post, language or row id is not the translation this editor
+           * has open, adopting it as the baseline would set `formRowId` to a
+           * row `translationRow.id` will never equal, permanently failing the
+           * render guard below. Nothing local moves in that case.
+           */
+          if (
+            !restoredRowMatchesOpenTranslation(restored, {
+              id: translationRow.id,
+              postId,
+              languageCode,
+            })
+          ) {
+            setRestoreError(RESTORE_RESPONSE_MISMATCH_ERROR);
+            return;
+          }
           rebaselineTranslation(restored);
           invalidateTranslation();
           // The restore appended its own undo revision.
           invalidateRevisions();
           toast({
             title: "Restored",
-            description: `The ${languageName} content was restored from revision #${revision.revisionNumber}.`,
+            description: `The ${revision.languageName} content was restored from revision #${revision.revisionNumber}.`,
           });
         },
         onError: (err) => {
@@ -736,7 +779,7 @@ export default function EditorialPostTranslationPage() {
       publish,
       TRANSITION_SUCCESS_TITLES.publish,
       TRANSITION_FAILURE_TITLES.publish,
-      `The ${languageName} translation is now on the website.`,
+      `The ${languageName} translation is now Published.`,
     );
   };
 
@@ -751,7 +794,7 @@ export default function EditorialPostTranslationPage() {
       archive,
       TRANSITION_SUCCESS_TITLES.archive,
       TRANSITION_FAILURE_TITLES.archive,
-      `The ${languageName} translation is no longer on the website.`,
+      `The ${languageName} translation is no longer Published.`,
     );
   };
 
@@ -1250,8 +1293,8 @@ export default function EditorialPostTranslationPage() {
                     }}
                   />
                   <p id="translation-slug-help" className="text-xs text-muted-foreground">
-                    Editable until this language is published for the first time, after which the public
-                    address is fixed.
+                    Editable until this language is published for the first time, after which its
+                    address is permanently fixed.
                     {!slugTouched && slugPreview(form.title).length > 0 && form.slug !== slugPreview(form.title) && (
                       <> Suggested from the title: <span className="font-mono" dir="auto">{slugPreview(form.title)}</span></>
                     )}
@@ -1369,8 +1412,8 @@ export default function EditorialPostTranslationPage() {
             </CollapsibleTrigger>
             <CollapsibleContent className="space-y-3 px-3 pb-3">
               <p className="text-xs text-muted-foreground">
-                All three are per-language and all three are optional. Left blank, the public site falls
-                back to its own defaults — the Admin invents no fallback of its own.
+                All three are per-language and all three are optional. Left blank, the published page
+                falls back to its own defaults — the Admin invents no fallback of its own.
               </p>
               <div className="grid gap-1.5">
                 <Label htmlFor="translation-seo-title">Search title</Label>
@@ -1443,6 +1486,10 @@ export default function EditorialPostTranslationPage() {
         translationDirty={dirty.flags.translation}
         authors={reference.authors.data ?? []}
         topics={reference.topics.data ?? []}
+        languages={reference.languages.data ?? []}
+        // The REAL switcher, so the cross-language CTA inherits the
+        // translation dirty-state guard and the no-remount navigation.
+        onSwitchLanguage={switchLanguage}
         onRestore={handleRestoreRevision}
         restorePending={restoreRevision.isPending}
         restoreError={restoreError}
@@ -1722,7 +1769,7 @@ function AddTranslationScreen({
           queryClient.invalidateQueries({ queryKey: getListEditorialPostsQueryKey() });
           toast({
             title: `${languageName} translation added`,
-            description: "It is a draft and is not on the website yet.",
+            description: "It is a draft and is not published yet.",
           });
           navigate(`/editorial/posts/${postId}/${languageCode}`);
         },
