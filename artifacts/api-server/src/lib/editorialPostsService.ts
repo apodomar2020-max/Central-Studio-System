@@ -1359,6 +1359,20 @@ export async function restoreTranslationRevision(
       .where(eq(editorialPostTranslationsTable.id, translation.id))
       .returning();
 
+    // PUBLISHED-RESTORE READINESS GATE. Identical in placement and
+    // arguments to updateTranslation's call: asserted against the RESULT of
+    // the UPDATE, inside this transaction, so a failure rolls back the
+    // restore, the undo revision written above, and the audit row below —
+    // the live translation is left byte-for-byte as it was.
+    //
+    // A revision was a valid published state WHEN IT WAS TAKEN, but the
+    // shared spine it depends on (feature image, author, media policy) can
+    // have changed since, so restoring it is exactly as capable of breaking
+    // a live page as an ordinary edit is. A no-op for drafts and archived
+    // translations, and "edit" context throughout, so restoring into an
+    // inactive language stays permitted.
+    await assertPublishedTranslationStillReady(tx, post, updated, language.code, ctx.deps);
+
     await auditEditorial(tx, ctx.actor, {
       action: "translation_revision_restored",
       entityType: EDITORIAL_TRANSLATION_ENTITY_TYPE,

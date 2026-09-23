@@ -1174,6 +1174,106 @@ test("revisions: revision restore requires website.posts:publish", async () => {
   assert.equal((await asEditor(`/admin/editorial/posts/${postId}/revisions/${list[0].id}/restore`, { method: "POST" })).status, 403);
 });
 
+/**
+ * WAVE 2.1E — the published-restore readiness gate.
+ *
+ * `updateTranslation` has enforced `assertPublishedTranslationStillReady`
+ * against the RESULT of its mutation since Wave 2.0 (Issue #24);
+ * `restoreTranslationRevision` did not, so a restore could put a published
+ * translation into a state the ordinary edit endpoint would have refused —
+ * and which could then never be re-saved through that endpoint.
+ *
+ * The scenario below is the real one: a published translation is live
+ * without feature-image alt text, an editor fixes it, and the revision
+ * written by that fix captures the BROKEN prior state. Restoring it would
+ * re-break live content. Modelled on the published-edit atomicity test
+ * further down this file.
+ */
+test("revisions: restoring a revision that would leave a PUBLISHED translation unpublishable is rejected and rolled back", async () => {
+  const postId = await newPost({ authorId: await newAuthor("news") });
+  const enT = await newTranslation(postId, enId, {
+    status: "published",
+    title: "Original",
+    featureImageAlt: null,
+    publishedAt: "2030-01-01T00:00:00Z",
+  });
+
+  const fix = await asSuper(`/admin/editorial/posts/${postId}/translations/en`, {
+    method: "PATCH",
+    body: JSON.stringify({ featureImageAlt: "A real alt" }),
+  });
+  assert.equal(fix.status, 200, JSON.stringify(await json(fix.clone())));
+
+  const list = await json(await asSuper(`/admin/editorial/posts/${postId}/revisions`));
+  assert.equal(list.length, 1, "the fix recorded exactly one revision");
+  const detail = await json(await asSuper(`/admin/editorial/posts/${postId}/revisions/${list[0].id}`));
+  assert.equal(detail.snapshot.featureImageAlt, null, "the revision really does carry the unpublishable state");
+
+  const res = await asSuper(`/admin/editorial/posts/${postId}/revisions/${list[0].id}/restore`, { method: "POST" });
+  assert.equal(res.status, 400, "the restore is refused, not silently applied to live content");
+  const { error } = await json(res);
+  assert.match(error, /could not be published/i, "the gate's own wrapper message is returned verbatim");
+  assert.match(error, /alt text for the feature image/i, "and it names exactly what is wrong");
+  assert.match(error, /The change was not saved\./);
+
+  const live = await translationRow(postId, enId);
+  assert.equal(live.featureImageAlt, "A real alt", "live content is untouched — no partial restore");
+  assert.equal(live.title, "Original");
+  assert.equal(live.status, "published", "a rejected restore never demotes the translation");
+  assert.equal(await revisionCount(postId), 1, "the undo revision rolled back with the restore — no orphan row");
+  assert.equal(await auditCount("translation_revision_restored", enT), 0, "and no orphan audit row");
+});
+
+test("revisions: a valid restore onto a PUBLISHED translation still succeeds, with status, publishedAt and slug untouched", async () => {
+  const postId = await newPost({ authorId: await newAuthor("news") });
+  await newTranslation(postId, enId, { status: "published", title: "Original", publishedAt: "2030-01-01T00:00:00Z" });
+  const before = await translationRow(postId, enId);
+
+  assert.equal(
+    (await asSuper(`/admin/editorial/posts/${postId}/translations/en`, {
+      method: "PATCH", body: JSON.stringify({ title: "Changed" }),
+    })).status,
+    200,
+  );
+  const list = await json(await asSuper(`/admin/editorial/posts/${postId}/revisions`));
+  const res = await asSuper(`/admin/editorial/posts/${postId}/revisions/${list[0].id}/restore`, { method: "POST" });
+  assert.equal(res.status, 200, JSON.stringify(await json(res.clone())));
+
+  const after = await translationRow(postId, enId);
+  assert.equal(after.title, "Original", "the readiness gate does not block a legitimate restore");
+  assert.equal(after.status, "published");
+  assert.equal(after.slug, before.slug, "restore never changes a live URL");
+  assert.equal(after.publishedAtEpoch, before.publishedAtEpoch, "restore never changes the publication date");
+  assert.equal(await revisionCount(postId), 2, "the pre-restore undo revision was written");
+});
+
+test("revisions: the readiness gate is a no-op for a NON-published translation — archived content restores freely", async () => {
+  const postId = await newPost({ authorId: await newAuthor("news") });
+  await newTranslation(postId, enId, {
+    status: "published", title: "Original", featureImageAlt: null, publishedAt: "2030-01-01T00:00:00Z",
+  });
+  assert.equal(
+    (await asSuper(`/admin/editorial/posts/${postId}/translations/en`, {
+      method: "PATCH", body: JSON.stringify({ featureImageAlt: "A real alt" }),
+    })).status,
+    200,
+  );
+  const list = await json(await asSuper(`/admin/editorial/posts/${postId}/revisions`));
+
+  // Take it off the website first: drafts and archived translations are
+  // working copy, and the gate deliberately does not police them.
+  assert.equal(
+    (await asSuper(`/admin/editorial/posts/${postId}/translations/en/archive`, { method: "POST" })).status,
+    200,
+  );
+
+  const res = await asSuper(`/admin/editorial/posts/${postId}/revisions/${list[0].id}/restore`, { method: "POST" });
+  assert.equal(res.status, 200, JSON.stringify(await json(res.clone())));
+  const after = await translationRow(postId, enId);
+  assert.equal(after.featureImageAlt, null, "the same content the published gate refused is allowed off the website");
+  assert.equal(after.status, "archived", "and the restore still never touches lifecycle");
+});
+
 // ─── Shared-field changes ───────────────────────────────────────────────────
 
 test("shared: changing the author on a post with a published translation is revision- and audit-safe, and non-destructive", async () => {

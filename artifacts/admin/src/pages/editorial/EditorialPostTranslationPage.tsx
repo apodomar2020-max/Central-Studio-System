@@ -52,12 +52,15 @@ import {
   useGetEditorialPost,
   useGetEditorialPostTranslation,
   usePublishEditorialPostTranslation,
+  useReplaceEditorialPostRecommendations,
   useReplaceEditorialPostTopics,
+  useRestoreEditorialPostRevision,
   useRestoreEditorialPostTranslation,
   useUpdateEditorialPostShared,
   useUpdateEditorialPostTranslation,
   getGetEditorialPostQueryKey,
   getGetEditorialPostTranslationQueryKey,
+  getListEditorialPostRevisionsQueryKey,
   getListEditorialPostTopicsQueryKey,
   getListEditorialPostTranslationsQueryKey,
   getListEditorialPostsQueryKey,
@@ -80,6 +83,21 @@ import { useEditorialReferenceData } from "@/hooks/use-editorial-reference-data"
 import { useDirtyState, useSaveShortcut } from "@/hooks/use-dirty-state";
 import { EditorialPageShell } from "@/components/editorial/editorial-page-shell";
 import { PostBodyEditor } from "@/components/editorial/post-body-editor";
+import {
+  RevisionHistoryDrawer, RevisionHistoryTrigger,
+} from "@/components/editorial/revision-history-drawer";
+import { RecommendationsCard } from "@/components/editorial/recommendations-card";
+import {
+  RESTORE_LANGUAGE_MISMATCH_ERROR,
+  RESTORE_RESPONSE_MISMATCH_ERROR,
+  restoreConfirmation,
+  restoredRowMatchesOpenTranslation,
+} from "@/lib/editorial-revisions";
+import {
+  areRecommendationsDirty,
+  toRecommendationIds,
+  toRecommendationsPayload,
+} from "@/lib/editorial-recommendations";
 import { editorialErrorMessage } from "@/lib/editorial-errors";
 import { bylineStatusLabel } from "@/lib/editorial-authors";
 import {
@@ -152,7 +170,7 @@ export default function EditorialPostTranslationPage() {
   const postId = Number(params?.id ?? 0);
   const languageCode = params?.languageCode ?? "";
 
-  const { can } = useAdminAuth();
+  const { can, user } = useAdminAuth();
   const capabilities = postCapabilities(can);
   const { toast } = useToast();
   const confirmAction = useAdminConfirm();
@@ -179,6 +197,8 @@ export default function EditorialPostTranslationPage() {
   const updateTranslation = useUpdateEditorialPostTranslation();
   const updateShared = useUpdateEditorialPostShared();
   const replaceTopics = useReplaceEditorialPostTopics();
+  const replaceRecommendations = useReplaceEditorialPostRecommendations();
+  const restoreRevision = useRestoreEditorialPostRevision();
   const publish = usePublishEditorialPostTranslation();
   const archive = useArchiveEditorialPostTranslation();
   const restore = useRestoreEditorialPostTranslation();
@@ -205,6 +225,15 @@ export default function EditorialPostTranslationPage() {
   const [sharedBaseline, setSharedBaseline] = useState<SharedFormValues | null>(null);
   const [topicIds, setTopicIds] = useState<number[]>([]);
   const [topicBaseline, setTopicBaseline] = useState<number[]>([]);
+  /**
+   * The FOURTH save scope. Ordered ids, baselined from the post detail the
+   * editor already fetches — `useListEditorialPostRecommendations` is
+   * deliberately NOT mounted, because GET /posts/:id already carries the
+   * server's answer and mounting it would be a second request for the same
+   * rows. Order is part of the value: reordering IS a change.
+   */
+  const [recommendations, setRecommendations] = useState<number[]>([]);
+  const [recommendationsBaseline, setRecommendationsBaseline] = useState<number[]>([]);
   const [slugTouched, setSlugTouched] = useState(false);
   const [seoOpen, setSeoOpen] = useState(false);
 
@@ -212,6 +241,14 @@ export default function EditorialPostTranslationPage() {
   const [translationError, setTranslationError] = useState<string | null>(null);
   const [sharedError, setSharedError] = useState<string | null>(null);
   const [topicsError, setTopicsError] = useState<string | null>(null);
+  const [recommendationsError, setRecommendationsError] = useState<string | null>(null);
+
+  // Revision history lives in a DRAWER: no route, no routeEntranceKey change,
+  // no remount, so opening it can never cost the operator unsaved work.
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [revisionCount, setRevisionCount] = useState<number | null>(null);
+  /** Persistent, drawer-local. A rejected restore must not be a passing toast. */
+  const [restoreError, setRestoreError] = useState<string | null>(null);
 
   const translationRow = translation.data;
   const postRow = post.data?.post;
@@ -220,15 +257,34 @@ export default function EditorialPostTranslationPage() {
   // arrives for a DIFFERENT translation (or the first one). A re-fetch of the
   // same row after a save re-baselines through the mutation's onSuccess
   // instead, so an in-flight edit is never clobbered.
-  useEffect(() => {
-    if (!translationRow) return;
-    const next = toTranslationFormValues(translationRow, toEditableBlocks(translationRow.body));
+  /**
+   * Adopt a server row as the new translation baseline.
+   *
+   * Extracted in Wave 2.1E because a RESTORE changes the CONTENT of the SAME
+   * row id. The effect below is keyed on `translationRow?.id`, so it does not
+   * re-run after a restore — invalidating alone would refetch the row, hand
+   * React Query new data, and leave the editor rendering the stale pre-restore
+   * title and body over freshly-restored server content, which the operator
+   * would then overwrite on their next save. The restore mutation therefore
+   * re-baselines from its OWN response through this same function, exactly as
+   * the translation save already does.
+   */
+  const rebaselineTranslation = useCallback((row: NonNullable<typeof translationRow>) => {
+    const next = toTranslationFormValues(row, toEditableBlocks(row.body));
     setForm(next);
     setBaseline(next);
-    setFormRowId(translationRow.id);
+    setFormRowId(row.id);
     setSlugTouched(false);
     setTranslationError(null);
+    // ONLY this scope. shared, topics and recommendations are untouched by a
+    // translation-scoped write and must keep their own unsaved state.
     dirty.clearScope("translation");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!translationRow) return;
+    rebaselineTranslation(translationRow);
     // Keyed on the translation row's identity, not on its contents.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [translationRow?.id]);
@@ -244,6 +300,11 @@ export default function EditorialPostTranslationPage() {
     const ids = (post.data?.topics ?? []).map((topic) => topic.id);
     setTopicIds(ids);
     setTopicBaseline(ids);
+    // Same post-level effect, same key: the post detail already carries the
+    // server's ordered recommendations, so this costs no request.
+    const targets = toRecommendationIds(post.data?.recommendations ?? []);
+    setRecommendations(targets);
+    setRecommendationsBaseline(targets);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [postRow?.id]);
 
@@ -267,6 +328,13 @@ export default function EditorialPostTranslationPage() {
     dirty.setDirty("topics", areTopicsDirty(topicIds, topicBaseline));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [topicIds, topicBaseline]);
+
+  // ORDER-SENSITIVE: a reorder is a real change, because `position` is a real
+  // persisted column.
+  useEffect(() => {
+    dirty.setDirty("recommendations", areRecommendationsDirty(recommendations, recommendationsBaseline));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recommendations, recommendationsBaseline]);
 
   const slots = useMemo(
     () =>
@@ -366,6 +434,27 @@ export default function EditorialPostTranslationPage() {
     }
   }, [queryClient, postId]);
 
+  /**
+   * Every params variant of THIS post's revision list, and nothing else.
+   *
+   * Unlike the translation-detail key (one opaque string, so a predicate is
+   * required), the revisions key is `[path, params?]` — element 0 is the path
+   * and element 1 is the params object — so React Query's ordinary array
+   * PREFIX matching reaches both the "this language" and the "all changes"
+   * variants, and post 7 cannot match post 70 because element 0 must be
+   * deep-equal. No predicate, and certainly no global invalidation.
+   */
+  const invalidateRevisions = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: getListEditorialPostRevisionsQueryKey(postId) });
+  }, [queryClient, postId]);
+
+  const invalidateRecommendations = useCallback(() => {
+    // The post detail EMBEDS recommendations, so it is the read source.
+    queryClient.invalidateQueries({ queryKey: getGetEditorialPostQueryKey(postId) });
+    // A replace may have written a shared_field_change revision.
+    invalidateRevisions();
+  }, [queryClient, postId, invalidateRevisions]);
+
   const invalidateTopics = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: getListEditorialPostTopicsQueryKey(postId) });
     queryClient.invalidateQueries({ queryKey: getGetEditorialPostQueryKey(postId) });
@@ -404,6 +493,9 @@ export default function EditorialPostTranslationPage() {
           // ONLY this scope clears.
           dirty.clearScope("translation");
           invalidateTranslation();
+          // A save to a PUBLISHED translation writes a published_edit
+          // revision, so open history is stale by one row.
+          invalidateRevisions();
           toast({ title: "Saved", description: saveSuccessMessage("translation") });
         },
         onError: (err) => {
@@ -417,7 +509,7 @@ export default function EditorialPostTranslationPage() {
         },
       },
     );
-  }, [form, baseline, translationRow, blockProblems, slugLocked, postId, languageCode, updateTranslation, dirty, invalidateTranslation, toast]);
+  }, [form, baseline, translationRow, blockProblems, slugLocked, postId, languageCode, updateTranslation, dirty, invalidateTranslation, invalidateRevisions, toast]);
 
   // Cmd/Ctrl+S saves the translation scope only, and only while it is dirty.
   // It can never publish.
@@ -454,6 +546,10 @@ export default function EditorialPostTranslationPage() {
           // row's id, not on its contents.
           dirty.clearScope("shared");
           invalidateShared(authorChanged);
+          // A shared save on a post with a published translation writes a
+          // shared revision, plus one per published language when the author
+          // moved.
+          invalidateRevisions();
           toast({ title: "Saved", description: saveSuccessMessage("shared") });
         },
         onError: (err) => {
@@ -480,6 +576,7 @@ export default function EditorialPostTranslationPage() {
           setTopicBaseline(ids);
           dirty.clearScope("topics");
           invalidateTopics();
+          invalidateRevisions();
           toast({ title: "Saved", description: saveSuccessMessage("topics") });
         },
         onError: (err) => {
@@ -489,6 +586,145 @@ export default function EditorialPostTranslationPage() {
             description: editorialErrorMessage(err),
             variant: "destructive",
           });
+        },
+      },
+    );
+  };
+
+  /**
+   * The FOURTH independent save. Exactly ONE PUT, only from this button —
+   * there is no mutation in any add / remove / move handler, because each PUT
+   * rewrites every relation row, takes a post lock, can write a revision and
+   * always writes an audit row.
+   *
+   * The payload is the complete desired list in array order with `position`
+   * omitted: the server assigns it from the index.
+   */
+  const saveRecommendations = () => {
+    setRecommendationsError(null);
+    replaceRecommendations.mutate(
+      { id: postId, data: toRecommendationsPayload(recommendations) },
+      {
+        onSuccess: (savedEntries) => {
+          const ids = toRecommendationIds(savedEntries);
+          setRecommendations(ids);
+          setRecommendationsBaseline(ids);
+          // ONLY this scope.
+          dirty.clearScope("recommendations");
+          invalidateRecommendations();
+          toast({ title: "Saved", description: saveSuccessMessage("recommendations") });
+        },
+        onError: (err) => {
+          // The scope stays dirty and the local order is untouched, so the
+          // operator can fix the problem and save the same list again.
+          setRecommendationsError(editorialErrorMessage(err));
+          toast({
+            title: saveFailureTitle("recommendations"),
+            description: editorialErrorMessage(err),
+            variant: "destructive",
+          });
+        },
+      },
+    );
+  };
+
+  // ─── Revision restore ─────────────────────────────────────────────────────
+
+  /**
+   * The highest-risk operation in this editor, and the one with the subtlest
+   * failure mode.
+   *
+   *  - GATED on website.posts:publish, matching the route exactly. The client
+   *    gate is advisory; the server is the enforcement point.
+   *  - CONFIRMED from real state: lifecycle, language, revision, actor, the
+   *    byline only when it genuinely differs, and the unsaved-work discard
+   *    only when the TRANSLATION scope is dirty. shared, topics and
+   *    recommendations survive a restore untouched and are never mentioned as
+   *    at risk, never cleared and never blocked.
+   *  - RE-BASELINED FROM THE RESPONSE, not from a refetch. A restore changes
+   *    the content of the SAME row id, so the `[translationRow?.id]` effect
+   *    does not re-run; relying on invalidation alone would leave the editor
+   *    showing pre-restore content over restored server data.
+   *  - ON FAILURE nothing local moves: no re-baseline, no scope cleared, no
+   *    success toast, and the server's own message stays in the drawer.
+   */
+  const handleRestoreRevision = async (revision: {
+    id: number;
+    revisionNumber: number;
+    createdAt: string;
+    actorLabel: string;
+    revisionByline: string | null;
+    languageCode: string;
+    languageName: string;
+  }) => {
+    if (!translationRow || !capabilities.canPublish) return;
+
+    /**
+     * FAIL-CLOSED LANGUAGE INVARIANT.
+     *
+     * The drawer already refuses to render a restore control for a revision
+     * whose snapshot language is not the open one, so this is defensive. It
+     * exists because the alternative failure — restoring a sibling language
+     * and then re-baselining the form from its row — is what wedged the
+     * editor on "Loading…" and destroyed unsaved work. A future regression in
+     * the drawer must surface as a visible refusal, not as a silent
+     * wrong-language write.
+     */
+    if (revision.languageCode !== languageCode) {
+      setRestoreError(RESTORE_LANGUAGE_MISMATCH_ERROR);
+      return;
+    }
+
+    const confirmed = await confirmAction(
+      restoreConfirmation({
+        // The REVISION's own language, not the page's — they are equal by the
+        // invariant above, and reading the authoritative one keeps it true.
+        languageName: revision.languageName,
+        revisionNumber: revision.revisionNumber,
+        createdAt: revision.createdAt,
+        actorLabel: revision.actorLabel,
+        status: translationRow.status,
+        revisionByline: revision.revisionByline,
+        currentByline: translationRow.authorSnapshot?.name ?? null,
+        translationDirty: dirty.flags.translation,
+      }),
+    );
+    if (!confirmed) return;
+
+    setRestoreError(null);
+    restoreRevision.mutate(
+      { id: postId, revisionId: revision.id },
+      {
+        onSuccess: (restored) => {
+          /**
+           * LAST LINE OF DEFENCE. The response is a full translation row; if
+           * its post, language or row id is not the translation this editor
+           * has open, adopting it as the baseline would set `formRowId` to a
+           * row `translationRow.id` will never equal, permanently failing the
+           * render guard below. Nothing local moves in that case.
+           */
+          if (
+            !restoredRowMatchesOpenTranslation(restored, {
+              id: translationRow.id,
+              postId,
+              languageCode,
+            })
+          ) {
+            setRestoreError(RESTORE_RESPONSE_MISMATCH_ERROR);
+            return;
+          }
+          rebaselineTranslation(restored);
+          invalidateTranslation();
+          // The restore appended its own undo revision.
+          invalidateRevisions();
+          toast({
+            title: "Restored",
+            description: `The ${revision.languageName} content was restored from revision #${revision.revisionNumber}.`,
+          });
+        },
+        onError: (err) => {
+          // Deliberately touches NO dirty flag and NO form state.
+          setRestoreError(editorialErrorMessage(err));
         },
       },
     );
@@ -523,6 +759,9 @@ export default function EditorialPostTranslationPage() {
       {
         onSuccess: () => {
           invalidateTranslation();
+          // Archiving a PUBLISHED translation writes a revision; publish and
+          // restore-to-draft write none, so this is a no-op for those two.
+          invalidateRevisions();
           toast({ title: successTitle, description });
         },
         onError: (err: unknown) => {
@@ -540,7 +779,7 @@ export default function EditorialPostTranslationPage() {
       publish,
       TRANSITION_SUCCESS_TITLES.publish,
       TRANSITION_FAILURE_TITLES.publish,
-      `The ${languageName} translation is now on the website.`,
+      `The ${languageName} translation is now Published.`,
     );
   };
 
@@ -555,7 +794,7 @@ export default function EditorialPostTranslationPage() {
       archive,
       TRANSITION_SUCCESS_TITLES.archive,
       TRANSITION_FAILURE_TITLES.archive,
-      `The ${languageName} translation is no longer on the website.`,
+      `The ${languageName} translation is no longer Published.`,
     );
   };
 
@@ -757,6 +996,16 @@ export default function EditorialPostTranslationPage() {
                 The publication date is set once, on this language's first publish, and never changes.
               </p>
             )}
+
+            {/* Revision history: a trigger row, not a fifth card. The count
+                only appears once the drawer has actually loaded the list —
+                there is no count endpoint, so an eager badge would fire the
+                unpaginated request on every editor page load. */}
+            <RevisionHistoryTrigger
+              open={historyOpen}
+              count={revisionCount}
+              onOpen={() => setHistoryOpen(true)}
+            />
 
             {translationRow.authorSnapshot && (
               <div className="rounded-md border border-border bg-muted/40 px-2 py-1.5" data-testid="frozen-byline">
@@ -970,6 +1219,22 @@ export default function EditorialPostTranslationPage() {
             onChange={setTopicIds}
             onSave={saveTopics}
           />
+
+          {/* ─── Recommended reading: fourth endpoint, fourth save ───────── */}
+          <RecommendationsCard
+            postId={postId}
+            channel={postRow.channel}
+            openLanguageCode={languageCode}
+            saved={post.data?.recommendations ?? []}
+            selected={recommendations}
+            languages={reference.languages.data ?? []}
+            dirty={dirty.flags.recommendations}
+            saving={replaceRecommendations.isPending}
+            disabled={readOnly}
+            error={recommendationsError}
+            onChange={setRecommendations}
+            onSave={saveRecommendations}
+          />
         </aside>
 
         {/* ─── Writing canvas ───────────────────────────────────────────── */}
@@ -1028,8 +1293,8 @@ export default function EditorialPostTranslationPage() {
                     }}
                   />
                   <p id="translation-slug-help" className="text-xs text-muted-foreground">
-                    Editable until this language is published for the first time, after which the public
-                    address is fixed.
+                    Editable until this language is published for the first time, after which its
+                    address is permanently fixed.
                     {!slugTouched && slugPreview(form.title).length > 0 && form.slug !== slugPreview(form.title) && (
                       <> Suggested from the title: <span className="font-mono" dir="auto">{slugPreview(form.title)}</span></>
                     )}
@@ -1147,8 +1412,8 @@ export default function EditorialPostTranslationPage() {
             </CollapsibleTrigger>
             <CollapsibleContent className="space-y-3 px-3 pb-3">
               <p className="text-xs text-muted-foreground">
-                All three are per-language and all three are optional. Left blank, the public site falls
-                back to its own defaults — the Admin invents no fallback of its own.
+                All three are per-language and all three are optional. Left blank, the published page
+                falls back to its own defaults — the Admin invents no fallback of its own.
               </p>
               <div className="grid gap-1.5">
                 <Label htmlFor="translation-seo-title">Search title</Label>
@@ -1201,6 +1466,35 @@ export default function EditorialPostTranslationPage() {
           )}
         </div>
       </div>
+
+      {/* The drawer is a sibling of the layout, never a route: the editor
+          stays mounted behind it, so opening and closing history preserves
+          every dirty scope and all local state. */}
+      <RevisionHistoryDrawer
+        open={historyOpen}
+        onOpenChange={(open) => {
+          setHistoryOpen(open);
+          if (!open) setRestoreError(null);
+        }}
+        postId={postId}
+        channelLabel={channelLabel(postRow.channel)}
+        languageCode={languageCode}
+        languageName={languageName}
+        translationRow={translationRow}
+        currentAdminId={user?.id ?? null}
+        canPublish={capabilities.canPublish}
+        translationDirty={dirty.flags.translation}
+        authors={reference.authors.data ?? []}
+        topics={reference.topics.data ?? []}
+        languages={reference.languages.data ?? []}
+        // The REAL switcher, so the cross-language CTA inherits the
+        // translation dirty-state guard and the no-remount navigation.
+        onSwitchLanguage={switchLanguage}
+        onRestore={handleRestoreRevision}
+        restorePending={restoreRevision.isPending}
+        restoreError={restoreError}
+        onCountKnown={setRevisionCount}
+      />
     </EditorialPageShell>
   );
 }
@@ -1475,7 +1769,7 @@ function AddTranslationScreen({
           queryClient.invalidateQueries({ queryKey: getListEditorialPostsQueryKey() });
           toast({
             title: `${languageName} translation added`,
-            description: "It is a draft and is not on the website yet.",
+            description: "It is a draft and is not published yet.",
           });
           navigate(`/editorial/posts/${postId}/${languageCode}`);
         },

@@ -183,8 +183,8 @@ test("D: the language-switch copy names only the translation scope as lost", () 
   assert.match(description, /changes to this language/i);
   assert.match(
     description,
-    /Shared settings and topics are unaffected/,
-    "this claim is only true now that the page no longer remounts",
+    /Shared settings, topics and recommended posts are unaffected/,
+    "this claim is only true now that the page no longer remounts — and Wave 2.1E's fourth scope survives the switch for exactly the same reason",
   );
   // It must not make the generic "everything is discarded" claim.
   assert.doesNotMatch(description, /This page has changes/);
@@ -192,5 +192,7 @@ test("D: the language-switch copy names only the translation scope as lost", () 
 
 test("D: the full-leave copy stays generic, because leaving DOES lose every scope", () => {
   assert.match(UNSAVED_LEAVE_CONFIRMATION.description, /Leaving now discards them/);
-  assert.equal(DIRTY_SCOPES.length, 3);
+  // Wave 2.1E added "recommendations" as a fourth post-level scope. Leaving
+  // the editor still loses every one of them, so the generic copy stays right.
+  assert.equal(DIRTY_SCOPES.length, 4);
 });

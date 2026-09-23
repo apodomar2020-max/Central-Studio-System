@@ -459,13 +459,28 @@ test("reference data is read through the shared hook, never re-fetched per compo
 
 // ─── Deferred scope ──────────────────────────────────────────────────────────
 
-test("nothing deferred to a later sub-wave was built (revisions, related, placements)", () => {
+/**
+ * Wave 2.1E BUILT revisions + restore and recommended reading, so the 2.1D
+ * "not yet" assertion narrows rather than disappears: PLACEMENTS are still
+ * deferred, and the two capabilities that did land are pinned to the ONE page
+ * that owns them.
+ */
+test("placements are still deferred, and 2.1E's surfaces live only in the editor", () => {
   for (const [name, source] of ALL_PAGES_CODE) {
+    assert.doesNotMatch(source, /useListEditorialPlacements|useReplaceEditorialPlacements|PlacementCard/, name);
+    // "Related posts" is the wrong domain name and must never appear: the
+    // relation is directional and the editor term is "Recommended reading".
+    assert.doesNotMatch(source, /RelatedPosts/, name);
+    if (name === "editor") continue;
     assert.doesNotMatch(source, /useListEditorialPostRevisions|useGetEditorialPostRevision|useRestoreEditorialPostRevision/, name);
-    assert.doesNotMatch(source, /useListEditorialPostRecommendations|useReplaceEditorialPostRecommendations/, name);
-    assert.doesNotMatch(source, /useListEditorialPlacements|useReplaceEditorialPlacements/, name);
-    assert.doesNotMatch(source, /RevisionHistory|RelatedPosts|PlacementCard/, name);
+    assert.doesNotMatch(source, /useReplaceEditorialPostRecommendations/, name);
+    assert.doesNotMatch(source, /RevisionHistory|RecommendationsCard/, name);
   }
+  // The editor mounts the drawer and the card, and NOTHING mounts the
+  // standalone recommendations GET — the post detail already carries it.
+  assert.match(editorCode, /RevisionHistoryDrawer/);
+  assert.match(editorCode, /RecommendationsCard/);
+  assert.doesNotMatch(editorCode, /useListEditorialPostRecommendations/);
 });
 
 // ─── Responsive ──────────────────────────────────────────────────────────────
@@ -631,7 +646,11 @@ test("D: the switch guard covers the translation scope only, which is now accura
 
 test("D: no cross-language flash — the form must belong to the row being rendered", () => {
   assert.match(editorCode, /const \[formRowId, setFormRowId\] = useState<number \| null>\(null\)/);
-  assert.match(editorCode, /setFormRowId\(translationRow\.id\)/);
+  // Wave 2.1E moved the body of the re-baseline effect into
+  // rebaselineTranslation(row) so the restore mutation can reuse it from its
+  // own response; the guard itself is unchanged.
+  assert.match(editorCode, /setFormRowId\(row\.id\)/);
+  assert.match(editorCode, /rebaselineTranslation\(translationRow\)/);
   assert.match(editorCode, /formRowId !== translationRow\.id/);
 });
 
