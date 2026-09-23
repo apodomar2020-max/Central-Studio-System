@@ -5454,6 +5454,12 @@ export const createEditorialPostBodyTranslationBodyBlocksItemFourItemsItemMax = 
 export const createEditorialPostBodyTranslationBodyBlocksItemFourItemsMin = 2;
 export const createEditorialPostBodyTranslationBodyBlocksItemFourItemsMax = 30;
 
+export const createEditorialPostBodyTranslationBodyBlocksItemFiveTextMax = 1000;
+
+export const createEditorialPostBodyTranslationBodyBlocksItemFiveAttributionMax = 200;
+
+export const createEditorialPostBodyTranslationBodyBlocksItemFiveAttributionRoleMax = 200;
+
 export const createEditorialPostBodyTranslationBodyBlocksMax = 250;
 
 export const CreateEditorialPostBody = zod
@@ -5478,6 +5484,7 @@ export const CreateEditorialPostBody = zod
         deck: zod.string().nullish(),
         contextLabel: zod.string().nullish(),
         featureImageAlt: zod.string().nullish(),
+        listingImageUrl: zod.string().nullish(),
         body: zod.object({
           blocks: zod
             .array(
@@ -5535,6 +5542,27 @@ export const CreateEditorialPostBody = zod
                       createEditorialPostBodyTranslationBodyBlocksItemFourItemsMax,
                     ),
                 }),
+                zod.object({
+                  type: zod.enum(["quote"]),
+                  text: zod
+                    .string()
+                    .min(1)
+                    .max(
+                      createEditorialPostBodyTranslationBodyBlocksItemFiveTextMax,
+                    ),
+                  attribution: zod
+                    .string()
+                    .max(
+                      createEditorialPostBodyTranslationBodyBlocksItemFiveAttributionMax,
+                    )
+                    .optional(),
+                  attributionRole: zod
+                    .string()
+                    .max(
+                      createEditorialPostBodyTranslationBodyBlocksItemFiveAttributionRoleMax,
+                    )
+                    .optional(),
+                }),
               ]),
             )
             .max(createEditorialPostBodyTranslationBodyBlocksMax),
@@ -5565,6 +5593,12 @@ export const createEditorialPostResponseTranslationOneBodyBlocksItemFourItemsIte
 
 export const createEditorialPostResponseTranslationOneBodyBlocksItemFourItemsMin = 2;
 export const createEditorialPostResponseTranslationOneBodyBlocksItemFourItemsMax = 30;
+
+export const createEditorialPostResponseTranslationOneBodyBlocksItemFiveTextMax = 1000;
+
+export const createEditorialPostResponseTranslationOneBodyBlocksItemFiveAttributionMax = 200;
+
+export const createEditorialPostResponseTranslationOneBodyBlocksItemFiveAttributionRoleMax = 200;
 
 export const createEditorialPostResponseTranslationOneBodyBlocksMax = 250;
 
@@ -5600,6 +5634,7 @@ export const CreateEditorialPostResponse = zod.object({
         deck: zod.string().nullable(),
         contextLabel: zod.string().nullable(),
         featureImageAlt: zod.string().nullable(),
+        listingImageUrl: zod.string().nullable(),
         body: zod.object({
           blocks: zod
             .array(
@@ -5657,6 +5692,27 @@ export const CreateEditorialPostResponse = zod.object({
                       createEditorialPostResponseTranslationOneBodyBlocksItemFourItemsMax,
                     ),
                 }),
+                zod.object({
+                  type: zod.enum(["quote"]),
+                  text: zod
+                    .string()
+                    .min(1)
+                    .max(
+                      createEditorialPostResponseTranslationOneBodyBlocksItemFiveTextMax,
+                    ),
+                  attribution: zod
+                    .string()
+                    .max(
+                      createEditorialPostResponseTranslationOneBodyBlocksItemFiveAttributionMax,
+                    )
+                    .optional(),
+                  attributionRole: zod
+                    .string()
+                    .max(
+                      createEditorialPostResponseTranslationOneBodyBlocksItemFiveAttributionRoleMax,
+                    )
+                    .optional(),
+                }),
               ]),
             )
             .max(createEditorialPostResponseTranslationOneBodyBlocksMax),
@@ -5708,6 +5764,12 @@ export const getEditorialPostResponseTranslationsItemBodyBlocksItemFourItemsItem
 export const getEditorialPostResponseTranslationsItemBodyBlocksItemFourItemsMin = 2;
 export const getEditorialPostResponseTranslationsItemBodyBlocksItemFourItemsMax = 30;
 
+export const getEditorialPostResponseTranslationsItemBodyBlocksItemFiveTextMax = 1000;
+
+export const getEditorialPostResponseTranslationsItemBodyBlocksItemFiveAttributionMax = 200;
+
+export const getEditorialPostResponseTranslationsItemBodyBlocksItemFiveAttributionRoleMax = 200;
+
 export const getEditorialPostResponseTranslationsItemBodyBlocksMax = 250;
 
 export const GetEditorialPostResponse = zod.object({
@@ -5742,6 +5804,7 @@ export const GetEditorialPostResponse = zod.object({
         deck: zod.string().nullable(),
         contextLabel: zod.string().nullable(),
         featureImageAlt: zod.string().nullable(),
+        listingImageUrl: zod.string().nullable(),
         body: zod.object({
           blocks: zod
             .array(
@@ -5798,6 +5861,27 @@ export const GetEditorialPostResponse = zod.object({
                     .max(
                       getEditorialPostResponseTranslationsItemBodyBlocksItemFourItemsMax,
                     ),
+                }),
+                zod.object({
+                  type: zod.enum(["quote"]),
+                  text: zod
+                    .string()
+                    .min(1)
+                    .max(
+                      getEditorialPostResponseTranslationsItemBodyBlocksItemFiveTextMax,
+                    ),
+                  attribution: zod
+                    .string()
+                    .max(
+                      getEditorialPostResponseTranslationsItemBodyBlocksItemFiveAttributionMax,
+                    )
+                    .optional(),
+                  attributionRole: zod
+                    .string()
+                    .max(
+                      getEditorialPostResponseTranslationsItemBodyBlocksItemFiveAttributionRoleMax,
+                    )
+                    .optional(),
                 }),
               ]),
             )
@@ -5905,6 +5989,12 @@ export const listEditorialPostTranslationsResponseBodyBlocksItemFourItemsItemMax
 export const listEditorialPostTranslationsResponseBodyBlocksItemFourItemsMin = 2;
 export const listEditorialPostTranslationsResponseBodyBlocksItemFourItemsMax = 30;
 
+export const listEditorialPostTranslationsResponseBodyBlocksItemFiveTextMax = 1000;
+
+export const listEditorialPostTranslationsResponseBodyBlocksItemFiveAttributionMax = 200;
+
+export const listEditorialPostTranslationsResponseBodyBlocksItemFiveAttributionRoleMax = 200;
+
 export const listEditorialPostTranslationsResponseBodyBlocksMax = 250;
 
 export const ListEditorialPostTranslationsResponseItem = zod
@@ -5922,6 +6012,7 @@ export const ListEditorialPostTranslationsResponseItem = zod
     deck: zod.string().nullable(),
     contextLabel: zod.string().nullable(),
     featureImageAlt: zod.string().nullable(),
+    listingImageUrl: zod.string().nullable(),
     body: zod.object({
       blocks: zod
         .array(
@@ -5978,6 +6069,27 @@ export const ListEditorialPostTranslationsResponseItem = zod
                 .max(
                   listEditorialPostTranslationsResponseBodyBlocksItemFourItemsMax,
                 ),
+            }),
+            zod.object({
+              type: zod.enum(["quote"]),
+              text: zod
+                .string()
+                .min(1)
+                .max(
+                  listEditorialPostTranslationsResponseBodyBlocksItemFiveTextMax,
+                ),
+              attribution: zod
+                .string()
+                .max(
+                  listEditorialPostTranslationsResponseBodyBlocksItemFiveAttributionMax,
+                )
+                .optional(),
+              attributionRole: zod
+                .string()
+                .max(
+                  listEditorialPostTranslationsResponseBodyBlocksItemFiveAttributionRoleMax,
+                )
+                .optional(),
             }),
           ]),
         )
@@ -6037,6 +6149,12 @@ export const createEditorialPostTranslationBodyBodyBlocksItemFourItemsItemMax = 
 export const createEditorialPostTranslationBodyBodyBlocksItemFourItemsMin = 2;
 export const createEditorialPostTranslationBodyBodyBlocksItemFourItemsMax = 30;
 
+export const createEditorialPostTranslationBodyBodyBlocksItemFiveTextMax = 1000;
+
+export const createEditorialPostTranslationBodyBodyBlocksItemFiveAttributionMax = 200;
+
+export const createEditorialPostTranslationBodyBodyBlocksItemFiveAttributionRoleMax = 200;
+
 export const createEditorialPostTranslationBodyBodyBlocksMax = 250;
 
 export const CreateEditorialPostTranslationBody = zod
@@ -6050,6 +6168,7 @@ export const CreateEditorialPostTranslationBody = zod
     deck: zod.string().nullish(),
     contextLabel: zod.string().nullish(),
     featureImageAlt: zod.string().nullish(),
+    listingImageUrl: zod.string().nullish(),
     body: zod.object({
       blocks: zod
         .array(
@@ -6107,6 +6226,27 @@ export const CreateEditorialPostTranslationBody = zod
                   createEditorialPostTranslationBodyBodyBlocksItemFourItemsMax,
                 ),
             }),
+            zod.object({
+              type: zod.enum(["quote"]),
+              text: zod
+                .string()
+                .min(1)
+                .max(
+                  createEditorialPostTranslationBodyBodyBlocksItemFiveTextMax,
+                ),
+              attribution: zod
+                .string()
+                .max(
+                  createEditorialPostTranslationBodyBodyBlocksItemFiveAttributionMax,
+                )
+                .optional(),
+              attributionRole: zod
+                .string()
+                .max(
+                  createEditorialPostTranslationBodyBodyBlocksItemFiveAttributionRoleMax,
+                )
+                .optional(),
+            }),
           ]),
         )
         .max(createEditorialPostTranslationBodyBodyBlocksMax),
@@ -6133,6 +6273,12 @@ export const createEditorialPostTranslationResponseBodyBlocksItemFourItemsItemMa
 export const createEditorialPostTranslationResponseBodyBlocksItemFourItemsMin = 2;
 export const createEditorialPostTranslationResponseBodyBlocksItemFourItemsMax = 30;
 
+export const createEditorialPostTranslationResponseBodyBlocksItemFiveTextMax = 1000;
+
+export const createEditorialPostTranslationResponseBodyBlocksItemFiveAttributionMax = 200;
+
+export const createEditorialPostTranslationResponseBodyBlocksItemFiveAttributionRoleMax = 200;
+
 export const createEditorialPostTranslationResponseBodyBlocksMax = 250;
 
 export const CreateEditorialPostTranslationResponse = zod
@@ -6150,6 +6296,7 @@ export const CreateEditorialPostTranslationResponse = zod
     deck: zod.string().nullable(),
     contextLabel: zod.string().nullable(),
     featureImageAlt: zod.string().nullable(),
+    listingImageUrl: zod.string().nullable(),
     body: zod.object({
       blocks: zod
         .array(
@@ -6207,6 +6354,27 @@ export const CreateEditorialPostTranslationResponse = zod
                   createEditorialPostTranslationResponseBodyBlocksItemFourItemsMax,
                 ),
             }),
+            zod.object({
+              type: zod.enum(["quote"]),
+              text: zod
+                .string()
+                .min(1)
+                .max(
+                  createEditorialPostTranslationResponseBodyBlocksItemFiveTextMax,
+                ),
+              attribution: zod
+                .string()
+                .max(
+                  createEditorialPostTranslationResponseBodyBlocksItemFiveAttributionMax,
+                )
+                .optional(),
+              attributionRole: zod
+                .string()
+                .max(
+                  createEditorialPostTranslationResponseBodyBlocksItemFiveAttributionRoleMax,
+                )
+                .optional(),
+            }),
           ]),
         )
         .max(createEditorialPostTranslationResponseBodyBlocksMax),
@@ -6256,6 +6424,12 @@ export const getEditorialPostTranslationResponseBodyBlocksItemFourItemsItemMax =
 export const getEditorialPostTranslationResponseBodyBlocksItemFourItemsMin = 2;
 export const getEditorialPostTranslationResponseBodyBlocksItemFourItemsMax = 30;
 
+export const getEditorialPostTranslationResponseBodyBlocksItemFiveTextMax = 1000;
+
+export const getEditorialPostTranslationResponseBodyBlocksItemFiveAttributionMax = 200;
+
+export const getEditorialPostTranslationResponseBodyBlocksItemFiveAttributionRoleMax = 200;
+
 export const getEditorialPostTranslationResponseBodyBlocksMax = 250;
 
 export const GetEditorialPostTranslationResponse = zod
@@ -6273,6 +6447,7 @@ export const GetEditorialPostTranslationResponse = zod
     deck: zod.string().nullable(),
     contextLabel: zod.string().nullable(),
     featureImageAlt: zod.string().nullable(),
+    listingImageUrl: zod.string().nullable(),
     body: zod.object({
       blocks: zod
         .array(
@@ -6330,6 +6505,27 @@ export const GetEditorialPostTranslationResponse = zod
                   getEditorialPostTranslationResponseBodyBlocksItemFourItemsMax,
                 ),
             }),
+            zod.object({
+              type: zod.enum(["quote"]),
+              text: zod
+                .string()
+                .min(1)
+                .max(
+                  getEditorialPostTranslationResponseBodyBlocksItemFiveTextMax,
+                ),
+              attribution: zod
+                .string()
+                .max(
+                  getEditorialPostTranslationResponseBodyBlocksItemFiveAttributionMax,
+                )
+                .optional(),
+              attributionRole: zod
+                .string()
+                .max(
+                  getEditorialPostTranslationResponseBodyBlocksItemFiveAttributionRoleMax,
+                )
+                .optional(),
+            }),
           ]),
         )
         .max(getEditorialPostTranslationResponseBodyBlocksMax),
@@ -6383,6 +6579,12 @@ export const updateEditorialPostTranslationBodyBodyBlocksItemFourItemsItemMax = 
 export const updateEditorialPostTranslationBodyBodyBlocksItemFourItemsMin = 2;
 export const updateEditorialPostTranslationBodyBodyBlocksItemFourItemsMax = 30;
 
+export const updateEditorialPostTranslationBodyBodyBlocksItemFiveTextMax = 1000;
+
+export const updateEditorialPostTranslationBodyBodyBlocksItemFiveAttributionMax = 200;
+
+export const updateEditorialPostTranslationBodyBodyBlocksItemFiveAttributionRoleMax = 200;
+
 export const updateEditorialPostTranslationBodyBodyBlocksMax = 250;
 
 export const UpdateEditorialPostTranslationBody = zod
@@ -6400,6 +6602,7 @@ export const UpdateEditorialPostTranslationBody = zod
     deck: zod.string().nullish(),
     contextLabel: zod.string().nullish(),
     featureImageAlt: zod.string().nullish(),
+    listingImageUrl: zod.string().nullish(),
     body: zod
       .object({
         blocks: zod
@@ -6458,6 +6661,27 @@ export const UpdateEditorialPostTranslationBody = zod
                     updateEditorialPostTranslationBodyBodyBlocksItemFourItemsMax,
                   ),
               }),
+              zod.object({
+                type: zod.enum(["quote"]),
+                text: zod
+                  .string()
+                  .min(1)
+                  .max(
+                    updateEditorialPostTranslationBodyBodyBlocksItemFiveTextMax,
+                  ),
+                attribution: zod
+                  .string()
+                  .max(
+                    updateEditorialPostTranslationBodyBodyBlocksItemFiveAttributionMax,
+                  )
+                  .optional(),
+                attributionRole: zod
+                  .string()
+                  .max(
+                    updateEditorialPostTranslationBodyBodyBlocksItemFiveAttributionRoleMax,
+                  )
+                  .optional(),
+              }),
             ]),
           )
           .max(updateEditorialPostTranslationBodyBodyBlocksMax),
@@ -6485,6 +6709,12 @@ export const updateEditorialPostTranslationResponseBodyBlocksItemFourItemsItemMa
 export const updateEditorialPostTranslationResponseBodyBlocksItemFourItemsMin = 2;
 export const updateEditorialPostTranslationResponseBodyBlocksItemFourItemsMax = 30;
 
+export const updateEditorialPostTranslationResponseBodyBlocksItemFiveTextMax = 1000;
+
+export const updateEditorialPostTranslationResponseBodyBlocksItemFiveAttributionMax = 200;
+
+export const updateEditorialPostTranslationResponseBodyBlocksItemFiveAttributionRoleMax = 200;
+
 export const updateEditorialPostTranslationResponseBodyBlocksMax = 250;
 
 export const UpdateEditorialPostTranslationResponse = zod
@@ -6502,6 +6732,7 @@ export const UpdateEditorialPostTranslationResponse = zod
     deck: zod.string().nullable(),
     contextLabel: zod.string().nullable(),
     featureImageAlt: zod.string().nullable(),
+    listingImageUrl: zod.string().nullable(),
     body: zod.object({
       blocks: zod
         .array(
@@ -6559,6 +6790,27 @@ export const UpdateEditorialPostTranslationResponse = zod
                   updateEditorialPostTranslationResponseBodyBlocksItemFourItemsMax,
                 ),
             }),
+            zod.object({
+              type: zod.enum(["quote"]),
+              text: zod
+                .string()
+                .min(1)
+                .max(
+                  updateEditorialPostTranslationResponseBodyBlocksItemFiveTextMax,
+                ),
+              attribution: zod
+                .string()
+                .max(
+                  updateEditorialPostTranslationResponseBodyBlocksItemFiveAttributionMax,
+                )
+                .optional(),
+              attributionRole: zod
+                .string()
+                .max(
+                  updateEditorialPostTranslationResponseBodyBlocksItemFiveAttributionRoleMax,
+                )
+                .optional(),
+            }),
           ]),
         )
         .max(updateEditorialPostTranslationResponseBodyBlocksMax),
@@ -6608,6 +6860,12 @@ export const publishEditorialPostTranslationResponseBodyBlocksItemFourItemsItemM
 export const publishEditorialPostTranslationResponseBodyBlocksItemFourItemsMin = 2;
 export const publishEditorialPostTranslationResponseBodyBlocksItemFourItemsMax = 30;
 
+export const publishEditorialPostTranslationResponseBodyBlocksItemFiveTextMax = 1000;
+
+export const publishEditorialPostTranslationResponseBodyBlocksItemFiveAttributionMax = 200;
+
+export const publishEditorialPostTranslationResponseBodyBlocksItemFiveAttributionRoleMax = 200;
+
 export const publishEditorialPostTranslationResponseBodyBlocksMax = 250;
 
 export const PublishEditorialPostTranslationResponse = zod
@@ -6625,6 +6883,7 @@ export const PublishEditorialPostTranslationResponse = zod
     deck: zod.string().nullable(),
     contextLabel: zod.string().nullable(),
     featureImageAlt: zod.string().nullable(),
+    listingImageUrl: zod.string().nullable(),
     body: zod.object({
       blocks: zod
         .array(
@@ -6682,6 +6941,27 @@ export const PublishEditorialPostTranslationResponse = zod
                   publishEditorialPostTranslationResponseBodyBlocksItemFourItemsMax,
                 ),
             }),
+            zod.object({
+              type: zod.enum(["quote"]),
+              text: zod
+                .string()
+                .min(1)
+                .max(
+                  publishEditorialPostTranslationResponseBodyBlocksItemFiveTextMax,
+                ),
+              attribution: zod
+                .string()
+                .max(
+                  publishEditorialPostTranslationResponseBodyBlocksItemFiveAttributionMax,
+                )
+                .optional(),
+              attributionRole: zod
+                .string()
+                .max(
+                  publishEditorialPostTranslationResponseBodyBlocksItemFiveAttributionRoleMax,
+                )
+                .optional(),
+            }),
           ]),
         )
         .max(publishEditorialPostTranslationResponseBodyBlocksMax),
@@ -6731,6 +7011,12 @@ export const archiveEditorialPostTranslationResponseBodyBlocksItemFourItemsItemM
 export const archiveEditorialPostTranslationResponseBodyBlocksItemFourItemsMin = 2;
 export const archiveEditorialPostTranslationResponseBodyBlocksItemFourItemsMax = 30;
 
+export const archiveEditorialPostTranslationResponseBodyBlocksItemFiveTextMax = 1000;
+
+export const archiveEditorialPostTranslationResponseBodyBlocksItemFiveAttributionMax = 200;
+
+export const archiveEditorialPostTranslationResponseBodyBlocksItemFiveAttributionRoleMax = 200;
+
 export const archiveEditorialPostTranslationResponseBodyBlocksMax = 250;
 
 export const ArchiveEditorialPostTranslationResponse = zod
@@ -6748,6 +7034,7 @@ export const ArchiveEditorialPostTranslationResponse = zod
     deck: zod.string().nullable(),
     contextLabel: zod.string().nullable(),
     featureImageAlt: zod.string().nullable(),
+    listingImageUrl: zod.string().nullable(),
     body: zod.object({
       blocks: zod
         .array(
@@ -6805,6 +7092,27 @@ export const ArchiveEditorialPostTranslationResponse = zod
                   archiveEditorialPostTranslationResponseBodyBlocksItemFourItemsMax,
                 ),
             }),
+            zod.object({
+              type: zod.enum(["quote"]),
+              text: zod
+                .string()
+                .min(1)
+                .max(
+                  archiveEditorialPostTranslationResponseBodyBlocksItemFiveTextMax,
+                ),
+              attribution: zod
+                .string()
+                .max(
+                  archiveEditorialPostTranslationResponseBodyBlocksItemFiveAttributionMax,
+                )
+                .optional(),
+              attributionRole: zod
+                .string()
+                .max(
+                  archiveEditorialPostTranslationResponseBodyBlocksItemFiveAttributionRoleMax,
+                )
+                .optional(),
+            }),
           ]),
         )
         .max(archiveEditorialPostTranslationResponseBodyBlocksMax),
@@ -6854,6 +7162,12 @@ export const restoreEditorialPostTranslationResponseBodyBlocksItemFourItemsItemM
 export const restoreEditorialPostTranslationResponseBodyBlocksItemFourItemsMin = 2;
 export const restoreEditorialPostTranslationResponseBodyBlocksItemFourItemsMax = 30;
 
+export const restoreEditorialPostTranslationResponseBodyBlocksItemFiveTextMax = 1000;
+
+export const restoreEditorialPostTranslationResponseBodyBlocksItemFiveAttributionMax = 200;
+
+export const restoreEditorialPostTranslationResponseBodyBlocksItemFiveAttributionRoleMax = 200;
+
 export const restoreEditorialPostTranslationResponseBodyBlocksMax = 250;
 
 export const RestoreEditorialPostTranslationResponse = zod
@@ -6871,6 +7185,7 @@ export const RestoreEditorialPostTranslationResponse = zod
     deck: zod.string().nullable(),
     contextLabel: zod.string().nullable(),
     featureImageAlt: zod.string().nullable(),
+    listingImageUrl: zod.string().nullable(),
     body: zod.object({
       blocks: zod
         .array(
@@ -6927,6 +7242,27 @@ export const RestoreEditorialPostTranslationResponse = zod
                 .max(
                   restoreEditorialPostTranslationResponseBodyBlocksItemFourItemsMax,
                 ),
+            }),
+            zod.object({
+              type: zod.enum(["quote"]),
+              text: zod
+                .string()
+                .min(1)
+                .max(
+                  restoreEditorialPostTranslationResponseBodyBlocksItemFiveTextMax,
+                ),
+              attribution: zod
+                .string()
+                .max(
+                  restoreEditorialPostTranslationResponseBodyBlocksItemFiveAttributionMax,
+                )
+                .optional(),
+              attributionRole: zod
+                .string()
+                .max(
+                  restoreEditorialPostTranslationResponseBodyBlocksItemFiveAttributionRoleMax,
+                )
+                .optional(),
             }),
           ]),
         )
@@ -7119,6 +7455,12 @@ export const getEditorialPostRevisionResponseSnapshotOneBodyBlocksItemFourItemsI
 export const getEditorialPostRevisionResponseSnapshotOneBodyBlocksItemFourItemsMin = 2;
 export const getEditorialPostRevisionResponseSnapshotOneBodyBlocksItemFourItemsMax = 30;
 
+export const getEditorialPostRevisionResponseSnapshotOneBodyBlocksItemFiveTextMax = 1000;
+
+export const getEditorialPostRevisionResponseSnapshotOneBodyBlocksItemFiveAttributionMax = 200;
+
+export const getEditorialPostRevisionResponseSnapshotOneBodyBlocksItemFiveAttributionRoleMax = 200;
+
 export const getEditorialPostRevisionResponseSnapshotOneBodyBlocksMax = 250;
 
 export const GetEditorialPostRevisionResponse = zod.object({
@@ -7201,12 +7543,34 @@ export const GetEditorialPostRevisionResponse = zod.object({
                       getEditorialPostRevisionResponseSnapshotOneBodyBlocksItemFourItemsMax,
                     ),
                 }),
+                zod.object({
+                  type: zod.enum(["quote"]),
+                  text: zod
+                    .string()
+                    .min(1)
+                    .max(
+                      getEditorialPostRevisionResponseSnapshotOneBodyBlocksItemFiveTextMax,
+                    ),
+                  attribution: zod
+                    .string()
+                    .max(
+                      getEditorialPostRevisionResponseSnapshotOneBodyBlocksItemFiveAttributionMax,
+                    )
+                    .optional(),
+                  attributionRole: zod
+                    .string()
+                    .max(
+                      getEditorialPostRevisionResponseSnapshotOneBodyBlocksItemFiveAttributionRoleMax,
+                    )
+                    .optional(),
+                }),
               ]),
             )
             .max(getEditorialPostRevisionResponseSnapshotOneBodyBlocksMax),
         }),
         bodyVersion: zod.number(),
         featureImageAlt: zod.string().nullable(),
+        listingImageUrl: zod.string().nullish(),
         authorSnapshot: zod.union([
           zod.object({
             name: zod.string(),
@@ -7262,6 +7626,12 @@ export const restoreEditorialPostRevisionResponseBodyBlocksItemFourItemsItemMax 
 export const restoreEditorialPostRevisionResponseBodyBlocksItemFourItemsMin = 2;
 export const restoreEditorialPostRevisionResponseBodyBlocksItemFourItemsMax = 30;
 
+export const restoreEditorialPostRevisionResponseBodyBlocksItemFiveTextMax = 1000;
+
+export const restoreEditorialPostRevisionResponseBodyBlocksItemFiveAttributionMax = 200;
+
+export const restoreEditorialPostRevisionResponseBodyBlocksItemFiveAttributionRoleMax = 200;
+
 export const restoreEditorialPostRevisionResponseBodyBlocksMax = 250;
 
 export const RestoreEditorialPostRevisionResponse = zod
@@ -7279,6 +7649,7 @@ export const RestoreEditorialPostRevisionResponse = zod
     deck: zod.string().nullable(),
     contextLabel: zod.string().nullable(),
     featureImageAlt: zod.string().nullable(),
+    listingImageUrl: zod.string().nullable(),
     body: zod.object({
       blocks: zod
         .array(
@@ -7335,6 +7706,27 @@ export const RestoreEditorialPostRevisionResponse = zod
                 .max(
                   restoreEditorialPostRevisionResponseBodyBlocksItemFourItemsMax,
                 ),
+            }),
+            zod.object({
+              type: zod.enum(["quote"]),
+              text: zod
+                .string()
+                .min(1)
+                .max(
+                  restoreEditorialPostRevisionResponseBodyBlocksItemFiveTextMax,
+                ),
+              attribution: zod
+                .string()
+                .max(
+                  restoreEditorialPostRevisionResponseBodyBlocksItemFiveAttributionMax,
+                )
+                .optional(),
+              attributionRole: zod
+                .string()
+                .max(
+                  restoreEditorialPostRevisionResponseBodyBlocksItemFiveAttributionRoleMax,
+                )
+                .optional(),
             }),
           ]),
         )

@@ -16,6 +16,7 @@
  *   { type: "heading", level: 2|3, text }
  *   { type: "image", url, alt, caption? }
  *   { type: "bulleted-list", items: string[] }
+ *   { type: "quote", text, attribution?, attributionRole? }
  * Verified against artifacts/api-server/src/lib/editorialBody.ts and the
  * generated schemas: there is NO server-side stable block id. React needs a
  * stable list key that survives reordering, so the editor mints a local
@@ -31,13 +32,16 @@
  * The server stays authoritative. These checks exist so an operator sees a
  * counter turn red while typing instead of losing a long edit to a 400.
  *
- * ─── ADDING A FIFTH BLOCK TYPE (D1) ──────────────────────────────────────
+ * ─── THE FIFTH BLOCK TYPE: QUOTE (Final Editorial, Phase A) ──────────────
  *
- * Quote is deliberately NOT implemented in this wave. The architecture is
- * shaped so adding it is additive: append the type to
- * `EditorialBlockType`, add one entry to `BLOCK_TYPE_DEFINITIONS` (label +
- * factory + validator), and the toolbar, counters, validation sweep and
- * payload stripper all pick it up with no further edits.
+ * Quote was pre-shaped by Wave 2.1D and is now implemented, following that
+ * documented extension path exactly: one entry appended to the
+ * `EditorialBlockType` union, one `BLOCK_TYPE_DEFINITIONS` row, one
+ * `createBlock` case, one `validateBlock` case and one `firstFieldOf`
+ * branch. The toolbar, the counters, the validation sweep and the payload
+ * stripper picked it up with no further edits here, exactly as promised.
+ *
+ * ADDING A SIXTH BLOCK TYPE follows the same five edits.
  */
 
 export const MAX_BODY_BLOCKS = 250;
@@ -49,19 +53,30 @@ export const MAX_IMAGE_CAPTION_CHARS = 300;
 export const MIN_LIST_ITEMS = 2;
 export const MAX_LIST_ITEMS = 30;
 export const MAX_LIST_ITEM_CHARS = 300;
+export const MAX_QUOTE_CHARS = 1_000;
+export const MAX_QUOTE_ATTRIBUTION_CHARS = 200;
+export const MAX_QUOTE_ATTRIBUTION_ROLE_CHARS = 200;
 
-export type EditorialBlockType = "paragraph" | "heading" | "image" | "bulleted-list";
+export type EditorialBlockType = "paragraph" | "heading" | "image" | "bulleted-list" | "quote";
 
 export type StoredParagraphBlock = { type: "paragraph"; text: string };
 export type StoredHeadingBlock = { type: "heading"; level: 2 | 3; text: string };
 export type StoredImageBlock = { type: "image"; url: string; alt: string; caption?: string };
 export type StoredListBlock = { type: "bulleted-list"; items: string[] };
+/** `attribution` is WHO said it; `attributionRole` is what they are. */
+export type StoredQuoteBlock = {
+  type: "quote";
+  text: string;
+  attribution?: string;
+  attributionRole?: string;
+};
 
 export type StoredBlock =
   | StoredParagraphBlock
   | StoredHeadingBlock
   | StoredImageBlock
-  | StoredListBlock;
+  | StoredListBlock
+  | StoredQuoteBlock;
 
 export interface StoredBody {
   blocks: StoredBlock[];
@@ -101,6 +116,11 @@ export function createBlock(type: EditorialBlockType): EditableBlock {
       // Seeded with MIN_LIST_ITEMS empty rows: a one-item list is invalid
       // server-side, so starting below the minimum would be a trap.
       return { key, type: "bulleted-list", items: Array.from({ length: MIN_LIST_ITEMS }, () => "") };
+    case "quote":
+      // Both attribution fields start as "" rather than absent so the
+      // controlled inputs never flip uncontrolled; `stripKey` drops them
+      // again when they are still blank at save time.
+      return { key, type: "quote", text: "", attribution: "", attributionRole: "" };
   }
 }
 
@@ -118,6 +138,7 @@ export const BLOCK_TYPE_DEFINITIONS: ReadonlyArray<BlockTypeDefinition> = [
   { type: "heading", label: "Add heading", noun: "Heading" },
   { type: "image", label: "Add image", noun: "Image" },
   { type: "bulleted-list", label: "Add list", noun: "Bulleted list" },
+  { type: "quote", label: "Add quote", noun: "Quote" },
 ];
 
 export function blockNoun(type: EditorialBlockType): string {
@@ -246,7 +267,7 @@ export interface BlockProblem {
   /** Index of the offending block in the current list. */
   index: number;
   /** Which sub-field, when the block has several. */
-  field: "text" | "level" | "url" | "alt" | "caption" | "items";
+  field: "text" | "level" | "url" | "alt" | "caption" | "items" | "attribution" | "attributionRole";
   message: string;
 }
 
@@ -323,6 +344,24 @@ export function validateBlock(block: StoredBlock, index: number): BlockProblem[]
       }
       break;
     }
+    case "quote": {
+      // Server messages verbatim (editorialBody.ts quoteBlockSchema), so
+      // the inline hint and a 400 can never say two different things.
+      if (block.text.length === 0) at("text", "A quote block needs the quoted text.");
+      else if (block.text.length > MAX_QUOTE_CHARS) {
+        at("text", `A quote block cannot exceed ${MAX_QUOTE_CHARS} characters.`);
+      }
+      if ((block.attribution ?? "").length > MAX_QUOTE_ATTRIBUTION_CHARS) {
+        at("attribution", `A quote attribution cannot exceed ${MAX_QUOTE_ATTRIBUTION_CHARS} characters.`);
+      }
+      if ((block.attributionRole ?? "").length > MAX_QUOTE_ATTRIBUTION_ROLE_CHARS) {
+        at(
+          "attributionRole",
+          `A quote attribution role cannot exceed ${MAX_QUOTE_ATTRIBUTION_ROLE_CHARS} characters.`,
+        );
+      }
+      break;
+    }
   }
   return problems;
 }
@@ -374,6 +413,19 @@ export function stripKey(block: EditableBlock | StoredBlock): StoredBlock {
     if (caption.length > 0) stripped.caption = caption;
     return stripped;
   }
+  if (clone.type === "quote") {
+    // Same rule as the image caption: an OPTIONAL field that is blank is
+    // OMITTED rather than sent as "". The generated schema types both
+    // attribution fields `.optional()`, and "" would store noise that a
+    // renderer would then have to treat as absent anyway.
+    const quote = clone as unknown as StoredQuoteBlock;
+    const attribution = (quote.attribution ?? "").trim();
+    const attributionRole = (quote.attributionRole ?? "").trim();
+    const stripped: StoredQuoteBlock = { type: "quote", text: quote.text };
+    if (attribution.length > 0) stripped.attribution = attribution;
+    if (attributionRole.length > 0) stripped.attributionRole = attributionRole;
+    return stripped;
+  }
   return clone as StoredBlock;
 }
 
@@ -403,6 +455,7 @@ export function blockFieldId(key: string, field: string): string {
 }
 
 export function firstFieldOf(type: EditorialBlockType): string {
+  // quote falls through to "text", which is its first field.
   return type === "image" ? "url" : type === "bulleted-list" ? "item-0" : "text";
 }
 

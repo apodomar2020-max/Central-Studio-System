@@ -18,6 +18,8 @@
  *   image           alt 1..200 REQUIRED, caption <=300 optional,
  *                   url checked separately by editorialMediaUrl.ts
  *   bulleted-list   2..30 items, each 1..300 chars
+ *   quote           text 1..1000 REQUIRED, attribution <=200 optional,
+ *                   attributionRole <=200 optional
  *
  * Image ALT is required at the SCHEMA level, i.e. on every write, not only
  * at publish. The publish transition additionally re-checks that no image
@@ -40,6 +42,9 @@ export const MAX_IMAGE_CAPTION_CHARS = 300;
 export const MIN_LIST_ITEMS = 2;
 export const MAX_LIST_ITEMS = 30;
 export const MAX_LIST_ITEM_CHARS = 300;
+export const MAX_QUOTE_CHARS = 1_000;
+export const MAX_QUOTE_ATTRIBUTION_CHARS = 200;
+export const MAX_QUOTE_ATTRIBUTION_ROLE_CHARS = 200;
 
 const paragraphBlockSchema = z.object({
   type: z.literal("paragraph"),
@@ -87,11 +92,48 @@ const bulletedListBlockSchema = z.object({
     .max(MAX_LIST_ITEMS, `A bulleted list cannot exceed ${MAX_LIST_ITEMS} items.`),
 });
 
+/**
+ * Quote — the fifth block type (Final Editorial, Phase A).
+ *
+ * `text` is the quotation itself and is REQUIRED: a quote block with no
+ * words is not a quote, it is an empty decoration. `attribution` (who said
+ * it) and `attributionRole` (what they are) are both optional and
+ * independent — a pull-quote lifted from the article's own prose carries
+ * neither, and a quote can legitimately name a speaker without naming
+ * their role.
+ *
+ * 1000 chars rather than the paragraph's 5000: a quote that runs longer
+ * than a screen is a paragraph wearing quotation marks, and the cap is the
+ * cheapest place to say so.
+ */
+const quoteBlockSchema = z.object({
+  type: z.literal("quote"),
+  text: z
+    .string()
+    .min(1, "A quote block needs the quoted text.")
+    .max(MAX_QUOTE_CHARS, `A quote block cannot exceed ${MAX_QUOTE_CHARS} characters.`),
+  attribution: z
+    .string()
+    .max(
+      MAX_QUOTE_ATTRIBUTION_CHARS,
+      `A quote attribution cannot exceed ${MAX_QUOTE_ATTRIBUTION_CHARS} characters.`,
+    )
+    .optional(),
+  attributionRole: z
+    .string()
+    .max(
+      MAX_QUOTE_ATTRIBUTION_ROLE_CHARS,
+      `A quote attribution role cannot exceed ${MAX_QUOTE_ATTRIBUTION_ROLE_CHARS} characters.`,
+    )
+    .optional(),
+});
+
 export const editorialBodyBlockSchema = z.discriminatedUnion("type", [
   paragraphBlockSchema,
   headingBlockSchema,
   imageBlockSchema,
   bulletedListBlockSchema,
+  quoteBlockSchema,
 ]);
 
 export const editorialBodySchema = z

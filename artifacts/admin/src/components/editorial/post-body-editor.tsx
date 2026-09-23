@@ -19,10 +19,16 @@
  * walked up the document with repeated presses — and the button disables
  * itself at the end of the list, which is why the sibling gets focus then.
  *
- * ADDING A FIFTH BLOCK TYPE (D1 — Quote is deferred): add the type to
- * BLOCK_TYPE_DEFINITIONS in lib/editorial-post-body.ts and one case to
- * `BlockFields` below. The toolbar, the counters, the validation sweep and
- * the payload stripper all pick it up with no further edits here.
+ * THE FIFTH BLOCK TYPE, QUOTE (Final Editorial, Phase A), was added the way
+ * Wave 2.1D said it would be: one BLOCK_TYPE_DEFINITIONS entry in
+ * lib/editorial-post-body.ts and one `BlockFields` case below. The toolbar,
+ * the counters, the move/delete controls, the validation sweep and the
+ * payload stripper all picked it up with no further edits here. A SIXTH type
+ * is the same two edits.
+ *
+ * Quote introduces NO new design pattern: it reuses Textarea + Counter +
+ * FieldError for the quotation, and the same optional Input + Counter pair
+ * the image caption uses for each attribution field.
  */
 import { useCallback, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
@@ -40,6 +46,9 @@ import {
   MAX_LIST_ITEMS,
   MAX_LIST_ITEM_CHARS,
   MAX_PARAGRAPH_CHARS,
+  MAX_QUOTE_ATTRIBUTION_CHARS,
+  MAX_QUOTE_ATTRIBUTION_ROLE_CHARS,
+  MAX_QUOTE_CHARS,
   MIN_LIST_ITEMS,
   addBlock,
   addListItem,
@@ -484,6 +493,79 @@ function BlockFields({
             <Counter value={block.items.length} max={MAX_LIST_ITEMS} />
           </div>
           <FieldError message={problem("items")} id={errorId("items")} />
+        </div>
+      );
+
+    case "quote":
+      return (
+        <div className="grid gap-2">
+          <div className="grid gap-1.5">
+            <Label htmlFor={blockFieldId(block.key, "text")}>
+              Quote <span className="text-destructive">*</span>
+            </Label>
+            <Textarea
+              id={blockFieldId(block.key, "text")}
+              rows={3}
+              dir="auto"
+              value={block.text}
+              disabled={disabled}
+              placeholder="The words being quoted…"
+              aria-invalid={Boolean(problem("text")) || undefined}
+              aria-describedby={problem("text") ? errorId("text") : undefined}
+              data-testid={`input-block-text-${index}`}
+              onChange={(e) => onPatch({ text: e.target.value })}
+            />
+            <div className="flex justify-end">
+              <Counter value={block.text.length} max={MAX_QUOTE_CHARS} />
+            </div>
+            <FieldError message={problem("text")} id={errorId("text")} />
+          </div>
+
+          <div className="grid gap-1.5">
+            <Label htmlFor={blockFieldId(block.key, "attribution")}>Attribution (optional)</Label>
+            <Input
+              id={blockFieldId(block.key, "attribution")}
+              value={block.attribution ?? ""}
+              disabled={disabled}
+              dir="auto"
+              placeholder="Who said it"
+              aria-invalid={Boolean(problem("attribution")) || undefined}
+              aria-describedby={problem("attribution") ? errorId("attribution") : undefined}
+              data-testid={`input-block-attribution-${index}`}
+              onChange={(e) => onPatch({ attribution: e.target.value })}
+            />
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs text-muted-foreground">
+                Leave blank for a pull-quote taken from the article itself.
+              </span>
+              <Counter value={(block.attribution ?? "").length} max={MAX_QUOTE_ATTRIBUTION_CHARS} />
+            </div>
+            <FieldError message={problem("attribution")} id={errorId("attribution")} />
+          </div>
+
+          <div className="grid gap-1.5">
+            <Label htmlFor={blockFieldId(block.key, "attributionRole")}>
+              Attribution role (optional)
+            </Label>
+            <Input
+              id={blockFieldId(block.key, "attributionRole")}
+              value={block.attributionRole ?? ""}
+              disabled={disabled}
+              dir="auto"
+              placeholder="What they are — e.g. Artistic Director"
+              aria-invalid={Boolean(problem("attributionRole")) || undefined}
+              aria-describedby={problem("attributionRole") ? errorId("attributionRole") : undefined}
+              data-testid={`input-block-attribution-role-${index}`}
+              onChange={(e) => onPatch({ attributionRole: e.target.value })}
+            />
+            <div className="flex justify-end">
+              <Counter
+                value={(block.attributionRole ?? "").length}
+                max={MAX_QUOTE_ATTRIBUTION_ROLE_CHARS}
+              />
+            </div>
+            <FieldError message={problem("attributionRole")} id={errorId("attributionRole")} />
+          </div>
         </div>
       );
 

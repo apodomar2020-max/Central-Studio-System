@@ -1358,6 +1358,29 @@ export default function EditorialPostTranslationPage() {
             </div>
 
             <div className="grid gap-1.5">
+              <Label htmlFor="translation-listing-image">Listing image link</Label>
+              <Badge variant="outline" className="w-fit text-[10px]">{TRANSLATION_SPECIFIC_LABEL}</Badge>
+              <Input
+                id="translation-listing-image"
+                value={form.listingImageUrl}
+                disabled={readOnly}
+                autoComplete="off"
+                placeholder="https://images.unsplash.com/…"
+                aria-describedby="translation-listing-image-help"
+                data-testid="input-translation-listing-image"
+                onChange={(e) =>
+                  setForm((current) => (current ? { ...current, listingImageUrl: e.target.value } : current))
+                }
+              />
+              <p id="translation-listing-image-help" className="text-xs text-muted-foreground">
+                A SEPARATE image, shown where this language&apos;s post appears in a list — index cards and
+                related rails. It is not the Feature image above and does not fall back to it: leave this
+                blank and nothing is stored here. Checked against the approved image hosts when you save,
+                and again when you publish.
+              </p>
+            </div>
+
+            <div className="grid gap-1.5">
               <Label htmlFor="translation-read-time">Reading time override (minutes)</Label>
               <Input
                 id="translation-read-time"

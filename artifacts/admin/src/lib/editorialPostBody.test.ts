@@ -18,6 +18,9 @@ import {
   MAX_LIST_ITEMS,
   MAX_LIST_ITEM_CHARS,
   MAX_PARAGRAPH_CHARS,
+  MAX_QUOTE_ATTRIBUTION_CHARS,
+  MAX_QUOTE_ATTRIBUTION_ROLE_CHARS,
+  MAX_QUOTE_CHARS,
   MIN_LIST_ITEMS,
   addBlock,
   addListItem,
@@ -63,6 +66,10 @@ test("every limit matches artifacts/api-server/src/lib/editorialBody.ts exactly"
     ["MIN_LIST_ITEMS", MIN_LIST_ITEMS],
     ["MAX_LIST_ITEMS", MAX_LIST_ITEMS],
     ["MAX_LIST_ITEM_CHARS", MAX_LIST_ITEM_CHARS],
+    // Final Editorial, Phase A — the quote caps are pinned the same way.
+    ["MAX_QUOTE_CHARS", MAX_QUOTE_CHARS],
+    ["MAX_QUOTE_ATTRIBUTION_CHARS", MAX_QUOTE_ATTRIBUTION_CHARS],
+    ["MAX_QUOTE_ATTRIBUTION_ROLE_CHARS", MAX_QUOTE_ATTRIBUTION_ROLE_CHARS],
   ];
   for (const [name, value] of pins) {
     const match = serverBody.match(new RegExp(`export const ${name} = ([0-9_]+);`));
@@ -71,13 +78,145 @@ test("every limit matches artifacts/api-server/src/lib/editorialBody.ts exactly"
   }
 });
 
-test("exactly the four current block types are implemented — Quote is deferred (D1)", () => {
+test("FIVE block types are implemented — Quote landed in Final Editorial, Phase A", () => {
+  // Wave 2.1D deferred Quote (D1) and documented the extension path. Phase A
+  // took it, so this now asserts the CURRENT set rather than the deferral.
   assert.deepEqual(
     BLOCK_TYPE_DEFINITIONS.map((definition) => definition.type),
-    ["paragraph", "heading", "image", "bulleted-list"],
+    ["paragraph", "heading", "image", "bulleted-list", "quote"],
   );
-  const union = serverBody.slice(serverBody.indexOf("editorialBodyBlockSchema"));
-  assert.doesNotMatch(union, /quoteBlockSchema/);
+  // Quote is appended LAST, so no existing toolbar position moved.
+  assert.equal(BLOCK_TYPE_DEFINITIONS.at(-1)!.label, "Add quote");
+  assert.equal(BLOCK_TYPE_DEFINITIONS.at(-1)!.noun, "Quote");
+  // And the client's union is not ahead of the server's: the server really
+  // does carry a quote member of its discriminated union.
+  const union = serverBody.slice(serverBody.indexOf("export const editorialBodyBlockSchema"));
+  assert.match(union, /quoteBlockSchema/);
+});
+
+test("quote: a new block starts blank with BOTH attribution fields controlled", () => {
+  const block = createBlock("quote") as unknown as {
+    type: string; text: string; attribution: string; attributionRole: string;
+  };
+  assert.equal(block.type, "quote");
+  assert.equal(block.text, "");
+  // "" rather than undefined, so the inputs never flip controlled→uncontrolled.
+  assert.equal(block.attribution, "");
+  assert.equal(block.attributionRole, "");
+});
+
+test("quote: text is REQUIRED and capped, with the SERVER's messages verbatim", () => {
+  const problems = validateBlock({ type: "quote", text: "" } as never, 3);
+  assert.deepEqual(problems, [
+    { index: 3, field: "text", message: "A quote block needs the quoted text." },
+  ]);
+  assert.match(serverBody, /A quote block needs the quoted text\./);
+
+  const long = validateBlock({ type: "quote", text: "q".repeat(MAX_QUOTE_CHARS + 1) } as never, 0);
+  assert.deepEqual(long, [
+    { index: 0, field: "text", message: `A quote block cannot exceed ${MAX_QUOTE_CHARS} characters.` },
+  ]);
+  assert.match(serverBody, /A quote block cannot exceed \$\{MAX_QUOTE_CHARS\} characters\./);
+  // Exactly at the cap is valid — the boundary is inclusive on both sides.
+  assert.deepEqual(validateBlock({ type: "quote", text: "q".repeat(MAX_QUOTE_CHARS) } as never, 0), []);
+});
+
+test("quote: both attribution fields are optional and INDEPENDENTLY capped", () => {
+  assert.deepEqual(validateBlock({ type: "quote", text: "ok" } as never, 0), []);
+  assert.deepEqual(
+    validateBlock({ type: "quote", text: "ok", attribution: "Nadia", attributionRole: "AD" } as never, 0),
+    [],
+  );
+  assert.deepEqual(
+    validateBlock({ type: "quote", text: "ok", attribution: "a".repeat(MAX_QUOTE_ATTRIBUTION_CHARS + 1) } as never, 1),
+    [{
+      index: 1,
+      field: "attribution",
+      message: `A quote attribution cannot exceed ${MAX_QUOTE_ATTRIBUTION_CHARS} characters.`,
+    }],
+  );
+  assert.deepEqual(
+    validateBlock({ type: "quote", text: "ok", attributionRole: "r".repeat(MAX_QUOTE_ATTRIBUTION_ROLE_CHARS + 1) } as never, 1),
+    [{
+      index: 1,
+      field: "attributionRole",
+      message: `A quote attribution role cannot exceed ${MAX_QUOTE_ATTRIBUTION_ROLE_CHARS} characters.`,
+    }],
+  );
+  assert.match(serverBody, /A quote attribution cannot exceed/);
+  assert.match(serverBody, /A quote attribution role cannot exceed/);
+});
+
+test("quote: every problem on one block is reported at once, not one at a time", () => {
+  const problems = validateBlock(
+    {
+      type: "quote",
+      text: "",
+      attribution: "a".repeat(MAX_QUOTE_ATTRIBUTION_CHARS + 1),
+      attributionRole: "r".repeat(MAX_QUOTE_ATTRIBUTION_ROLE_CHARS + 1),
+    } as never,
+    0,
+  );
+  assert.deepEqual(problems.map((problem) => problem.field), ["text", "attribution", "attributionRole"]);
+});
+
+test("quote: a BLANK attribution is OMITTED from the payload, never sent as an empty string", () => {
+  assert.deepEqual(
+    stripKey({ key: "k1", type: "quote", text: "The stage remembers.", attribution: "", attributionRole: "" } as never),
+    { type: "quote", text: "The stage remembers." },
+  );
+  assert.deepEqual(
+    stripKey({ key: "k2", type: "quote", text: "Named.", attribution: "  Nadia Farouk  ", attributionRole: "" } as never),
+    { type: "quote", text: "Named.", attribution: "Nadia Farouk" },
+  );
+  assert.deepEqual(
+    stripKey({ key: "k3", type: "quote", text: "Role only.", attribution: "   ", attributionRole: " Artistic Director " } as never),
+    { type: "quote", text: "Role only.", attributionRole: "Artistic Director" },
+  );
+  assert.deepEqual(
+    stripKey({ key: "k4", type: "quote", text: "Both.", attribution: "Nadia", attributionRole: "AD" } as never),
+    { type: "quote", text: "Both.", attribution: "Nadia", attributionRole: "AD" },
+  );
+});
+
+test("quote: a quote participates in the whole-body sweep like every other type", () => {
+  const blocks = [
+    { key: "a", type: "paragraph", text: "fine" },
+    { key: "b", type: "quote", text: "" },
+  ] as unknown as EditableBlock[];
+  const problems = validateBody(blocks);
+  assert.deepEqual(problems, [
+    { index: 1, field: "text", message: "A quote block needs the quoted text." },
+  ]);
+  // And it survives a full payload round-trip with the others.
+  assert.deepEqual(
+    toBodyPayload([
+      { key: "a", type: "paragraph", text: "fine" },
+      { key: "b", type: "quote", text: "Said it.", attribution: "Nadia", attributionRole: "" },
+    ] as unknown as EditableBlock[]),
+    { blocks: [
+      { type: "paragraph", text: "fine" },
+      { type: "quote", text: "Said it.", attribution: "Nadia" },
+    ] },
+  );
+});
+
+test("quote: reorder, delete and key stability work with no quote-specific code", () => {
+  const blocks = [
+    createBlock("paragraph"),
+    createBlock("quote"),
+    createBlock("heading"),
+  ];
+  const quoteKey = blocks[1]!.key;
+  const up = moveBlockUp(blocks, 1);
+  assert.equal(up[0]!.key, quoteKey, "the moved quote keeps its key — React must not remount it");
+  assert.equal(up[0]!.type, "quote");
+  const down = moveBlockDown(up, 0);
+  assert.deepEqual(down.map((block) => block.type), ["paragraph", "quote", "heading"]);
+  assert.deepEqual(removeBlock(blocks, 1).map((block) => block.type), ["paragraph", "heading"]);
+  // The generic caps and nouns pick quote up with no extra wiring.
+  assert.equal(blockCapMessage !== undefined, true);
+  assert.equal(countImageBlocks(blocks), 0);
 });
 
 // ─── Keys ────────────────────────────────────────────────────────────────────
@@ -101,9 +240,24 @@ test("toEditableBlocks mints one key per stored block and preserves content", ()
 });
 
 test("an unrecognised block type is preserved, never dropped", () => {
-  const blocks = toEditableBlocks({ blocks: [{ type: "quote", text: "future" }] });
+  // The example used to be "quote", which is now a REAL type — so this uses
+  // a genuinely unknown one, or it would no longer be testing the fallback.
+  const blocks = toEditableBlocks({ blocks: [{ type: "embed", url: "https://example.com" }] } as never);
   assert.equal(blocks.length, 1);
-  assert.equal((blocks[0] as unknown as { type: string }).type, "quote");
+  assert.equal((blocks[0] as unknown as { type: string }).type, "embed");
+});
+
+test("a STORED quote round-trips through toEditableBlocks with its attributions intact", () => {
+  const blocks = toEditableBlocks({
+    blocks: [{ type: "quote", text: "The stage remembers.", attribution: "Nadia", attributionRole: "AD" }],
+  } as never);
+  assert.equal(blocks.length, 1);
+  const block = blocks[0] as unknown as { type: string; text: string; attribution: string; attributionRole: string };
+  assert.equal(block.type, "quote");
+  assert.equal(block.text, "The stage remembers.");
+  assert.equal(block.attribution, "Nadia");
+  assert.equal(block.attributionRole, "AD");
+  assert.ok(blocks[0]!.key, "a local key is minted for it like any other block");
 });
 
 test("a null or empty body yields zero blocks", () => {
@@ -348,6 +502,7 @@ test("the first focusable field differs per type", () => {
   assert.equal(firstFieldOf("heading"), "text");
   assert.equal(firstFieldOf("image"), "url");
   assert.equal(firstFieldOf("bulleted-list"), "item-0");
+  assert.equal(firstFieldOf("quote"), "text", "quote falls through to its first field");
 });
 
 test("move and delete labels are descriptive and 1-based for screen readers", () => {

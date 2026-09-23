@@ -1,0 +1,54 @@
+-- Final Editorial — Phase A: editorial_post_translations.listing_image_url
+--
+-- WHAT THIS DOES
+--   Adds ONE nullable text column to editorial_post_translations. Nothing
+--   else: no constraint change, no index, no backfill, no data rewrite.
+--
+-- WHY IT IS NEEDED
+--   Editorial has exactly one image today — editorial_posts.feature_image_url,
+--   shared by every language. The public listing card and the article hero
+--   are not the same picture: in the legacy website_news_posts data, the
+--   listing image differs from the hero image for 5 of the 6 seeded records.
+--   Rendering listings from feature_image_url alone would therefore visibly
+--   change most News cards. This column is the real, distinct storage for
+--   that value.
+--
+--   NOT A FALLBACK, AND NOT A DERIVED FIELD. The stored value never
+--   silently becomes the feature image. A render-time
+--   `listingImageUrl ?? featureImageUrl` fallback may exist in the FUTURE
+--   public rendering layer, but the data model must preserve the
+--   intentional difference, which it cannot do if the two collapse here.
+--
+-- WHY TRANSLATION-LEVEL, NOT POST-LEVEL
+--   Same reasoning as feature_image_alt, which already lives on this table:
+--   a listing image is about how THIS language's content appears in a list.
+--   og_image_url is the exact structural precedent — a per-translation,
+--   nullable, media-validated image URL.
+--
+-- EXISTING ROWS
+--   Every existing row gets NULL. `ADD COLUMN ... text` with no DEFAULT and
+--   no NOT NULL is a catalogue-only operation in PostgreSQL 11+ — no table
+--   rewrite, no lock beyond a brief ACCESS EXCLUSIVE on the catalogue entry.
+--   NULL is the correct value: "this translation has not chosen a separate
+--   listing image". No existing Editorial Post changes behaviour, and no
+--   existing translation becomes invalid, because the field is optional at
+--   every layer (OpenAPI, generated zod, service, Admin form).
+--
+-- REVISIONS
+--   editorial_post_revisions.snapshot is jsonb and is NOT migrated.
+--   Snapshots written before this migration physically cannot carry the
+--   key; the API schema therefore leaves `listingImageUrl` OUT of the
+--   snapshot's `required` list, and restore reads an absent key as NULL —
+--   which is exactly what the column held when that snapshot was taken.
+--
+-- ROLLBACK
+--   ALTER TABLE "editorial_post_translations" DROP COLUMN "listing_image_url";
+--   Safe and complete: nothing else references the column — no constraint,
+--   no index, no view, no foreign key, no generated column. Rolling back
+--   discards only values operators entered after this migration shipped.
+--
+-- IDEMPOTENT: IF NOT EXISTS, matching the re-runnable style established by
+-- 0127_editorial_placement_channel_scope.sql.
+
+ALTER TABLE "editorial_post_translations"
+  ADD COLUMN IF NOT EXISTS "listing_image_url" text;
