@@ -15,14 +15,12 @@ import test from "node:test";
 
 const page = readFileSync(new URL("./EditorialAuthorsPage.tsx", import.meta.url), "utf8");
 const app = readFileSync(new URL("../../App.tsx", import.meta.url), "utf8");
-const placeholders = readFileSync(new URL("./EditorialPlaceholderPages.tsx", import.meta.url), "utf8");
 const nav = readFileSync(new URL("../../components/layout/nav-config.ts", import.meta.url), "utf8");
 
 function stripComments(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 }
 const pageCode = stripComments(page);
-const placeholderCode = stripComments(placeholders);
 
 /** The create/edit Dialog region, used for "not in the dialog" assertions. */
 const dialogBlock = pageCode.slice(pageCode.indexOf("<Dialog open="));
@@ -37,23 +35,12 @@ test("the route and its guard are exactly as Wave 2.1A left them", () => {
   );
 });
 
-test("App.tsx binds the real page module, not the placeholder file", () => {
-  assert.match(app, /import EditorialAuthorsPage from "@\/pages\/editorial\/EditorialAuthorsPage";/);
-  const placeholderImport = app.slice(
-    app.indexOf("import {\n  EditorialPostsListPage"),
-    app.indexOf('} from "@/pages/editorial/EditorialPlaceholderPages";'),
-  );
-  assert.doesNotMatch(placeholderImport, /EditorialAuthorsPage/);
-});
 
-test("the Authors placeholder component is gone, and the remaining placeholders are untouched", () => {
-  assert.doesNotMatch(placeholderCode, /EditorialAuthorsPage/);
-  assert.doesNotMatch(placeholderCode, /EditorialTopicsPage/);
-  // The four Posts placeholders left this file in Wave 2.1D (see
-  // pages/editorial/editorialPostsPages.test.ts); Placements and Links stay.
-  for (const component of ["EditorialPlacementsPage", "WebsiteSettingsLinksPage"]) {
-    assert.match(placeholders, new RegExp(`export function ${component}\\(`), `${component} must be untouched`);
-  }
+
+test("App.tsx binds the real Authors page module", () => {
+  // Final Editorial Phase A retired the shared placeholder module entirely.
+  assert.match(app, /import EditorialAuthorsPage from "@\/pages\/editorial\/EditorialAuthorsPage";/);
+  assert.doesNotMatch(app, /EditorialPlaceholderPages/);
 });
 
 test("navigation is untouched — the Authors link already existed from Wave 2.1A", () => {

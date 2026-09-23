@@ -32,13 +32,21 @@ const drawerCode = codeOf(drawer);
 const card = read("../../components/editorial/recommendations-card.tsx");
 const cardCode = codeOf(card);
 const app = read("../../App.tsx");
+/**
+ * Route assertions run over STRIPPED App.tsx. Final Editorial Phase A
+ * rewrote the Editorial import comment to record which wave shipped which
+ * screen, and that prose legitimately contains the word "Revisions" — which
+ * must not be mistaken for a registered revision route. The negative check
+ * has always been about real code; it now looks only at real code.
+ */
+const appCode = codeOf(app);
 const routeEntrance = read("../../lib/route-entrance.ts");
 
 // ─── D5: a drawer, not a route ───────────────────────────────────────────────
 
 test("2.1E adds NO route — the editor's URL is unchanged, so it can never remount", () => {
-  assert.doesNotMatch(app, /\/editorial\/posts\/:id\/:languageCode\/revisions/);
-  assert.doesNotMatch(app, /revisions/i, "no revision route may be registered");
+  assert.doesNotMatch(appCode, /\/editorial\/posts\/:id\/:languageCode\/revisions/);
+  assert.doesNotMatch(appCode, /revisions/i, "no revision route may be registered");
   // The wave must not have widened the entrance allowlist either.
   assert.doesNotMatch(routeEntrance, /revision/i);
   assert.doesNotMatch(routeEntrance, /recommend/i);

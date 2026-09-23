@@ -16,10 +16,6 @@ import test from "node:test";
 
 const page = readFileSync(new URL("./WebsiteSettingsLanguagesPage.tsx", import.meta.url), "utf8");
 const app = readFileSync(new URL("../../../App.tsx", import.meta.url), "utf8");
-const placeholders = readFileSync(
-  new URL("../../editorial/EditorialPlaceholderPages.tsx", import.meta.url),
-  "utf8",
-);
 const nav = readFileSync(new URL("../../../components/layout/nav-config.ts", import.meta.url), "utf8");
 
 /**
@@ -31,7 +27,6 @@ function stripComments(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 }
 const pageCode = stripComments(page);
-const placeholderCode = stripComments(placeholders);
 
 // ─── RBAC / access ───────────────────────────────────────────────────────────
 
@@ -272,31 +267,22 @@ test("the table scrolls horizontally and the dialog is width-constrained on narr
 
 // ─── Wave 2.1A regression ────────────────────────────────────────────────────
 
-test("the Website Links placeholder is exactly as Wave 2.1A left it", () => {
-  assert.match(placeholders, /export function WebsiteSettingsLinksPage\(\) \{\n {2}return \(\n {4}<SettingsPlaceholder\n {6}heading="Links"\n {6}description="Global public-website links referenced by Editorial content\."\n {6}body="The website links form is delivered in a later Wave 2\.1 sub-wave\. This page currently exists only to confirm navigation, routing and permissions\."\n {4}\/>\n {2}\);\n\}/);
-  assert.match(app, /<Route path="\/website\/settings\/links">\{guarded\(ROUTE_PERMS\.websiteSettings, <WebsiteSettingsLinksPage \/>\)\}<\/Route>/);
-});
 
 /**
- * Wave 2.1C retired the Topics and Authors placeholders and Wave 2.1D the
- * four Posts ones (all became real screens under pages/editorial/). This
- * assertion tracks the placeholders that REMAIN — Wave 2.1B's own screen and
- * copy are unaffected either way.
+ * Waves 2.1C/2.1D retired the Topics, Authors and Posts placeholders, and
+ * Final Editorial Phase A retired the last two — Placements and Links. There
+ * is no placeholder module left to guard, so what remains to assert is that
+ * Links became a real page and that Wave 2.1B's own screen is unaffected.
  */
-const REMAINING_PLACEHOLDERS = [
-  "EditorialPlacementsPage",
-  "WebsiteSettingsLinksPage",
-];
-
-test("no other Wave 2.1A placeholder was touched", () => {
-  for (const component of REMAINING_PLACEHOLDERS) {
-    assert.match(placeholders, new RegExp(`export function ${component}\\(`));
-  }
-  assert.equal(
-    (placeholders.match(/delivered in a later Wave 2\.1 sub-wave/g) ?? []).length,
-    REMAINING_PLACEHOLDERS.length,
+test("Website Settings \u2192 Links is a real page, routed and guarded exactly as before", () => {
+  assert.match(
+    app,
+    /import WebsiteSettingsLinksPage from "@\/pages\/website\/settings\/WebsiteSettingsLinksPage";/,
   );
+  assert.match(app, /<Route path="\/website\/settings\/links">\{guarded\(ROUTE_PERMS\.websiteSettings, <WebsiteSettingsLinksPage \/>\)\}<\/Route>/);
+  assert.doesNotMatch(app, /EditorialPlaceholderPages/);
 });
+
 
 test("navigation is untouched — Editorial, News, Performance and Backgrounds entries are unchanged", () => {
   assert.match(nav, /\/website\/settings\/languages/);

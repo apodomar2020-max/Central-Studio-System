@@ -47,15 +47,13 @@ import WebsiteNewsListPage from "@/pages/website/news/WebsiteNewsListPage";
 import WebsiteNewsEditorPage from "@/pages/website/news/WebsiteNewsEditorPage";
 import WebsitePerformanceListPage from "@/pages/website/performances/WebsitePerformanceListPage";
 import WebsitePerformanceEditorPage from "@/pages/website/performances/WebsitePerformanceEditorPage";
-// Unified Editorial CMS. Only Placements and Links are still Wave 2.1A
-// placeholders proving nav/routing/RBAC; both land in later sub-waves.
-// Website → Configuration → Languages is real as of Wave 2.1B, Topics and
-// Authors as of Wave 2.1C, and Posts + the post editor as of Wave 2.1D —
-// each with its own module below.
-import {
-  EditorialPlacementsPage,
-  WebsiteSettingsLinksPage,
-} from "@/pages/editorial/EditorialPlaceholderPages";
+// Unified Editorial CMS. NO placeholders remain: Languages shipped in Wave
+// 2.1B, Topics and Authors in 2.1C, Posts + the post editor in 2.1D,
+// Revisions/Restore and Recommended reading in 2.1E, and Placements +
+// Website Settings → Links in Final Editorial Phase A. Each screen has its
+// own module below; the shared placeholder module has been retired.
+import EditorialPlacementsPage from "@/pages/editorial/EditorialPlacementsPage";
+import WebsiteSettingsLinksPage from "@/pages/website/settings/WebsiteSettingsLinksPage";
 import EditorialPostsListPage from "@/pages/editorial/EditorialPostsListPage";
 import EditorialPostCreatePage from "@/pages/editorial/EditorialPostCreatePage";
 import EditorialPostDetailPage from "@/pages/editorial/EditorialPostDetailPage";
@@ -282,7 +280,7 @@ function ProtectedRouter() {
         <Route path="/website/performances/new">{guarded(ROUTE_PERMS.websitePerformance, <WebsitePerformanceEditorPage />)}</Route>
         <Route path="/website/performances/:slug/edit">{guarded(ROUTE_PERMS.websitePerformance, <WebsitePerformanceEditorPage />)}</Route>
         <Route path="/website/performances">{guarded(ROUTE_PERMS.websitePerformance, <WebsitePerformanceListPage />)}</Route>
-        {/* Unified Editorial CMS. Posts + editor are real (Wave 2.1D); Placements and Links remain placeholders. */}
+        {/* Unified Editorial CMS. Posts + editor are real (Wave 2.1D); Placements and Links became real in Final Editorial, Phase A — no placeholders remain. */}
         <Route path="/editorial/posts/new">{guarded(ROUTE_PERMS.editorialPosts, <EditorialPostCreatePage />)}</Route>
         <Route path="/editorial/posts/:id/:languageCode">{guarded(ROUTE_PERMS.editorialPosts, <EditorialPostTranslationPage />)}</Route>
         <Route path="/editorial/posts/:id">{guarded(ROUTE_PERMS.editorialPosts, <EditorialPostDetailPage />)}</Route>

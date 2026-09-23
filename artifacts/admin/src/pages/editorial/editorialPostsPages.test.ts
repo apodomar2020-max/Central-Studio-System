@@ -397,9 +397,17 @@ test("the body editor is per-type cards, never a raw JSON textarea", () => {
   }
 });
 
-test("only the four current block types are offered — Quote is deferred (D1)", () => {
-  assert.doesNotMatch(bodyEditorCode, /"quote"|Add quote/i);
-  assert.match(bodyEditor, /adding a fifth block type/i);
+test("all FIVE block types are offered — Quote shipped in Final Editorial Phase A", () => {
+  // Wave 2.1D deferred Quote and this test pinned its absence. Phase A
+  // implemented it through the documented extension path, so the assertion
+  // inverts: Quote must now be a real, editable card, and the file must still
+  // document how a SIXTH type would be added.
+  assert.match(bodyEditorCode, /case "quote":/);
+  assert.match(bodyEditorCode, /input-block-attribution-\$\{index\}/);
+  assert.match(bodyEditorCode, /input-block-attribution-role-\$\{index\}/);
+  assert.match(bodyEditor, /A SIXTH type/i);
+  // Quote reuses existing primitives; it introduced no new design pattern.
+  assert.doesNotMatch(bodyEditorCode, /dangerouslySetInnerHTML/);
 });
 
 test("insert controls disable at the real caps", () => {
