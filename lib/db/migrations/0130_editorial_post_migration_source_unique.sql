@@ -1,0 +1,83 @@
+-- Final Editorial — Phase B: migration provenance uniqueness
+--
+-- WHAT THIS DOES
+--   Adds ONE partial unique index to editorial_posts:
+--
+--     UNIQUE (migration_source_table, migration_source_id)
+--       WHERE migration_source_table IS NOT NULL
+--
+--   No column is added, dropped or rewritten. No data is touched.
+--
+-- WHY IT IS NEEDED
+--   editorial_posts.migration_source_table / migration_source_id were
+--   created by 0126_editorial_foundation.sql and documented there as
+--   "inert provenance placeholders for a LATER wave and are written by
+--   nothing here". Phase B IS that later wave: the News → Editorial
+--   migration uses that pair as its IDENTITY KEY — "have I already
+--   migrated this legacy row?" is answered by a lookup on it, and nothing
+--   else (never the title, never a similarity score, never an ordinal).
+--
+--   Without this index, "a legacy row is migrated at most once" is a
+--   check-then-insert convention in application code, which two
+--   overlapping runs (or one run and one retry) can defeat. With it, a
+--   duplicate import is impossible at the DATABASE level, which is the
+--   only place an idempotency claim can actually be guaranteed.
+--
+-- WHY PARTIAL
+--   The overwhelming majority of editorial_posts rows are hand-authored
+--   and have migration_source_table IS NULL. In PostgreSQL every NULL is
+--   distinct, so a plain unique index would technically permit them — but
+--   it would also index every one of them for no reason. The WHERE clause
+--   states the intent exactly ("this constraint is about migrated rows")
+--   and keeps the index limited to them.
+--
+--   The partial-unique-index pattern is already established in this repo:
+--   editorial_languages_single_default (editorialLanguages.ts),
+--   0050_ballet_applications_active_uniqueness.sql, 0017_auth_providers.sql.
+--
+-- EXISTING-DATA IMPACT
+--   NONE, and this is verifiable rather than assumed: no code anywhere on
+--   the Phase A baseline writes either column (0126 says so, and a repo
+--   search for `migrationSourceTable` finds only the schema declaration).
+--   Every existing row therefore has migration_source_table IS NULL and is
+--   excluded by the WHERE clause, so the index is created over ZERO rows
+--   and CANNOT fail on existing data.
+--
+--   Should a hand-edited row somehow carry a duplicated provenance pair,
+--   CREATE UNIQUE INDEX would fail loudly and the deploy would stop — the
+--   correct outcome, because a duplicated provenance pair means the
+--   migration's identity key is already corrupt and must be investigated
+--   before anything is imported on top of it.
+--
+-- COLLISION BEHAVIOUR AT RUNTIME
+--   A second INSERT with the same (migration_source_table,
+--   migration_source_id) raises SQLSTATE 23505. The migration tool's
+--   provenance probe means it should never get that far; the index is the
+--   backstop that turns a lost race into a refused write instead of a
+--   duplicated Post. The tool treats 23505 on this index as a hard error
+--   for that one source row and continues to fail closed.
+--
+-- WHY NOT A CHECK OR A TRIGGER
+--   Uniqueness across rows is not expressible as a CHECK, and a trigger
+--   would reintroduce exactly the check-then-insert race this index
+--   exists to remove.
+--
+-- ROLLBACK
+--   DROP INDEX IF EXISTS "editorial_posts_migration_source_unique";
+--   Complete and safe: nothing reads the index by name, no constraint or
+--   foreign key depends on it, and dropping it restores the pre-Phase-B
+--   behaviour exactly (the columns and their data stay). No data is lost
+--   by a rollback.
+--
+-- LOCKING
+--   Plain CREATE UNIQUE INDEX (not CONCURRENTLY) because the predicate
+--   matches zero rows today, so the build is instantaneous; and because
+--   CONCURRENTLY cannot run inside the transaction the migration runner
+--   uses. If a future environment ever holds many migrated rows, rebuild
+--   CONCURRENTLY out-of-band instead of changing this file.
+--
+-- IDEMPOTENT: IF NOT EXISTS, matching 0127/0128.
+
+CREATE UNIQUE INDEX IF NOT EXISTS "editorial_posts_migration_source_unique"
+  ON "editorial_posts" ("migration_source_table", "migration_source_id")
+  WHERE "migration_source_table" IS NOT NULL;

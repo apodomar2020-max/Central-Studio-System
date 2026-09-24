@@ -904,6 +904,20 @@
       "when": 1788019200009,
       "tag": "0128_editorial_translation_listing_image",
       "breakpoints": true
+    },
+    {
+      "idx": 130,
+      "version": "7",
+      "when": 1788019200010,
+      "tag": "0129_editorial_translation_gallery",
+      "breakpoints": true
+    },
+    {
+      "idx": 131,
+      "version": "7",
+      "when": 1788019200011,
+      "tag": "0130_editorial_post_migration_source_unique",
+      "breakpoints": true
     }
   ]
 }

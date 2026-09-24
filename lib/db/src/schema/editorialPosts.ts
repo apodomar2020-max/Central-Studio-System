@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { check, index, integer, pgTable, serial, text, timestamp } from "drizzle-orm/pg-core";
+import { check, index, integer, pgTable, serial, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { z } from "zod/v4";
 import { systemUsersTable } from "./systemUsers";
 import { editorialAuthorsTable } from "./editorialAuthors";
@@ -102,6 +102,35 @@ export type EditorialBodyBlock =
 
 export type EditorialBody = { blocks: EditorialBodyBlock[] };
 
+/**
+ * ONE item in a translation's gallery — Final Editorial, Phase B
+ * (migration 0129).
+ *
+ * `alt` is REQUIRED, exactly as it is on the `image` BODY block: a gallery
+ * is a set of pictures a reader is meant to look at, and a picture with no
+ * alt text is invisible to a reader who cannot see it. The requirement is
+ * enforced at the schema level on every write, not only at publish, which
+ * is the same posture editorialBody.ts takes for image blocks.
+ *
+ * There is deliberately NO `caption`. The legacy source this capability
+ * exists to preserve — website_news_posts.gallery_images — is a bare
+ * text[] of URLs carrying no caption and no alt of any kind, so a caption
+ * field would be one that no existing content can ever fill and that no
+ * migration can ever populate honestly. Adding it later would be purely
+ * additive; it is not invented speculatively here.
+ */
+export type EditorialGalleryItem = { url: string; alt: string };
+
+/**
+ * A translation's gallery: an ORDERED list of media items. The array order
+ * IS the display order — there is no separate position column that could
+ * disagree with itself, for the same reason `body.blocks` has none.
+ */
+export type EditorialGallery = { items: EditorialGalleryItem[] };
+
+/** The stored value of an empty gallery, and migration 0129's column DEFAULT. */
+export const EMPTY_EDITORIAL_GALLERY: EditorialGallery = { items: [] };
+
 export type EditorialAuthorSnapshot = {
   name: string;
   role: string;
@@ -129,6 +158,25 @@ export const editorialPostsTable = pgTable("editorial_posts", {
   check("editorial_posts_channel_valid", sql`${table.channel} IN ('news', 'experience')`),
   index("editorial_posts_channel_idx").on(table.channel),
   index("editorial_posts_author_idx").on(table.authorId),
+  /**
+   * A legacy row is migrated AT MOST ONCE — migration 0130.
+   *
+   * (migration_source_table, migration_source_id) is the News → Editorial
+   * migration's IDENTITY KEY: "have I already migrated this legacy row?"
+   * is answered by a lookup on this pair and nothing else — never a title,
+   * never a similarity score, never an ordinal. Without this index that
+   * guarantee is only a check-then-insert convention in application code,
+   * which two overlapping runs (or one run and one retry) can defeat.
+   *
+   * PARTIAL because the overwhelming majority of rows are hand-authored
+   * and carry NULL provenance: the predicate states the intent exactly
+   * ("this constraint is about migrated rows") and keeps the index off
+   * every row it does not concern. Same pattern as
+   * editorial_languages_single_default.
+   */
+  uniqueIndex("editorial_posts_migration_source_unique")
+    .on(table.migrationSourceTable, table.migrationSourceId)
+    .where(sql`${table.migrationSourceTable} IS NOT NULL`),
 ]);
 
 export type EditorialPost = typeof editorialPostsTable.$inferSelect;
