@@ -2379,3 +2379,394 @@ test("#24-policy (J): an INVALID shared-field edit still FAILS on that same post
   assert.notEqual(rows[0].author_id, biolessAuthor, "the byline did not move");
   assert.equal(await revisionCount(postId), revisionsBefore, "no orphan revision from either rejection");
 });
+
+// ─── Final Editorial, Phase A: Quote block ──────────────────────────────────
+
+/**
+ * Quote is the FIFTH body block type. These assert it at the API layer —
+ * the routes re-validate every body through editorialBody.ts, so a 400 here
+ * proves the domain schema, the OpenAPI shape and the generated zod all
+ * agree, which is the whole point of the coordinated regeneration.
+ */
+
+const QUOTE_URL = (postId: number) => `/admin/editorial/posts/${postId}/translations/en`;
+
+async function patchBody(postId: number, blocks: unknown[]): Promise<Response> {
+  return asSuper(QUOTE_URL(postId), { method: "PATCH", body: JSON.stringify({ body: { blocks } }) });
+}
+
+test("quote: a full quote block with both attribution fields is accepted and stored verbatim", async () => {
+  const postId = await newPost({ authorId: await newAuthor("news") });
+  await newTranslation(postId, enId);
+
+  const block = {
+    type: "quote",
+    text: "The stage remembers every rehearsal.",
+    attribution: "Nadia Farouk",
+    attributionRole: "Artistic Director",
+  };
+  const res = await patchBody(postId, [block]);
+  assert.equal(res.status, 200, JSON.stringify(await json(res.clone())));
+
+  const stored = (await translationRow(postId, enId)).body.blocks[0];
+  assert.deepEqual(stored, block, "the block round-trips unchanged");
+});
+
+test("quote: attribution and attributionRole are INDEPENDENTLY optional", async () => {
+  const postId = await newPost({ authorId: await newAuthor("news") });
+  await newTranslation(postId, enId);
+
+  for (const block of [
+    { type: "quote", text: "A pull-quote with no speaker." },
+    { type: "quote", text: "Named, but no role.", attribution: "Nadia Farouk" },
+    { type: "quote", text: "A role, but no name.", attributionRole: "Artistic Director" },
+  ]) {
+    const res = await patchBody(postId, [block]);
+    assert.equal(res.status, 200, `${JSON.stringify(block)} must be accepted`);
+    assert.deepEqual((await translationRow(postId, enId)).body.blocks[0], block);
+  }
+});
+
+test("quote: text is REQUIRED — empty and missing are both rejected", async () => {
+  const postId = await newPost({ authorId: await newAuthor("news") });
+  await newTranslation(postId, enId);
+
+  for (const block of [{ type: "quote", text: "" }, { type: "quote", attribution: "X" }]) {
+    const res = await patchBody(postId, [block]);
+    assert.equal(res.status, 400, `${JSON.stringify(block)} must be rejected`);
+  }
+  // The stored body is untouched by either rejection.
+  assert.deepEqual((await translationRow(postId, enId)).body, READY_BODY);
+});
+
+test("quote: text over 1000 chars and attributions over 200 chars are rejected", async () => {
+  const postId = await newPost({ authorId: await newAuthor("news") });
+  await newTranslation(postId, enId);
+
+  assert.equal((await patchBody(postId, [{ type: "quote", text: "q".repeat(1001) }])).status, 400);
+  assert.equal((await patchBody(postId, [{ type: "quote", text: "ok" }])).status, 200, "1000 is the cap, not 0");
+  assert.equal((await patchBody(postId, [{ type: "quote", text: "q".repeat(1000) }])).status, 200, "exactly at the cap is fine");
+  assert.equal(
+    (await patchBody(postId, [{ type: "quote", text: "ok", attribution: "a".repeat(201) }])).status,
+    400,
+  );
+  assert.equal(
+    (await patchBody(postId, [{ type: "quote", text: "ok", attributionRole: "r".repeat(201) }])).status,
+    400,
+  );
+});
+
+test("quote: an unknown key on a quote block is STRIPPED, exactly like every other block type", async () => {
+  const postId = await newPost({ authorId: await newAuthor("news") });
+  await newTranslation(postId, enId);
+  // zod objects are non-strict here, so an unknown key is dropped rather than
+  // rejected — the SAME behaviour the four pre-existing block types have had
+  // since Wave 1. Asserted rather than assumed, because the legacy News data
+  // uses `quote.author`, and this pins that such a key can never SURVIVE into
+  // storage and be mistaken later for a real field.
+  const res = await patchBody(postId, [{ type: "quote", text: "ok", author: "legacy key" }]);
+  assert.equal(res.status, 200);
+  assert.deepEqual(
+    (await translationRow(postId, enId)).body.blocks[0],
+    { type: "quote", text: "ok" },
+    "the unknown key did not reach the column",
+  );
+});
+
+test("quote: a published translation can be published and edited with quote blocks, and bodyVersion is NOT bumped", async () => {
+  const postId = await newPost({ authorId: await newAuthor("news") });
+  await newTranslation(postId, enId, {
+    body: { blocks: [{ type: "quote", text: "Opening night was electric.", attribution: "Nadia" }] },
+  });
+  const publish = await asSuper(`/admin/editorial/posts/${postId}/translations/en/publish`, { method: "POST" });
+  assert.equal(publish.status, 200, JSON.stringify(await json(publish.clone())));
+
+  const { rows } = await pool.query(
+    `SELECT body_version FROM editorial_post_translations WHERE post_id = $1 AND language_id = $2`,
+    [postId, enId],
+  );
+  assert.equal(rows[0].body_version, 1, "Quote is purely additive — no body_version bump");
+});
+
+test("quote: a quote edit on a PUBLISHED translation snapshots the prior quote and restores it exactly", async () => {
+  const postId = await newPost({ authorId: await newAuthor("news") });
+  const original = { type: "quote", text: "Before.", attribution: "Nadia", attributionRole: "AD" };
+  await newTranslation(postId, enId, {
+    status: "published", publishedAt: "2030-01-01T00:00:00Z", body: { blocks: [original] },
+  });
+
+  assert.equal((await patchBody(postId, [{ type: "quote", text: "After." }])).status, 200);
+  assert.deepEqual((await translationRow(postId, enId)).body.blocks[0], { type: "quote", text: "After." });
+
+  const revs = await revisionRows(postId);
+  assert.equal(revs.length, 1);
+  assert.deepEqual(revs[0].snapshot.body.blocks[0], original, "the full quote is in the snapshot");
+
+  const list = await json(await asSuper(`/admin/editorial/posts/${postId}/revisions?languageCode=en`));
+  const restore = await asSuper(`/admin/editorial/posts/${postId}/revisions/${list[0].id}/restore`, { method: "POST" });
+  assert.equal(restore.status, 200, JSON.stringify(await json(restore.clone())));
+  assert.deepEqual(
+    (await translationRow(postId, enId)).body.blocks[0],
+    original,
+    "restore brings back text AND both attribution fields",
+  );
+});
+
+// ─── Final Editorial, Phase A: listingImageUrl ──────────────────────────────
+
+async function listingImageOf(postId: number, languageId: number): Promise<string | null> {
+  const { rows } = await pool.query(
+    `SELECT listing_image_url FROM editorial_post_translations WHERE post_id = $1 AND language_id = $2`,
+    [postId, languageId],
+  );
+  return rows[0].listing_image_url;
+}
+
+test("listingImageUrl: omitted on create leaves NULL, and every pre-existing translation stays valid", async () => {
+  const postId = await newPost({ authorId: await newAuthor("news") });
+  // A translation created through the API without the field at all.
+  const res = await asSuper(`/admin/editorial/posts/${postId}/translations`, {
+    method: "POST",
+    body: JSON.stringify({ languageCode: "en", title: "No listing image", body: READY_BODY }),
+  });
+  assert.equal(res.status, 201, JSON.stringify(await json(res.clone())));
+  assert.equal(await listingImageOf(postId, enId), null, "absent means NULL, never the feature image");
+  assert.equal((await json(await asSuper(`/admin/editorial/posts/${postId}`))).translations[0].listingImageUrl, null);
+});
+
+test("listingImageUrl: a valid allowlisted https URL is stored and returned", async () => {
+  const LISTING = "https://images.unsplash.com/photo-editorial-listing-card.jpg";
+  const postId = await newPost({ authorId: await newAuthor("news") });
+  await newTranslation(postId, enId);
+
+  const res = await asSuper(QUOTE_URL(postId), {
+    method: "PATCH", body: JSON.stringify({ listingImageUrl: LISTING }),
+  });
+  assert.equal(res.status, 200, JSON.stringify(await json(res.clone())));
+  assert.equal((await json(res.clone())).listingImageUrl, LISTING);
+  assert.equal(await listingImageOf(postId, enId), LISTING);
+});
+
+test("listingImageUrl: goes through the SAME media trust boundary — http and non-allowlisted hosts are rejected", async () => {
+  const postId = await newPost({ authorId: await newAuthor("news") });
+  await newTranslation(postId, enId);
+
+  for (const bad of ["http://images.unsplash.com/x.jpg", "https://evil.example.com/x.jpg"]) {
+    const res = await asSuper(QUOTE_URL(postId), {
+      method: "PATCH", body: JSON.stringify({ listingImageUrl: bad }),
+    });
+    assert.equal(res.status, 400, `${bad} must be rejected`);
+  }
+  assert.equal(await listingImageOf(postId, enId), null, "no rejected value was stored");
+});
+
+test("listingImageUrl: is genuinely DISTINCT from the post's feature image — never aliased, never a fallback", async () => {
+  const FEATURE = "https://images.unsplash.com/photo-editorial-test.jpg";
+  const LISTING = "https://images.unsplash.com/photo-editorial-listing-card.jpg";
+  const postId = await newPost({ authorId: await newAuthor("news"), featureImageUrl: FEATURE });
+  await newTranslation(postId, enId);
+
+  assert.equal(
+    (await asSuper(QUOTE_URL(postId), { method: "PATCH", body: JSON.stringify({ listingImageUrl: LISTING }) })).status,
+    200,
+  );
+
+  const detail = await json(await asSuper(`/admin/editorial/posts/${postId}`));
+  assert.equal(detail.post.featureImageUrl, FEATURE);
+  assert.equal(detail.translations[0].listingImageUrl, LISTING);
+  assert.notEqual(detail.translations[0].listingImageUrl, detail.post.featureImageUrl, "the two differ and both survive");
+
+  // Clearing the listing image must leave it NULL — it must NOT silently
+  // become the feature image at rest.
+  assert.equal(
+    (await asSuper(QUOTE_URL(postId), { method: "PATCH", body: JSON.stringify({ listingImageUrl: null }) })).status,
+    200,
+  );
+  assert.equal(await listingImageOf(postId, enId), null, "cleared means NULL, not the feature image");
+  const after = await json(await asSuper(`/admin/editorial/posts/${postId}`));
+  assert.equal(after.post.featureImageUrl, FEATURE, "and the feature image is untouched by either write");
+});
+
+test("listingImageUrl: it is TRANSLATION-scoped — setting it in one language does not reach a sibling", async () => {
+  const LISTING = "https://images.unsplash.com/photo-editorial-listing-card.jpg";
+  const postId = await newPost({ authorId: await newAuthor("news") });
+  await newTranslation(postId, enId);
+  await newTranslation(postId, arId);
+
+  assert.equal(
+    (await asSuper(QUOTE_URL(postId), { method: "PATCH", body: JSON.stringify({ listingImageUrl: LISTING }) })).status,
+    200,
+  );
+  assert.equal(await listingImageOf(postId, enId), LISTING);
+  assert.equal(await listingImageOf(postId, arId), null, "the Arabic translation is untouched");
+});
+
+test("listingImageUrl: survives a revision snapshot and comes back exactly on restore", async () => {
+  const FIRST = "https://images.unsplash.com/photo-editorial-listing-card.jpg";
+  const SECOND = "https://images.unsplash.com/photo-editorial-test-second.jpg";
+  const postId = await newPost({ authorId: await newAuthor("news") });
+  await newTranslation(postId, enId, { status: "published", publishedAt: "2030-01-01T00:00:00Z" });
+
+  // Set it while published (revision 1 records the pre-change NULL) …
+  assert.equal(
+    (await asSuper(QUOTE_URL(postId), { method: "PATCH", body: JSON.stringify({ listingImageUrl: FIRST }) })).status,
+    200,
+  );
+  // … then change it (revision 2 records FIRST).
+  assert.equal(
+    (await asSuper(QUOTE_URL(postId), { method: "PATCH", body: JSON.stringify({ listingImageUrl: SECOND }) })).status,
+    200,
+  );
+
+  const revs = await revisionRows(postId);
+  assert.equal(revs.length, 2);
+  assert.equal(revs[0].snapshot.listingImageUrl, null, "the first snapshot recorded the prior NULL");
+  assert.equal(revs[1].snapshot.listingImageUrl, FIRST, "the second recorded the prior value");
+
+  // The LIST endpoint returns summaries without the snapshot, so the
+  // revision holding FIRST is identified by its revision_number from the row
+  // the assertions above already read.
+  const { rows: targetRows } = await pool.query(
+    `SELECT id FROM editorial_post_revisions WHERE post_id = $1 AND revision_number = $2`,
+    [postId, revs[1].revision_number],
+  );
+  const targetId = targetRows[0].id;
+  assert.equal(
+    (await asSuper(`/admin/editorial/posts/${postId}/revisions/${targetId}/restore`, { method: "POST" })).status,
+    200,
+  );
+  assert.equal(await listingImageOf(postId, enId), FIRST, "restore brought the listing image back");
+});
+
+test("listingImageUrl: a revision written BEFORE this field existed restores it as NULL, not as a crash", async () => {
+  const LISTING = "https://images.unsplash.com/photo-editorial-listing-card.jpg";
+  const postId = await newPost({ authorId: await newAuthor("news") });
+  const translationId = await newTranslation(postId, enId, {
+    status: "published", publishedAt: "2030-01-01T00:00:00Z",
+  });
+  assert.equal(
+    (await asSuper(QUOTE_URL(postId), { method: "PATCH", body: JSON.stringify({ listingImageUrl: LISTING }) })).status,
+    200,
+  );
+
+  // Simulate a pre-migration snapshot by REMOVING the key entirely, which is
+  // exactly the physical shape of every revision written before 0128.
+  await pool.query(
+    `UPDATE editorial_post_revisions SET snapshot = snapshot - 'listingImageUrl' WHERE post_id = $1`,
+    [postId],
+  );
+  const list = await json(await asSuper(`/admin/editorial/posts/${postId}/revisions?languageCode=en`));
+  assert.ok(list.length > 0);
+  assert.equal(list[0].translationId, translationId);
+
+  const restore = await asSuper(`/admin/editorial/posts/${postId}/revisions/${list[0].id}/restore`, { method: "POST" });
+  assert.equal(restore.status, 200, "a legacy snapshot still restores");
+  assert.equal(await listingImageOf(postId, enId), null, "an absent key means NULL, which is what it held then");
+});
+
+// ─── Final Editorial, Phase A: regression for the union widening ────────────
+
+/**
+ * `editorialBodyBlockSchema` is a discriminated union, and Phase A added a
+ * FIFTH member to it. Widening a union is the kind of change that can quietly
+ * alter how the four PRE-EXISTING members validate, so this pins that they
+ * are byte-for-byte unaffected, and that an unknown `type` is still refused
+ * rather than falling through to the new member.
+ */
+test("body regression: all FOUR pre-existing block types still round-trip unchanged", async () => {
+  const postId = await newPost({ authorId: await newAuthor("news") });
+  await newTranslation(postId, enId);
+
+  const blocks = [
+    { type: "paragraph", text: "Opening night was electric." },
+    { type: "heading", level: 2, text: "The second act" },
+    {
+      type: "image",
+      url: "https://images.unsplash.com/photo-editorial-test.jpg",
+      alt: "Dancers on a lit stage",
+      caption: "Curtain call",
+    },
+    { type: "bulleted-list", items: ["First", "Second"] },
+  ];
+  const res = await patchBody(postId, blocks);
+  assert.equal(res.status, 200, JSON.stringify(await json(res.clone())));
+  assert.deepEqual((await translationRow(postId, enId)).body.blocks, blocks);
+});
+
+test("body regression: an UNKNOWN block type is still rejected, and quote did not become a catch-all", async () => {
+  const postId = await newPost({ authorId: await newAuthor("news") });
+  await newTranslation(postId, enId);
+
+  for (const block of [
+    { type: "pull-quote", text: "A type that does not exist." },
+    { type: "quotation", text: "Nor this one." },
+    { type: "embed", url: "https://example.com" },
+  ]) {
+    assert.equal((await patchBody(postId, [block])).status, 400, `${JSON.stringify(block)} must be rejected`);
+  }
+  assert.deepEqual((await translationRow(postId, enId)).body, READY_BODY, "nothing was stored");
+});
+
+test("body regression: a quote can sit BESIDE the other four types in one body, in order", async () => {
+  const postId = await newPost({ authorId: await newAuthor("news") });
+  await newTranslation(postId, enId);
+
+  const blocks = [
+    { type: "heading", level: 2, text: "The second act" },
+    { type: "quote", text: "The stage remembers.", attribution: "Nadia Farouk" },
+    { type: "paragraph", text: "And then the lights went down." },
+  ];
+  assert.equal((await patchBody(postId, blocks)).status, 200);
+  const stored = (await translationRow(postId, enId)).body.blocks;
+  assert.deepEqual(stored, blocks, "order and contents are preserved exactly");
+});
+
+/**
+ * The two Placements behaviours this work depends on but did NOT change. The
+ * Admin screen is built directly on top of them, so a test proving they still
+ * behave identically after Phase A is the regression proof that no backend
+ * expansion happened. (assertPlacementValid itself already has dedicated
+ * coverage above; this asserts the pair the new UI leans on.)
+ */
+test("placements regression: the cross-channel rejection and (channel, key) scoping are unchanged by Phase A", async () => {
+  const key = `phase-a-${RUN}`;
+  const newsPost = await newPost({ authorId: await newAuthor("news") });
+  const expPost = await newPost({ channel: "experience", authorId: await newAuthor("experience") });
+
+  // A cross-channel post is still refused, with the server's own wording.
+  const bad = await asSuper(`/admin/editorial/placements?key=${key}`, {
+    method: "PUT",
+    body: JSON.stringify({ channel: "news", items: [{ postId: expPost }] }),
+  });
+  assert.equal(bad.status, 400);
+
+  // The SAME key still addresses two independent slots.
+  for (const [channel, postId] of [["news", newsPost], ["experience", expPost]] as const) {
+    assert.equal(
+      (await asSuper(`/admin/editorial/placements?key=${key}`, {
+        method: "PUT",
+        body: JSON.stringify({ channel, items: [{ postId }] }),
+      })).status,
+      200,
+    );
+  }
+  const news = await json(await asSuper(`/admin/editorial/placements?channel=news&key=${key}`));
+  const experience = await json(await asSuper(`/admin/editorial/placements?channel=experience&key=${key}`));
+  assert.deepEqual(news.map((row: { postId: number }) => row.postId), [newsPost]);
+  assert.deepEqual(experience.map((row: { postId: number }) => row.postId), [expPost]);
+
+  // And `position` is still written from array index when it is omitted —
+  // the exact rule the Admin payload relies on by NOT sending a position.
+  const ordered = await newPost({ authorId: await newAuthor("news") });
+  const res = await asSuper(`/admin/editorial/placements?key=${key}`, {
+    method: "PUT",
+    body: JSON.stringify({ channel: "news", items: [{ postId: ordered }, { postId: newsPost }] }),
+  });
+  assert.equal(res.status, 200);
+  const { rows } = await pool.query(
+    `SELECT post_id, position FROM editorial_placements WHERE channel = 'news' AND key = $1 ORDER BY position`,
+    [key],
+  );
+  assert.deepEqual(rows.map((row) => Number(row.position)), [0, 1]);
+  assert.deepEqual(rows.map((row) => row.post_id), [ordered, newsPost]);
+});

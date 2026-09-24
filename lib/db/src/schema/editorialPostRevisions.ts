@@ -27,7 +27,7 @@ import {
  *   TRANSLATION-SCOPED  (`translation_id` NOT NULL)
  *     The prior state of ONE translation's own prose and lifecycle —
  *     title, slug, deck, contextLabel, body, bodyVersion,
- *     featureImageAlt, seo*, ogImageUrl, status, publishedAt,
+ *     featureImageAlt, listingImageUrl, seo*, ogImageUrl, status, publishedAt,
  *     authorSnapshot. Event types: 'published_edit', 'restore',
  *     'translation_status_change'.
  *
@@ -121,6 +121,15 @@ export type EditorialTranslationRevisionSnapshot = {
   body: EditorialBody;
   bodyVersion: number;
   featureImageAlt: string | null;
+  /**
+   * OPTIONAL, not `string | null` — Final Editorial, Phase A.
+   *
+   * Snapshots written before migration 0128 are stored jsonb and
+   * physically cannot carry this key, so the type has to admit its
+   * absence. Restore reads an absent key as NULL, which is exactly what
+   * the column held when such a snapshot was taken.
+   */
+  listingImageUrl?: string | null;
   authorSnapshot: EditorialAuthorSnapshot | null;
   readingTimeOverrideMinutes: number | null;
   seoTitle: string | null;

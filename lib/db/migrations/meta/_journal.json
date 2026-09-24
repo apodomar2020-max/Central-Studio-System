@@ -897,6 +897,13 @@
       "when": 1788019200008,
       "tag": "0127_editorial_placement_channel_scope",
       "breakpoints": true
+    },
+    {
+      "idx": 129,
+      "version": "7",
+      "when": 1788019200009,
+      "tag": "0128_editorial_translation_listing_image",
+      "breakpoints": true
     }
   ]
 }

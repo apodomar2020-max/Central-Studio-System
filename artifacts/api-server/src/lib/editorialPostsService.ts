@@ -524,6 +524,9 @@ export async function assertTranslationPublishReady(
   // trust boundary at publish time (not merely at write time).
   const mediaUrls = [post.featureImageUrl, ...collectBodyImageUrls({ blocks: blocks as never })];
   if (translation.ogImageUrl) mediaUrls.push(translation.ogImageUrl);
+  // The listing image is a real public-facing image, so it is re-validated
+  // at publish time exactly like the og image.
+  if (translation.listingImageUrl) mediaUrls.push(translation.listingImageUrl);
   const mediaError = await validateEditorialMediaUrls(mediaUrls, deps.media);
   if (mediaError) throw new EditorialRuleError(mediaError.error);
 }
@@ -634,6 +637,7 @@ export function buildTranslationRevisionSnapshot(
     body: translation.body,
     bodyVersion: translation.bodyVersion,
     featureImageAlt: translation.featureImageAlt,
+    listingImageUrl: translation.listingImageUrl,
     authorSnapshot: translation.authorSnapshot ?? null,
     readingTimeOverrideMinutes: translation.readingTimeOverrideMinutes,
     seoTitle: translation.seoTitle,
@@ -1098,6 +1102,7 @@ export interface CreateTranslationInput {
   deck?: string | null;
   contextLabel?: string | null;
   featureImageAlt?: string | null;
+  listingImageUrl?: string | null;
   body: { blocks: unknown[] };
   readingTimeOverrideMinutes?: number | null;
   seoTitle?: string | null;
@@ -1162,6 +1167,7 @@ export async function createTranslation(
         deck: input.deck ?? null,
         contextLabel: input.contextLabel ?? null,
         featureImageAlt: input.featureImageAlt ?? null,
+        listingImageUrl: input.listingImageUrl ?? null,
         body: input.body as never,
         readingTimeOverrideMinutes: input.readingTimeOverrideMinutes ?? null,
         seoTitle: input.seoTitle ?? null,
@@ -1189,6 +1195,7 @@ export interface UpdateTranslationInput {
   deck?: string | null;
   contextLabel?: string | null;
   featureImageAlt?: string | null;
+  listingImageUrl?: string | null;
   body?: { blocks: unknown[] };
   readingTimeOverrideMinutes?: number | null;
   seoTitle?: string | null;
@@ -1238,7 +1245,7 @@ export async function updateTranslation(
 
     const updates: Record<string, unknown> = { updatedByAdminId: ctx.actorAdminId };
     for (const key of [
-      "title", "deck", "contextLabel", "featureImageAlt", "body",
+      "title", "deck", "contextLabel", "featureImageAlt", "listingImageUrl", "body",
       "readingTimeOverrideMinutes", "seoTitle", "seoDescription", "ogImageUrl",
     ] as const) {
       if (input[key] !== undefined) updates[key] = input[key];
@@ -1349,6 +1356,9 @@ export async function restoreTranslationRevision(
         body: snapshot.body,
         bodyVersion: snapshot.bodyVersion,
         featureImageAlt: snapshot.featureImageAlt,
+        // `?? null` because a pre-0128 snapshot has no such key at all;
+        // absent means "the column was null when this was taken".
+        listingImageUrl: snapshot.listingImageUrl ?? null,
         authorSnapshot: snapshot.authorSnapshot,
         readingTimeOverrideMinutes: snapshot.readingTimeOverrideMinutes,
         seoTitle: snapshot.seoTitle,
@@ -1610,6 +1620,7 @@ export async function createPost(
         deck: input.translation.deck ?? null,
         contextLabel: input.translation.contextLabel ?? null,
         featureImageAlt: input.translation.featureImageAlt ?? null,
+        listingImageUrl: input.translation.listingImageUrl ?? null,
         body: input.translation.body as never,
         readingTimeOverrideMinutes: input.translation.readingTimeOverrideMinutes ?? null,
         seoTitle: input.translation.seoTitle ?? null,
@@ -1635,6 +1646,7 @@ export async function createPost(
 
 const TRANSLATION_AUDIT_FIELDS = [
   "languageId", "title", "slug", "deck", "contextLabel", "featureImageAlt",
+  "listingImageUrl",
   "bodyVersion", "status", "publishedAt", "readingTimeOverrideMinutes",
   "seoTitle", "seoDescription", "ogImageUrl",
 ] as const;

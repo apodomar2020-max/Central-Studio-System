@@ -63,6 +63,8 @@ import { type EditorialChannel } from "./editorialTopics";
  *       | { type: 'heading',       level: 2 | 3, text: string }
  *       | { type: 'image',         url: string, alt: string, caption?: string }
  *       | { type: 'bulleted-list', items: string[] }
+ *       | { type: 'quote', text: string, attribution?: string,
+ *                          attributionRole?: string }
  *     > }
  * No HTML, no Markdown. `body_version` is the block-schema version, so a
  * future shape change is detectable per row rather than guessed.
@@ -83,7 +85,20 @@ export type EditorialBodyBlock =
   | { type: "paragraph"; text: string }
   | { type: "heading"; level: 2 | 3; text: string }
   | { type: "image"; url: string; alt: string; caption?: string }
-  | { type: "bulleted-list"; items: string[] };
+  | { type: "bulleted-list"; items: string[] }
+  /**
+   * Quote — Final Editorial, Phase A. The fifth block type, added purely
+   * additively: `body_version` is NOT bumped, because every body written
+   * before this block existed remains valid under the widened union, and
+   * the column carries no DB-level shape constraint (the `body` jsonb is
+   * validated at the application layer only, by
+   * artifacts/api-server/src/lib/editorialBody.ts).
+   *
+   * `attribution` is WHO said it, `attributionRole` is what they are —
+   * both optional, because a pull-quote lifted from the article's own
+   * prose has no speaker.
+   */
+  | { type: "quote"; text: string; attribution?: string; attributionRole?: string };
 
 export type EditorialBody = { blocks: EditorialBodyBlock[] };
 

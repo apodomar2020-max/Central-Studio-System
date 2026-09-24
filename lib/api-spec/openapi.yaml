@@ -6313,12 +6313,27 @@ components:
           maxItems: 30
           items: { type: string, minLength: 1, maxLength: 300 }
 
+    # Quote — the fifth block type (Final Editorial, Phase A). Purely
+    # additive: no bodyVersion bump, and every body written before it
+    # remains valid. `text` is required; `attribution` (who said it) and
+    # `attributionRole` (what they are) are independent and optional,
+    # because a pull-quote from the article's own prose has no speaker.
+    EditorialQuoteBlock:
+      type: object
+      required: [type, text]
+      properties:
+        type: { type: string, enum: [quote] }
+        text: { type: string, minLength: 1, maxLength: 1000 }
+        attribution: { type: string, maxLength: 200 }
+        attributionRole: { type: string, maxLength: 200 }
+
     EditorialBodyBlock:
       oneOf:
         - { $ref: "#/components/schemas/EditorialParagraphBlock" }
         - { $ref: "#/components/schemas/EditorialHeadingBlock" }
         - { $ref: "#/components/schemas/EditorialImageBlock" }
         - { $ref: "#/components/schemas/EditorialBulletedListBlock" }
+        - { $ref: "#/components/schemas/EditorialQuoteBlock" }
 
     EditorialBody:
       type: object
@@ -6546,9 +6561,10 @@ components:
       description: One language's rendering of a post, with its own independent lifecycle.
       required:
         [id, postId, languageId, languageCode, channel, title, slug, deck,
-         contextLabel, featureImageAlt, body, bodyVersion, status,
-         publishedAt, readingTimeOverrideMinutes, seoTitle, seoDescription,
-         ogImageUrl, authorSnapshot, createdAt, updatedAt, updatedByAdminId]
+         contextLabel, featureImageAlt, listingImageUrl, body, bodyVersion,
+         status, publishedAt, readingTimeOverrideMinutes, seoTitle,
+         seoDescription, ogImageUrl, authorSnapshot, createdAt, updatedAt,
+         updatedByAdminId]
       properties:
         id: { type: integer }
         postId: { type: integer }
@@ -6571,6 +6587,14 @@ components:
         contextLabel: { type: ["string", "null"] }
         # Localized alt text for the POST's shared feature image.
         featureImageAlt: { type: ["string", "null"] }
+        # The image this translation shows in a LISTING (cards, index
+        # pages, related rails). A genuinely distinct stored value, never
+        # an alias of or fallback to the post's shared featureImageUrl:
+        # legacy News deliberately used a different crop here for most
+        # records, and collapsing the two would visibly change those
+        # cards. Translation-level for the same reason featureImageAlt is:
+        # it is about how THIS language's content appears in a list.
+        listingImageUrl: { type: ["string", "null"] }
         body: { $ref: "#/components/schemas/EditorialBody" }
         bodyVersion: { type: integer }
         status: { type: string, enum: [draft, published, archived] }
@@ -6624,6 +6648,9 @@ components:
         deck: { type: ["string", "null"] }
         contextLabel: { type: ["string", "null"] }
         featureImageAlt: { type: ["string", "null"] }
+        # Optional. Checked at the media trust boundary like every other
+        # Editorial image URL. Distinct from the post's featureImageUrl.
+        listingImageUrl: { type: ["string", "null"] }
         body: { $ref: "#/components/schemas/EditorialBody" }
         readingTimeOverrideMinutes: { type: ["integer", "null"] }
         seoTitle: { type: ["string", "null"] }
@@ -6642,6 +6669,7 @@ components:
         deck: { type: ["string", "null"] }
         contextLabel: { type: ["string", "null"] }
         featureImageAlt: { type: ["string", "null"] }
+        listingImageUrl: { type: ["string", "null"] }
         body: { $ref: "#/components/schemas/EditorialBody" }
         readingTimeOverrideMinutes: { type: ["integer", "null"] }
         seoTitle: { type: ["string", "null"] }
@@ -6823,6 +6851,12 @@ components:
         body: { $ref: "#/components/schemas/EditorialBody" }
         bodyVersion: { type: integer }
         featureImageAlt: { type: ["string", "null"] }
+        # DELIBERATELY NOT in `required`: revisions written before Phase A
+        # are stored jsonb and physically cannot carry this key. Marking it
+        # required would make every historical revision unparseable. Absent
+        # is read as null on restore, which is exactly what the column held
+        # when that snapshot was taken.
+        listingImageUrl: { type: ["string", "null"] }
         authorSnapshot:
           oneOf:
             - { $ref: "#/components/schemas/EditorialAuthorSnapshot" }

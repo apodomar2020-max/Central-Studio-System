@@ -12,6 +12,7 @@
  *   PATCH /admin/editorial/posts/:id           authorId, featureImageUrl
  *   PATCH /…/translations/:languageCode        title, slug, deck,
  *                                              contextLabel, featureImageAlt,
+ *                                              listingImageUrl,
  *                                              body, readingTimeOverride-
  *                                              Minutes, seoTitle,
  *                                              seoDescription, ogImageUrl
@@ -49,6 +50,11 @@ export interface TranslationFormValues {
   deck: string;
   contextLabel: string;
   featureImageAlt: string;
+  /**
+   * The image THIS language shows in a listing. A separate stored value
+   * from the post's shared Feature image — never a fallback to it.
+   */
+  listingImageUrl: string;
   readingTimeOverrideMinutes: string;
   seoTitle: string;
   seoDescription: string;
@@ -68,6 +74,7 @@ export const EMPTY_TRANSLATION_FORM: TranslationFormValues = {
   deck: "",
   contextLabel: "",
   featureImageAlt: "",
+  listingImageUrl: "",
   readingTimeOverrideMinutes: "",
   seoTitle: "",
   seoDescription: "",
@@ -81,6 +88,7 @@ export interface TranslationRowLike {
   deck: string | null;
   contextLabel: string | null;
   featureImageAlt: string | null;
+  listingImageUrl: string | null;
   readingTimeOverrideMinutes: number | null;
   seoTitle: string | null;
   seoDescription: string | null;
@@ -99,6 +107,7 @@ export function toTranslationFormValues(
     deck: row.deck ?? "",
     contextLabel: row.contextLabel ?? "",
     featureImageAlt: row.featureImageAlt ?? "",
+    listingImageUrl: row.listingImageUrl ?? "",
     readingTimeOverrideMinutes:
       row.readingTimeOverrideMinutes == null ? "" : String(row.readingTimeOverrideMinutes),
     seoTitle: row.seoTitle ?? "",
@@ -121,6 +130,7 @@ export interface TranslationUpdatePayload {
   deck?: string | null;
   contextLabel?: string | null;
   featureImageAlt?: string | null;
+  listingImageUrl?: string | null;
   body?: StoredBody;
   readingTimeOverrideMinutes?: number | null;
   seoTitle?: string | null;
@@ -164,6 +174,14 @@ export function toTranslationUpdatePayload(
   const featureImageAlt = textOrNull(values.featureImageAlt);
   if (featureImageAlt !== textOrNull(original.featureImageAlt)) {
     payload.featureImageAlt = featureImageAlt;
+  }
+
+  // A REAL field, never derived from featureImageUrl. Blank clears it to
+  // NULL (the shared feature image is NOT substituted at rest — any such
+  // fallback belongs to the future public renderer, not to storage).
+  const listingImageUrl = textOrNull(values.listingImageUrl);
+  if (listingImageUrl !== textOrNull(original.listingImageUrl)) {
+    payload.listingImageUrl = listingImageUrl;
   }
 
   const readTime = readingTimeOrNull(values.readingTimeOverrideMinutes);

@@ -1,5 +1,12 @@
 /**
- * Wave 2.1A — Editorial routing, RBAC and placeholder-page contract.
+ * Editorial routing and RBAC contract.
+ *
+ * Wave 2.1A created this file to pin the routing table and the
+ * placeholder-page contract. Final Editorial Phase A retired the LAST two
+ * placeholders (Placements and Website Settings → Links), so
+ * EditorialPlaceholderPages.tsx no longer exists and the placeholder half of
+ * this file is gone with it. The ROUTE and GUARD assertions are unchanged —
+ * the point of the retirement is that routing and RBAC did NOT move.
  *
  * App.tsx cannot be imported by node:test (Vite-only `import.meta.env`, JSX,
  * `@/` aliases), so the routing table is asserted by source inspection — the
@@ -8,11 +15,10 @@
  * functionally in components/layout/editorialNavigation.test.ts.
  */
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 
 const app = readFileSync(new URL("../../App.tsx", import.meta.url), "utf8");
-const pages = readFileSync(new URL("./EditorialPlaceholderPages.tsx", import.meta.url), "utf8");
 
 const EDITORIAL_ROUTES: Array<[string, string, string]> = [
   ["/editorial/posts/new", "editorialPosts", "EditorialPostCreatePage"],
@@ -75,107 +81,50 @@ test("the global QueryClient instantiation is untouched by this wave", () => {
   assert.doesNotMatch(app, /new QueryClient\(\{/, "no default query options may be added globally");
 });
 
-// ─── Placeholder pages ───────────────────────────────────────────────────────
+// ─── Every route is a real page ──────────────────────────────────────────────
 
 /**
- * Wave 2.1B replaced the Languages placeholder with the real screen at
- * pages/website/settings/WebsiteSettingsLanguagesPage.tsx. Its ROUTE and
- * GUARD assertions above are unchanged — only its file membership moved.
- * Wave 2.1C did the same for Topics (pages/editorial/EditorialTopicsPage.tsx)
- * and Authors (pages/editorial/EditorialAuthorsPage.tsx), and Wave 2.1D for
- * all four Posts routes.
- *
- * Only Placements (2.1F) and Links (2.1G) are still placeholders.
+ * The placeholder file is GONE. Wave 2.1B took Languages out of it, 2.1C
+ * Topics and Authors, 2.1D the four Posts routes, and Final Editorial Phase A
+ * the last two — Placements and Links. Nothing imports it and it has been
+ * deleted, so the only honest assertion left is that every routed component
+ * has its own module and none of them is a placeholder.
  */
-const REAL_PAGE_COMPONENTS = [
-  "WebsiteSettingsLanguagesPage",
-  "EditorialTopicsPage",
-  "EditorialAuthorsPage",
-  "EditorialPostsListPage",
-  "EditorialPostCreatePage",
-  "EditorialPostDetailPage",
-  "EditorialPostTranslationPage",
-];
+const REAL_PAGE_MODULES: Record<string, string> = {
+  WebsiteSettingsLanguagesPage: "@/pages/website/settings/WebsiteSettingsLanguagesPage",
+  WebsiteSettingsLinksPage: "@/pages/website/settings/WebsiteSettingsLinksPage",
+  EditorialTopicsPage: "@/pages/editorial/EditorialTopicsPage",
+  EditorialAuthorsPage: "@/pages/editorial/EditorialAuthorsPage",
+  EditorialPostsListPage: "@/pages/editorial/EditorialPostsListPage",
+  EditorialPostCreatePage: "@/pages/editorial/EditorialPostCreatePage",
+  EditorialPostDetailPage: "@/pages/editorial/EditorialPostDetailPage",
+  EditorialPostTranslationPage: "@/pages/editorial/EditorialPostTranslationPage",
+  EditorialPlacementsPage: "@/pages/editorial/EditorialPlacementsPage",
+};
 
-const PLACEHOLDER_ROUTES = EDITORIAL_ROUTES.filter(
-  ([, , component]) => !REAL_PAGE_COMPONENTS.includes(component),
-);
-
-test("Languages is a real page, not a placeholder (Wave 2.1B)", () => {
-  // Comments are stripped: the file's header still *mentions* where the real
-  // screen went, which is documentation rather than a placeholder component.
-  const pagesCode = pages.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-  assert.doesNotMatch(pagesCode, /WebsiteSettingsLanguagesPage/);
-  assert.match(
-    app,
-    /import WebsiteSettingsLanguagesPage from "@\/pages\/website\/settings\/WebsiteSettingsLanguagesPage";/,
-  );
-  // The Links placeholder stays exactly where Wave 2.1A left it.
-  assert.match(pages, /export function WebsiteSettingsLinksPage\(/);
-  assert.match(app, /\sWebsiteSettingsLinksPage,/);
-});
-
-test("Topics and Authors are real pages, not placeholders (Wave 2.1C)", () => {
-  const pagesCode = pages.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-  assert.doesNotMatch(pagesCode, /EditorialTopicsPage/);
-  assert.doesNotMatch(pagesCode, /EditorialAuthorsPage/);
-  assert.match(app, /import EditorialTopicsPage from "@\/pages\/editorial\/EditorialTopicsPage";/);
-  assert.match(app, /import EditorialAuthorsPage from "@\/pages\/editorial\/EditorialAuthorsPage";/);
-});
-
-test("all four Posts routes are real pages, not placeholders (Wave 2.1D)", () => {
-  const pagesCode = pages.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-  for (const component of [
-    "EditorialPostsListPage",
-    "EditorialPostCreatePage",
-    "EditorialPostDetailPage",
-    "EditorialPostTranslationPage",
-  ]) {
-    assert.doesNotMatch(pagesCode, new RegExp(component), `${component} must have left the placeholder file`);
+test("every routed Editorial component is a real page with its own module", () => {
+  for (const [, , component] of EDITORIAL_ROUTES) {
+    const modulePath = REAL_PAGE_MODULES[component];
+    assert.ok(modulePath, `${component} is routed but has no known module`);
+    const escaped = modulePath.replace(/[/@]/g, (c) => `\\${c}`);
     assert.match(
       app,
-      new RegExp(`import ${component} from "@\\/pages\\/editorial\\/${component}";`),
-      `${component} must be imported from its own module`,
+      new RegExp(`import ${component} from "${escaped}";`),
+      `${component} must be a default import from its own module`,
     );
   }
 });
 
-test("exactly two placeholders remain — Placements (2.1F) and Links (2.1G)", () => {
-  assert.deepEqual(
-    PLACEHOLDER_ROUTES.map(([, , component]) => component).sort(),
-    ["EditorialPlacementsPage", "WebsiteSettingsLinksPage"],
-  );
-  // Neither was touched by this wave.
-  assert.match(pages, /export function EditorialPlacementsPage\(/);
-  assert.match(pages, /export function WebsiteSettingsLinksPage\(/);
-});
-
-test("every placeholder component referenced by a route is exported", () => {
-  for (const [, , component] of PLACEHOLDER_ROUTES) {
-    assert.match(pages, new RegExp(`export function ${component}\\(`), `missing export: ${component}`);
-    assert.match(app, new RegExp(`\\s${component},`), `${component} must be imported by App.tsx`);
-  }
-});
-
-test("the remaining Editorial placeholder renders inside EditorialPageShell", () => {
-  assert.match(pages, /import \{ EditorialPageShell \} from "@\/components\/editorial\/editorial-page-shell";/);
-  assert.match(pages, /<EditorialPageShell heading=\{heading\} description=\{description\}>/);
-  // Settings placeholders deliberately use plain admin page chrome instead.
-  assert.match(pages, /function SettingsPlaceholder\(/);
-  assert.match(pages, /<div className="admin2-final-page admin2-cms-workspace space-y-6">/);
-});
-
-test("placeholders state they are delivered in a later sub-wave and carry no CRUD", () => {
+test("the placeholder module has been deleted and nothing imports it", () => {
   assert.equal(
-    (pages.match(/delivered in a later Wave 2\.1 sub-wave/g) ?? []).length,
-    PLACEHOLDER_ROUTES.length,
-    "each remaining placeholder must say a later sub-wave delivers it",
+    existsSync(new URL("./EditorialPlaceholderPages.tsx", import.meta.url)),
+    false,
+    "EditorialPlaceholderPages.tsx must be gone once its last consumer left",
   );
-  assert.doesNotMatch(pages, /useMutation|useQuery|<Table|<form|onSubmit/);
-  assert.doesNotMatch(pages, /@workspace\/api-client-react/);
+  assert.doesNotMatch(app, /EditorialPlaceholderPages/);
 });
 
-test("placeholders use semantic headings, not styled divs", () => {
-  assert.match(pages, /<h2 className="text-base font-semibold text-foreground">/);
-  assert.doesNotMatch(pages, /<div[^>]*role="heading"/);
+test("no Editorial Admin placeholder copy remains in App.tsx", () => {
+  const editorialImports = app.slice(0, app.indexOf("function App"));
+  assert.doesNotMatch(editorialImports, /Coming soon|placeholder proving|Not implemented/i);
 });

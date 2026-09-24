@@ -118,6 +118,24 @@ export const editorialPostTranslationsTable = pgTable("editorial_post_translatio
   contextLabel:               text("context_label"),
   // Localized alt text for the post's SHARED feature_image_url.
   featureImageAlt:            text("feature_image_alt"),
+  /**
+   * The image THIS translation shows in a LISTING (cards, index pages,
+   * related rails) — migration 0128.
+   *
+   * A genuinely distinct stored value, never an alias of, nor a fallback
+   * to, the post's shared feature_image_url. The legacy News data uses a
+   * different image here for 5 of its 6 records, so collapsing the two
+   * would visibly change most listing cards. A render-time
+   * `listingImageUrl ?? featureImageUrl` fallback belongs to the future
+   * public layer; the STORED value must never silently become the feature
+   * image, or the intentional difference is destroyed at rest.
+   *
+   * Translation-level for the same reason feature_image_alt is: it is
+   * about how ONE language's content appears in a list. og_image_url is
+   * the exact structural precedent — per-translation, nullable, and
+   * checked at the same media trust boundary.
+   */
+  listingImageUrl:            text("listing_image_url"),
   body:                       jsonb("body").notNull().$type<EditorialBody>(),
   bodyVersion:                integer("body_version").notNull().default(1),
   status:                     text("status").notNull().default("draft").$type<EditorialPostStatus>(),

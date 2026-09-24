@@ -3307,11 +3307,32 @@ export interface EditorialBulletedListBlock {
   items: string[];
 }
 
+export type EditorialQuoteBlockType =
+  (typeof EditorialQuoteBlockType)[keyof typeof EditorialQuoteBlockType];
+
+export const EditorialQuoteBlockType = {
+  quote: "quote",
+} as const;
+
+export interface EditorialQuoteBlock {
+  type: EditorialQuoteBlockType;
+  /**
+   * @minLength 1
+   * @maxLength 1000
+   */
+  text: string;
+  /** @maxLength 200 */
+  attribution?: string;
+  /** @maxLength 200 */
+  attributionRole?: string;
+}
+
 export type EditorialBodyBlock =
   | EditorialParagraphBlock
   | EditorialHeadingBlock
   | EditorialImageBlock
-  | EditorialBulletedListBlock;
+  | EditorialBulletedListBlock
+  | EditorialQuoteBlock;
 
 export interface EditorialBody {
   /** @maxItems 250 */
@@ -3711,6 +3732,8 @@ export interface EditorialPostTranslation {
   contextLabel: string | null;
   /** @nullable */
   featureImageAlt: string | null;
+  /** @nullable */
+  listingImageUrl: string | null;
   body: EditorialBody;
   bodyVersion: number;
   status: EditorialPostTranslationStatus;
@@ -3789,6 +3812,8 @@ export interface CreateEditorialTranslationBody {
   contextLabel?: string | null;
   /** @nullable */
   featureImageAlt?: string | null;
+  /** @nullable */
+  listingImageUrl?: string | null;
   body: EditorialBody;
   /** @nullable */
   readingTimeOverrideMinutes?: number | null;
@@ -3820,6 +3845,8 @@ export interface UpdateEditorialTranslationBody {
   contextLabel?: string | null;
   /** @nullable */
   featureImageAlt?: string | null;
+  /** @nullable */
+  listingImageUrl?: string | null;
   body?: EditorialBody;
   /** @nullable */
   readingTimeOverrideMinutes?: number | null;
@@ -4009,6 +4036,8 @@ export interface EditorialTranslationRevisionSnapshot {
   bodyVersion: number;
   /** @nullable */
   featureImageAlt: string | null;
+  /** @nullable */
+  listingImageUrl?: string | null;
   authorSnapshot: EditorialAuthorSnapshot | null;
   /** @nullable */
   readingTimeOverrideMinutes: number | null;

@@ -174,10 +174,15 @@ function handleRouteError(err: unknown, res: import("express").Response, route: 
 /** Every media URL a translation payload would cause the published page to load. */
 function translationMediaUrls(input: {
   ogImageUrl?: string | null;
+  listingImageUrl?: string | null;
   body?: { blocks: Array<Record<string, unknown>> };
 }): string[] {
   const urls: string[] = [];
   if (input.ogImageUrl) urls.push(input.ogImageUrl);
+  // The listing image is a real public-facing image and goes through the
+  // SAME media trust boundary as the og image — allowlist, DNS, redirects,
+  // Content-Type. No separate, weaker validation path for it.
+  if (input.listingImageUrl) urls.push(input.listingImageUrl);
   if (input.body) urls.push(...collectBodyImageUrls(input.body as never));
   return urls;
 }
@@ -420,6 +425,7 @@ router.post(
           deck: body.translation.deck ?? null,
           contextLabel: body.translation.contextLabel ?? null,
           featureImageAlt: body.translation.featureImageAlt ?? null,
+          listingImageUrl: body.translation.listingImageUrl ?? null,
           body: bodyCheck.data as never,
           readingTimeOverrideMinutes: body.translation.readingTimeOverrideMinutes ?? null,
           seoTitle: body.translation.seoTitle ?? null,
@@ -598,6 +604,7 @@ router.post(
           deck: body.deck ?? null,
           contextLabel: body.contextLabel ?? null,
           featureImageAlt: body.featureImageAlt ?? null,
+          listingImageUrl: body.listingImageUrl ?? null,
           body: bodyCheck.data as never,
           readingTimeOverrideMinutes: body.readingTimeOverrideMinutes ?? null,
           seoTitle: body.seoTitle ?? null,

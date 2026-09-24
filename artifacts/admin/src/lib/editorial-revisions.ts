@@ -256,6 +256,7 @@ export function compareTranslationSnapshot(
   current: Pick<
     EditorialPostTranslation,
     | "title" | "slug" | "deck" | "contextLabel" | "featureImageAlt" | "authorSnapshot"
+    | "listingImageUrl"
     | "readingTimeOverrideMinutes" | "seoTitle" | "seoDescription" | "ogImageUrl"
     | "status" | "publishedAt"
   >,
@@ -265,6 +266,7 @@ export function compareTranslationSnapshot(
     { key: "deck", label: "Deck", group: "restorable", was: text(snapshot.deck), now: text(current.deck) },
     { key: "contextLabel", label: "Context label", group: "restorable", was: text(snapshot.contextLabel), now: text(current.contextLabel) },
     { key: "featureImageAlt", label: "Feature image alt text", group: "restorable", was: text(snapshot.featureImageAlt), now: text(current.featureImageAlt) },
+    { key: "listingImageUrl", label: "Listing image link", group: "restorable", was: text(snapshot.listingImageUrl), now: text(current.listingImageUrl) },
     { key: "authorSnapshot", label: "Published byline", group: "restorable", was: bylineText(snapshot.authorSnapshot), now: bylineText(current.authorSnapshot) },
     { key: "readingTimeOverrideMinutes", label: "Reading time override", group: "restorable", was: numberText(snapshot.readingTimeOverrideMinutes), now: numberText(current.readingTimeOverrideMinutes) },
     { key: "seoTitle", label: "Search title", group: "restorable", was: text(snapshot.seoTitle), now: text(current.seoTitle) },
@@ -282,7 +284,7 @@ export const RECORDED_NOT_RESTORED_CAPTION =
 
 /** The keys restore writes. Nothing outside this set may be offered as restorable. */
 export const RESTORABLE_FIELD_KEYS: readonly string[] = [
-  "title", "deck", "contextLabel", "featureImageAlt", "authorSnapshot",
+  "title", "deck", "contextLabel", "featureImageAlt", "listingImageUrl", "authorSnapshot",
   "readingTimeOverrideMinutes", "seoTitle", "seoDescription", "ogImageUrl",
 ];
 
@@ -331,6 +333,15 @@ export function blockText(block: StoredBlock): string {
       return [block.url, block.alt, block.caption ?? ""].filter((part) => part.length > 0).join(" · ");
     case "bulleted-list":
       return block.items.join(" · ");
+    case "quote":
+      // Every authored string, same rule as the image case: a quote whose
+      // attribution changed but whose text did not IS a change. Without
+      // this case the `default` branch returned "" for every quote, which
+      // made two DIFFERENT quotes compare as identical and hid quote edits
+      // from the revision comparison entirely.
+      return [block.text, block.attribution ?? "", block.attributionRole ?? ""]
+        .filter((part) => part.length > 0)
+        .join(" · ");
     default:
       return "";
   }
