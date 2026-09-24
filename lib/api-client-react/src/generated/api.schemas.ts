@@ -3339,6 +3339,21 @@ export interface EditorialBody {
   blocks: EditorialBodyBlock[];
 }
 
+export interface EditorialGalleryItem {
+  /** @minLength 1 */
+  url: string;
+  /**
+   * @minLength 1
+   * @maxLength 200
+   */
+  alt: string;
+}
+
+export interface EditorialGallery {
+  /** @maxItems 30 */
+  items: EditorialGalleryItem[];
+}
+
 export interface EditorialAuthorSnapshot {
   name: string;
   role: string;
@@ -3735,6 +3750,7 @@ export interface EditorialPostTranslation {
   /** @nullable */
   listingImageUrl: string | null;
   body: EditorialBody;
+  gallery: EditorialGallery;
   bodyVersion: number;
   status: EditorialPostTranslationStatus;
   /** @nullable */
@@ -3815,6 +3831,7 @@ export interface CreateEditorialTranslationBody {
   /** @nullable */
   listingImageUrl?: string | null;
   body: EditorialBody;
+  gallery?: EditorialGallery;
   /** @nullable */
   readingTimeOverrideMinutes?: number | null;
   /** @nullable */
@@ -3848,6 +3865,7 @@ export interface UpdateEditorialTranslationBody {
   /** @nullable */
   listingImageUrl?: string | null;
   body?: EditorialBody;
+  gallery?: EditorialGallery;
   /** @nullable */
   readingTimeOverrideMinutes?: number | null;
   /** @nullable */
@@ -4038,6 +4056,7 @@ export interface EditorialTranslationRevisionSnapshot {
   featureImageAlt: string | null;
   /** @nullable */
   listingImageUrl?: string | null;
+  gallery?: EditorialGallery | null;
   authorSnapshot: EditorialAuthorSnapshot | null;
   /** @nullable */
   readingTimeOverrideMinutes: number | null;
