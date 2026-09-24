@@ -37,6 +37,15 @@
  * policy — a production run is a separately-authorized follow-up change,
  * never something this file does on its own.
  *
+ * That follow-up now EXISTS, and is deliberately somewhere else:
+ * `newsMigrationProductionCli.ts` plus its two entrypoints. It does not
+ * touch, relax or route around anything below — it is a separate command
+ * with its own positive production proof, its own authorization flags and
+ * its own confirmation phrases, and it calls the same engine this file
+ * calls. Nothing in this file changed to make that possible, which is the
+ * whole point: the guard below is not a thing anyone has to edit on the day
+ * of a cutover. See docs/deployment/news-migration-production-runbook.md.
+ *
  * ─── CONFIRMATION IS NOT A FLAG ──────────────────────────────────────────
  *
  * Both writing modes require a typed confirmation phrase supplied through
