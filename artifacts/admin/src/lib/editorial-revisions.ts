@@ -39,6 +39,7 @@
  */
 import { formatDateTime } from "./editorial-posts.ts";
 import { blockNoun, type EditorialBlockType, type StoredBlock } from "./editorial-post-body.ts";
+import type { StoredGalleryItem } from "./editorial-post-gallery.ts";
 import type {
   EditorialAuthorSnapshot,
   EditorialPostTranslation,
@@ -256,17 +257,33 @@ export function compareTranslationSnapshot(
   current: Pick<
     EditorialPostTranslation,
     | "title" | "slug" | "deck" | "contextLabel" | "featureImageAlt" | "authorSnapshot"
-    | "listingImageUrl"
+    | "listingImageUrl" | "gallery"
     | "readingTimeOverrideMinutes" | "seoTitle" | "seoDescription" | "ogImageUrl"
     | "status" | "publishedAt"
   >,
 ): FieldComparison[] {
-  const rows: Array<Omit<FieldComparison, "changed">> = [
+  const rows: Array<Omit<FieldComparison, "changed"> & { changed?: boolean }> = [
     { key: "title", label: "Title", group: "restorable", was: text(snapshot.title), now: text(current.title) },
     { key: "deck", label: "Deck", group: "restorable", was: text(snapshot.deck), now: text(current.deck) },
     { key: "contextLabel", label: "Context label", group: "restorable", was: text(snapshot.contextLabel), now: text(current.contextLabel) },
     { key: "featureImageAlt", label: "Feature image alt text", group: "restorable", was: text(snapshot.featureImageAlt), now: text(current.featureImageAlt) },
     { key: "listingImageUrl", label: "Listing image link", group: "restorable", was: text(snapshot.listingImageUrl), now: text(current.listingImageUrl) },
+    // The gallery gets a COUNT here and a full structural comparison of
+    // its own below (compareGalleryItems), for the same reason the body
+    // does: a collection cannot be honestly rendered as one "was/now"
+    // cell. The count is never the change DETECTOR — `changed` on this row
+    // is computed from the faithful flattening, so two galleries with the
+    // same number of images but a different order, url or alt still read
+    // as changed.
+    {
+      key: "gallery",
+      label: "Gallery",
+      group: "restorable",
+      was: galleryCountText(readSnapshotGallery(snapshot.gallery)),
+      now: galleryCountText(readSnapshotGallery(current.gallery)),
+      changed: galleryFingerprint(readSnapshotGallery(snapshot.gallery))
+        !== galleryFingerprint(readSnapshotGallery(current.gallery)),
+    },
     { key: "authorSnapshot", label: "Published byline", group: "restorable", was: bylineText(snapshot.authorSnapshot), now: bylineText(current.authorSnapshot) },
     { key: "readingTimeOverrideMinutes", label: "Reading time override", group: "restorable", was: numberText(snapshot.readingTimeOverrideMinutes), now: numberText(current.readingTimeOverrideMinutes) },
     { key: "seoTitle", label: "Search title", group: "restorable", was: text(snapshot.seoTitle), now: text(current.seoTitle) },
@@ -276,7 +293,11 @@ export function compareTranslationSnapshot(
     { key: "status", label: "State", group: "recorded", was: text(snapshot.status), now: text(current.status) },
     { key: "publishedAt", label: "First published", group: "recorded", was: formatDateTime(snapshot.publishedAt), now: formatDateTime(current.publishedAt) },
   ];
-  return rows.map((row) => ({ ...row, changed: row.was !== row.now }));
+  // `row.changed` is honoured when a row computed it itself (the gallery
+  // does, because its `was`/`now` are a COUNT and a count cannot detect a
+  // reorder or an alt edit). Every other row compares its displayed text,
+  // which for those rows IS the whole value.
+  return rows.map((row) => ({ ...row, changed: row.changed ?? row.was !== row.now }));
 }
 
 export const RECORDED_NOT_RESTORED_CAPTION =
@@ -284,12 +305,213 @@ export const RECORDED_NOT_RESTORED_CAPTION =
 
 /** The keys restore writes. Nothing outside this set may be offered as restorable. */
 export const RESTORABLE_FIELD_KEYS: readonly string[] = [
-  "title", "deck", "contextLabel", "featureImageAlt", "listingImageUrl", "authorSnapshot",
+  "title", "deck", "contextLabel", "featureImageAlt", "listingImageUrl", "gallery", "authorSnapshot",
   "readingTimeOverrideMinutes", "seoTitle", "seoDescription", "ogImageUrl",
 ];
 
 export function changedFields(comparisons: readonly FieldComparison[]): FieldComparison[] {
   return comparisons.filter((row) => row.changed);
+}
+
+// ─── Gallery comparison (Final Editorial — Phase B) ──────────────────────────
+//
+// THE BUG THIS SECTION EXISTS TO MAKE UNREPRESENTABLE
+//
+// Phase A shipped `blockText` with a `default: return ""` branch, which
+// meant every QUOTE block flattened to the empty string: two completely
+// different quotes compared as identical, and quote edits were invisible in
+// the revision comparison. The fix was to flatten EVERY authored string.
+//
+// A gallery is the same trap with three extra ways to fall into it, so each
+// is closed explicitly and tested:
+//
+//   1. comparing by item COUNT      — hides a url edit, an alt edit and a
+//                                     reorder, all of which keep the count;
+//   2. comparing by url only        — hides an alt edit, which is a real,
+//                                     publish-gating, accessibility change;
+//   3. comparing order-insensitively — hides a reorder, and in a gallery the
+//                                     array order IS the display order.
+//
+// `galleryItemText` therefore flattens every authored string (url AND alt),
+// and `galleryFingerprint` is an ORDERED join of those. Neither has a
+// `default` branch that can silently return "" for a shape it did not
+// expect, because a gallery item has exactly one shape.
+
+/** Every authored string on ONE gallery item. No branch can return "". */
+export function galleryItemText(item: StoredGalleryItem): string {
+  return [item.url, item.alt].filter((part) => part.length > 0).join(" · ");
+}
+
+/**
+ * The ORDERED fingerprint of a whole gallery. Index-prefixed so a pure
+ * reorder changes it: without the prefix, two galleries holding the same
+ * items in a different order would produce the same string, which is
+ * failure mode (3) above.
+ */
+export function galleryFingerprint(items: readonly StoredGalleryItem[]): string {
+  return items.map((item, index) => `${index}:${galleryItemText(item)}`).join("\n");
+}
+
+export function galleryCountText(items: readonly StoredGalleryItem[]): string {
+  if (items.length === 0) return EMPTY_VALUE_PLACEHOLDER;
+  return items.length === 1 ? "1 image" : `${items.length} images`;
+}
+
+/**
+ * Read a gallery off a snapshot or a translation row.
+ *
+ * A revision written before migration 0129 physically cannot carry the
+ * key, so absent — and every malformed shape — is read as EMPTY, which is
+ * exactly what the column would have held when that snapshot was taken.
+ * Identical in spirit to the `listingImageUrl ?? null` rule Phase A
+ * established, and to readStoredGallery on the server.
+ */
+export function readSnapshotGallery(
+  gallery: { items?: readonly unknown[] } | null | undefined,
+): StoredGalleryItem[] {
+  const items = gallery?.items;
+  if (!Array.isArray(items)) return [];
+  return items.map((item) => {
+    const record = (item ?? {}) as Partial<StoredGalleryItem>;
+    return {
+      url: typeof record.url === "string" ? record.url : "",
+      alt: typeof record.alt === "string" ? record.alt : "",
+    };
+  });
+}
+
+export interface GalleryItemComparison {
+  kind: BlockChangeKind;
+  label: string;
+  wasText: string | null;
+  nowText: string | null;
+  wasIndex: number | null;
+  nowIndex: number | null;
+}
+
+/**
+ * Structural comparison of two galleries, same contract and same labels as
+ * compareBodyBlocks: `from` is the REVISION, `to` is the last SAVED row, so
+ * the labels describe what happened SINCE the revision.
+ *
+ * Simpler than the body's LCS because every gallery item has the same
+ * "type", so the rules collapse to three passes over positions:
+ *   1. identical text at the same index is `unchanged`;
+ *   2. identical text at a DIFFERENT index is `moved` — never an add plus
+ *      a remove, which is the distinction that makes a reorder legible;
+ *   3. whatever is left pairs up by position as `modified` (a url or an
+ *      alt was edited), and the remainder is `added` / `removed`.
+ */
+export function compareGalleryItems(
+  from: readonly StoredGalleryItem[],
+  to: readonly StoredGalleryItem[],
+): GalleryItemComparison[] {
+  const fromText = from.map(galleryItemText);
+  const toText = to.map(galleryItemText);
+  const claimedFrom = new Set<number>();
+  const claimedTo = new Set<number>();
+
+  const kinds = new Map<number, GalleryItemComparison>();
+
+  // Pass 1 — same text, same position.
+  for (let index = 0; index < Math.min(from.length, to.length); index += 1) {
+    if (fromText[index] !== toText[index]) continue;
+    claimedFrom.add(index);
+    claimedTo.add(index);
+    kinds.set(index, {
+      kind: "unchanged",
+      label: BLOCK_CHANGE_LABELS.unchanged,
+      wasText: toText[index]!,
+      nowText: toText[index]!,
+      wasIndex: index,
+      nowIndex: index,
+    });
+  }
+
+  // Pass 2 — same text, different position: a MOVE.
+  for (let toIndex = 0; toIndex < to.length; toIndex += 1) {
+    if (claimedTo.has(toIndex)) continue;
+    const fromIndex = fromText.findIndex(
+      (text, index) => !claimedFrom.has(index) && text === toText[toIndex],
+    );
+    if (fromIndex < 0) continue;
+    claimedFrom.add(fromIndex);
+    claimedTo.add(toIndex);
+    kinds.set(toIndex, {
+      kind: "moved",
+      label: BLOCK_CHANGE_LABELS.moved,
+      wasText: fromText[fromIndex]!,
+      nowText: toText[toIndex]!,
+      wasIndex: fromIndex,
+      nowIndex: toIndex,
+    });
+  }
+
+  // Pass 3 — leftovers pair up in order as edits; the remainder is an
+  // addition or a removal.
+  const leftoverFrom = fromText
+    .map((_, index) => index)
+    .filter((index) => !claimedFrom.has(index));
+  for (let toIndex = 0; toIndex < to.length; toIndex += 1) {
+    if (claimedTo.has(toIndex)) continue;
+    const fromIndex = leftoverFrom.shift();
+    if (fromIndex === undefined) {
+      kinds.set(toIndex, {
+        kind: "added",
+        label: BLOCK_CHANGE_LABELS.added,
+        wasText: null,
+        nowText: toText[toIndex]!,
+        wasIndex: null,
+        nowIndex: toIndex,
+      });
+      continue;
+    }
+    claimedFrom.add(fromIndex);
+    claimedTo.add(toIndex);
+    kinds.set(toIndex, {
+      kind: "modified",
+      label: BLOCK_CHANGE_LABELS.modified,
+      wasText: fromText[fromIndex]!,
+      nowText: toText[toIndex]!,
+      wasIndex: fromIndex,
+      nowIndex: toIndex,
+    });
+  }
+
+  const entries: GalleryItemComparison[] = [];
+  for (let index = 0; index < to.length; index += 1) {
+    const entry = kinds.get(index);
+    if (entry) entries.push(entry);
+  }
+  // Removals last, in their original order, so nothing is lost from the
+  // report even though they have no position in the current gallery.
+  for (const fromIndex of leftoverFrom) {
+    entries.push({
+      kind: "removed",
+      label: BLOCK_CHANGE_LABELS.removed,
+      wasText: fromText[fromIndex]!,
+      nowText: null,
+      wasIndex: fromIndex,
+      nowIndex: null,
+    });
+  }
+  return entries;
+}
+
+export function galleryChanged(entries: readonly GalleryItemComparison[]): boolean {
+  return entries.some((entry) => entry.kind !== "unchanged");
+}
+
+export function summariseGalleryComparison(entries: readonly GalleryItemComparison[]): string {
+  const counts = entries.reduce<Record<BlockChangeKind, number>>(
+    (acc, entry) => { acc[entry.kind] += 1; return acc; },
+    { unchanged: 0, added: 0, removed: 0, moved: 0, modified: 0 },
+  );
+  const parts = (["added", "removed", "moved", "modified"] as const)
+    .filter((kind) => counts[kind] > 0)
+    .map((kind) => `${counts[kind]} ${BLOCK_CHANGE_LABELS[kind].toLowerCase()}`);
+  if (parts.length === 0) return "The gallery is identical to this revision.";
+  return `Gallery: ${parts.join(", ")}.`;
 }
 
 // ─── Body structural comparison (tier 2, D8) ─────────────────────────────────

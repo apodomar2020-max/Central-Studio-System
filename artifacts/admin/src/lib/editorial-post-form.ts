@@ -13,7 +13,8 @@
  *   PATCH /…/translations/:languageCode        title, slug, deck,
  *                                              contextLabel, featureImageAlt,
  *                                              listingImageUrl,
- *                                              body, readingTimeOverride-
+ *                                              body, gallery,
+ *                                              readingTimeOverride-
  *                                              Minutes, seoTitle,
  *                                              seoDescription, ogImageUrl
  *   PUT   /…/posts/:id/topics                  topicIds (FULL REPLACE)
@@ -39,6 +40,11 @@
 // tsconfig, Vite resolves them, and `node --test --experimental-strip-types`
 // (this package's only test runner) requires them.
 import { toBodyPayload, type EditableBlock, type StoredBody } from "./editorial-post-body.ts";
+import {
+  toGalleryPayload,
+  type EditableGalleryItem,
+  type StoredGallery,
+} from "./editorial-post-gallery.ts";
 import type { EditorialChannelValue, EditorialTranslationStatusValue } from "./editorial-posts.ts";
 
 // ─── Form shapes ─────────────────────────────────────────────────────────────
@@ -60,6 +66,12 @@ export interface TranslationFormValues {
   seoDescription: string;
   ogImageUrl: string;
   blocks: EditableBlock[];
+  /**
+   * The translation's ORDERED media gallery. Part of the `translation`
+   * dirty scope and the translation PATCH, like `blocks` — it is one
+   * language's content, not a shared setting.
+   */
+  galleryItems: EditableGalleryItem[];
 }
 
 /** Everything the SHARED post PATCH can write. */
@@ -80,6 +92,7 @@ export const EMPTY_TRANSLATION_FORM: TranslationFormValues = {
   seoDescription: "",
   ogImageUrl: "",
   blocks: [],
+  galleryItems: [],
 };
 
 export interface TranslationRowLike {
@@ -100,6 +113,7 @@ export interface TranslationRowLike {
 export function toTranslationFormValues(
   row: TranslationRowLike,
   blocks: EditableBlock[],
+  galleryItems: EditableGalleryItem[] = [],
 ): TranslationFormValues {
   return {
     title: row.title,
@@ -114,6 +128,7 @@ export function toTranslationFormValues(
     seoDescription: row.seoDescription ?? "",
     ogImageUrl: row.ogImageUrl ?? "",
     blocks,
+    galleryItems,
   };
 }
 
@@ -132,6 +147,7 @@ export interface TranslationUpdatePayload {
   featureImageAlt?: string | null;
   listingImageUrl?: string | null;
   body?: StoredBody;
+  gallery?: StoredGallery;
   readingTimeOverrideMinutes?: number | null;
   seoTitle?: string | null;
   seoDescription?: string | null;
@@ -200,6 +216,16 @@ export function toTranslationUpdatePayload(
 
   const body = toBodyPayload(values.blocks);
   if (!sameBody(body, toBodyPayload(original.blocks))) payload.body = body;
+
+  // Sent WHOLE, never as a delta — the PATCH route treats a present
+  // `gallery` as "this IS the gallery now". Compared over the SUBMITTABLE
+  // projection (trimmed, keys stripped) so a client-only list key, or
+  // whitespace typed and then removed, never leaves the editor
+  // permanently "unsaved". This is the same rule `body` follows, and
+  // adding/removing/REORDERING/editing a url or an alt all change that
+  // projection, so all five are detected.
+  const gallery = toGalleryPayload(values.galleryItems);
+  if (!sameGallery(gallery, toGalleryPayload(original.galleryItems))) payload.gallery = gallery;
 
   return payload;
 }
@@ -373,6 +399,15 @@ function sameBody(a: StoredBody, b: StoredBody): boolean {
 }
 
 /**
+ * Order-SENSITIVE by construction: JSON.stringify over an array preserves
+ * order, so a pure reorder with no other edit is still a change. That is
+ * the whole point — the array order IS the display order.
+ */
+function sameGallery(a: StoredGallery, b: StoredGallery): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+/**
  * Structural equality over the SUBMITTABLE projection of the form, not over
  * the raw strings — so trailing whitespace an operator typed and then
  * removed does not leave the editor permanently "unsaved", and so a block's
@@ -408,6 +443,7 @@ export type ReadinessKey =
   | "feature-image"
   | "feature-image-alt"
   | "image-alt"
+  | "gallery-alt"
   | "author"
   | "author-active"
   | "author-biography";
@@ -423,6 +459,7 @@ export interface ReadinessInputs {
   languageIsActive: boolean;
   title: string;
   blocks: ReadonlyArray<{ type: string; alt?: string }>;
+  galleryItems: ReadonlyArray<{ alt?: string }>;
   featureImageUrl: string | null;
   featureImageAlt: string | null;
   author: { publicName: string; status: "active" | "archived"; biography: string | null } | null;
@@ -489,6 +526,16 @@ export function publishReadiness(inputs: ReadinessInputs): ReadinessItem[] {
     message: `Every image needs alt text before publishing (missing on block ${missingAlt.join(", ")}).`,
   });
 
+  const missingGalleryAlt: number[] = [];
+  inputs.galleryItems.forEach((item, index) => {
+    if ((item.alt ?? "").trim().length === 0) missingGalleryAlt.push(index + 1);
+  });
+  items.push({
+    key: "gallery-alt",
+    ok: missingGalleryAlt.length === 0,
+    message: `Every gallery image needs alt text before publishing (missing on image ${missingGalleryAlt.join(", ")}).`,
+  });
+
   items.push({
     key: "author",
     ok: inputs.author != null,
@@ -533,6 +580,7 @@ export const READINESS_LABELS: Record<ReadinessKey, string> = {
   "feature-image": "Feature image (shared)",
   "feature-image-alt": "Feature image alt text (this language)",
   "image-alt": "Alt text on every body image",
+  "gallery-alt": "Alt text on every gallery image",
   author: "Author assigned",
   "author-active": "Author is active",
   "author-biography": "Author has a biography",
