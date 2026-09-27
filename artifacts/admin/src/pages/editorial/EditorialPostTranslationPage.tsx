@@ -83,6 +83,7 @@ import { useEditorialReferenceData } from "@/hooks/use-editorial-reference-data"
 import { useDirtyState, useSaveShortcut } from "@/hooks/use-dirty-state";
 import { EditorialPageShell } from "@/components/editorial/editorial-page-shell";
 import { PostBodyEditor } from "@/components/editorial/post-body-editor";
+import { PostGalleryEditor } from "@/components/editorial/post-gallery-editor";
 import {
   RevisionHistoryDrawer, RevisionHistoryTrigger,
 } from "@/components/editorial/revision-history-drawer";
@@ -105,6 +106,11 @@ import {
   validateBody,
   type EditableBlock,
 } from "@/lib/editorial-post-body";
+import {
+  toEditableGalleryItems,
+  validateGallery,
+  type EditableGalleryItem,
+} from "@/lib/editorial-post-gallery";
 import {
   FROZEN_BYLINE_EXPLANATION,
   INACTIVE_LANGUAGE_ADD_BLOCKED,
@@ -270,7 +276,7 @@ export default function EditorialPostTranslationPage() {
    * the translation save already does.
    */
   const rebaselineTranslation = useCallback((row: NonNullable<typeof translationRow>) => {
-    const next = toTranslationFormValues(row, toEditableBlocks(row.body));
+    const next = toTranslationFormValues(row, toEditableBlocks(row.body), toEditableGalleryItems(row.gallery));
     setForm(next);
     setBaseline(next);
     setFormRowId(row.id);
@@ -380,6 +386,11 @@ export default function EditorialPostTranslationPage() {
 
   const blockProblems = useMemo(() => validateBody(form?.blocks ?? []), [form?.blocks]);
 
+  const galleryProblems = useMemo(
+    () => validateGallery(form?.galleryItems ?? []),
+    [form?.galleryItems],
+  );
+
   const readiness = useMemo(
     () =>
       publishReadiness({
@@ -389,13 +400,14 @@ export default function EditorialPostTranslationPage() {
           type: block.type,
           alt: (block as { alt?: string }).alt,
         })),
+        galleryItems: (form?.galleryItems ?? []).map((item) => ({ alt: item.alt })),
         featureImageUrl: shared?.featureImageUrl ?? null,
         featureImageAlt: form?.featureImageAlt ?? null,
         author: author
           ? { publicName: author.publicName, status: author.status, biography: author.biography }
           : null,
       }),
-    [languageIsActive, form?.title, form?.blocks, form?.featureImageAlt, shared?.featureImageUrl, author],
+    [languageIsActive, form?.title, form?.blocks, form?.galleryItems, form?.featureImageAlt, shared?.featureImageUrl, author],
   );
 
   // ─── Cache invalidation, narrow and per-mutation ─────────────────────────
@@ -468,6 +480,14 @@ export default function EditorialPostTranslationPage() {
       setTranslationError("Some blocks are not valid yet — fix the highlighted fields and save again.");
       return;
     }
+    // Same fail-before-request posture as the body: the server enforces
+    // REQUIRED gallery alt at the schema level on every write, so sending
+    // a blank one could only ever produce a 400 the operator would have to
+    // decode.
+    if (galleryProblems.length > 0) {
+      setTranslationError("Some gallery images are not valid yet — fix the highlighted fields and save again.");
+      return;
+    }
     // The reading-time override was validated for DISPLAY only — the inline
     // message was rendered but never consulted here, so `0` reached the
     // request, passed the generated schema (which has no min), and died on
@@ -486,7 +506,7 @@ export default function EditorialPostTranslationPage() {
       { id: postId, languageCode, data: payload },
       {
         onSuccess: (saved) => {
-          const next = toTranslationFormValues(saved, toEditableBlocks(saved.body));
+          const next = toTranslationFormValues(saved, toEditableBlocks(saved.body), toEditableGalleryItems(saved.gallery));
           setForm(next);
           setBaseline(next);
           setSlugTouched(false);
@@ -1414,6 +1434,19 @@ export default function EditorialPostTranslationPage() {
               disabled={readOnly}
               onChange={(next: EditableBlock[]) =>
                 setForm((current) => (current ? { ...current, blocks: next } : current))
+              }
+            />
+          </section>
+
+          {/* Gallery — part of THIS language's content, so it saves with the
+              translation scope and never with the shared spine. */}
+          <section className="rounded-md border border-border bg-card p-3">
+            <PostGalleryEditor
+              items={form.galleryItems}
+              problems={galleryProblems}
+              disabled={readOnly}
+              onChange={(next: EditableGalleryItem[]) =>
+                setForm((current) => (current ? { ...current, galleryItems: next } : current))
               }
             />
           </section>

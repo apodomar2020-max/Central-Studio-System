@@ -7,6 +7,7 @@ import {
   editorialPostsTable,
   type EditorialAuthorSnapshot,
   type EditorialBody,
+  type EditorialGallery,
   type EditorialPostStatus,
 } from "./editorialPosts";
 
@@ -130,6 +131,17 @@ export type EditorialTranslationRevisionSnapshot = {
    * the column held when such a snapshot was taken.
    */
   listingImageUrl?: string | null;
+  /**
+   * OPTIONAL for exactly the same reason `listingImageUrl` is — Final
+   * Editorial, Phase B (migration 0129).
+   *
+   * Snapshots written before 0129 are stored jsonb and physically cannot
+   * carry this key. Restore reads an absent key as an EMPTY gallery,
+   * which is what the column would have held when such a snapshot was
+   * taken. Making it required would render every historical revision
+   * unparseable and un-restorable.
+   */
+  gallery?: EditorialGallery | null;
   authorSnapshot: EditorialAuthorSnapshot | null;
   readingTimeOverrideMinutes: number | null;
   seoTitle: string | null;

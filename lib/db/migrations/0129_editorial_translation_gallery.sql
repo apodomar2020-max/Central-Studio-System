@@ -1,0 +1,92 @@
+-- Final Editorial — Phase B: editorial_post_translations.gallery
+--
+-- WHAT THIS DOES
+--   Adds ONE jsonb column to editorial_post_translations, holding an
+--   ORDERED list of gallery media items:
+--
+--     { "items": [ { "url": "https://…", "alt": "…" }, … ] }
+--
+--   Nothing else: no constraint change beyond the column's own NOT NULL +
+--   DEFAULT, no index, no backfill, no data rewrite, no change to any
+--   other table.
+--
+-- WHY IT IS NEEDED
+--   website_news_posts.gallery_images (text[]) is a first-class,
+--   Admin-editable field that the UNAUTHENTICATED public detail endpoint
+--   GET /website/news/:slug returns verbatim
+--   (artifacts/api-server/src/routes/websiteNews.ts). Editorial had no
+--   gallery representation of any kind, so a News → Editorial migration
+--   would have had to either discard populated public content or smuggle
+--   it into the article body as image blocks — changing the article's
+--   structure and requiring invented alt text for images that carry no
+--   caption in the legacy model.
+--
+--   Phase B's locked decision is that the gallery is preserved as a
+--   FIRST-CLASS Editorial capability: translation-scoped, ordered,
+--   Admin-manageable, revisioned and restorable — not a migration-only
+--   opaque blob.
+--
+-- WHY TRANSLATION-LEVEL, NOT POST-LEVEL
+--   Same reasoning as feature_image_alt and listing_image_url, which
+--   already live on this table: every item carries REQUIRED alt text, and
+--   alt text is language-specific prose. A post-level gallery would force
+--   one language's alt onto every other language's readers. og_image_url
+--   and listing_image_url are the exact structural precedents.
+--
+-- WHY jsonb AND NOT A CHILD TABLE
+--   `body` is the established precedent for an ordered, typed, validated
+--   document fragment on this table: the order IS the array order, there
+--   is no independent identity for an item, nothing joins to an item, and
+--   the revision snapshot has to carry the whole thing anyway. A child
+--   table would add a second ordering mechanism (a position column that
+--   can disagree with itself), a second cascade path, and no query that
+--   anything needs. The item shape is enforced by zod at the write
+--   boundary, exactly as the body block model is.
+--
+-- WHY THERE IS NO `caption` FIELD
+--   Deliberate, and derived from the legacy source rather than assumed:
+--   website_news_posts.gallery_images is a bare text[] of URLs. The legacy
+--   gallery model carries NO captions and NO alt text at all, so there is
+--   no genuine legacy source for a caption. Adding one would be a field
+--   that migration can only ever leave empty and that no existing content
+--   justifies. `alt` is REQUIRED because accessibility is not optional —
+--   the same rule the image BLOCK already enforces at the schema level.
+--
+-- EXISTING ROWS
+--   Every existing row gets '{"items": []}' — an empty gallery, which is
+--   exactly what every existing translation has today. `ADD COLUMN … NOT
+--   NULL DEFAULT <constant>` is a catalogue-only operation in PostgreSQL
+--   11+ (the default is stored in pg_attribute and materialized lazily),
+--   so there is NO table rewrite and no long lock, even though the column
+--   is NOT NULL. Repo-backed existing-data impact: zero rows change
+--   behaviour, zero rows become invalid — the field is optional at every
+--   layer above (OpenAPI, generated zod, service, Admin form), and an
+--   empty gallery renders nothing.
+--
+--   NOT NULL rather than nullable, deliberately: a collection has no
+--   meaningful difference between "null" and "empty", and allowing both
+--   would put a null-vs-[] branch into every reader forever. `body` makes
+--   the same call for the same reason.
+--
+-- REVISIONS
+--   editorial_post_revisions.snapshot is jsonb and is NOT migrated.
+--   Snapshots written before this migration physically cannot carry the
+--   key; the API schema therefore leaves `gallery` OUT of the snapshot's
+--   `required` list, and restore reads an absent key as an EMPTY gallery —
+--   which is exactly what this column would have held when that snapshot
+--   was taken. This is the same treatment listing_image_url received in
+--   0128, and it is what keeps every historical revision parseable and
+--   restorable.
+--
+-- ROLLBACK
+--   ALTER TABLE "editorial_post_translations" DROP COLUMN "gallery";
+--   Safe and complete: nothing else references the column — no
+--   constraint, no index, no view, no foreign key, no generated column.
+--   Rolling back discards only gallery items entered (or migrated) after
+--   this migration shipped.
+--
+-- IDEMPOTENT: IF NOT EXISTS, matching the re-runnable style established by
+-- 0127_editorial_placement_channel_scope.sql and 0128.
+
+ALTER TABLE "editorial_post_translations"
+  ADD COLUMN IF NOT EXISTS "gallery" jsonb NOT NULL DEFAULT '{"items": []}'::jsonb;

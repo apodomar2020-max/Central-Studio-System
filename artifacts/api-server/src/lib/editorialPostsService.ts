@@ -88,6 +88,11 @@ import type { ActivityActorSnapshot } from "./activityLog";
 import { EditorialRuleError, EDITORIAL_AUDIT_MODULE, auditEditorial } from "./editorialCore";
 import { collectBodyImageUrls, findBlocksMissingAlt } from "./editorialBody";
 import {
+  collectGalleryImageUrls,
+  findGalleryItemsMissingAlt,
+  readStoredGallery,
+} from "./editorialGallery";
+import {
   validateEditorialMediaUrls,
   type EditorialMediaValidationDeps,
 } from "./editorialMediaUrl";
@@ -506,6 +511,19 @@ export async function assertTranslationPublishReady(
     );
   }
 
+  // Alt text on EVERY gallery item — same rule as the image blocks above,
+  // re-asserted over the STORED row so a gallery written before this
+  // module existed, or edited out-of-band, cannot reach the public page
+  // without it (Final Editorial, Phase B).
+  const missingGalleryAlt = findGalleryItemsMissingAlt(
+    translation.gallery as unknown as { items: Array<Record<string, unknown>> },
+  );
+  if (missingGalleryAlt.length > 0) {
+    throw new EditorialRuleError(
+      `Every gallery image needs alt text before publishing (missing on image ${missingGalleryAlt.map((i) => i + 1).join(", ")}).`,
+    );
+  }
+
   // SHARED: the byline lives on the parent post.
   if (post.authorId == null) {
     throw new EditorialRuleError("A post needs an author before any translation can be published.");
@@ -527,6 +545,9 @@ export async function assertTranslationPublishReady(
   // The listing image is a real public-facing image, so it is re-validated
   // at publish time exactly like the og image.
   if (translation.listingImageUrl) mediaUrls.push(translation.listingImageUrl);
+  // Gallery images are real public-facing images and cross the SAME trust
+  // boundary as every other Editorial image — no separate, weaker path.
+  mediaUrls.push(...collectGalleryImageUrls(readStoredGallery(translation.gallery)));
   const mediaError = await validateEditorialMediaUrls(mediaUrls, deps.media);
   if (mediaError) throw new EditorialRuleError(mediaError.error);
 }
@@ -638,6 +659,7 @@ export function buildTranslationRevisionSnapshot(
     bodyVersion: translation.bodyVersion,
     featureImageAlt: translation.featureImageAlt,
     listingImageUrl: translation.listingImageUrl,
+    gallery: readStoredGallery(translation.gallery),
     authorSnapshot: translation.authorSnapshot ?? null,
     readingTimeOverrideMinutes: translation.readingTimeOverrideMinutes,
     seoTitle: translation.seoTitle,
@@ -995,7 +1017,38 @@ export async function publishTranslation(
   languageId: number,
   ctx: TransitionContext,
 ): Promise<EditorialPostTranslation> {
-  return db.transaction(async (tx) => {
+  return db.transaction(async (tx) => publishTranslationInTx(tx, postId, languageId, ctx));
+}
+
+/**
+ * The publish transition's ENTIRE body, in a CALLER-SUPPLIED transaction.
+ *
+ * Extracted for the News → Editorial migration (Final Editorial, Phase B),
+ * which migrates ONE legacy post per transaction: creating the post,
+ * creating its translation and publishing it must either all land or all
+ * roll back, so the migration cannot call a function that opens a
+ * transaction of its own.
+ *
+ * It exists so the migration travels the REAL lifecycle path instead of a
+ * parallel reimplementation. That matters most for `published_at`: the
+ * rule that an existing publication date is preserved (stamped only when
+ * currently NULL) is written ONCE — right below — and the migration
+ * inherits it by pre-seeding the draft row's published_at with the legacy
+ * value before calling this. A migration that set `status = 'published'`
+ * itself would be a second copy of the publish rules — readiness, byline
+ * freezing, audit — free to drift from this one.
+ *
+ * `publishTranslation` is now a thin wrapper over this, so every
+ * pre-existing caller behaves EXACTLY as before: same locks, same order,
+ * same audit row inside the same transaction as the state change.
+ */
+export async function publishTranslationInTx(
+  tx: DbClient,
+  postId: number,
+  languageId: number,
+  ctx: TransitionContext,
+): Promise<EditorialPostTranslation> {
+  {
     const { post, translation, language } = await lockPostAndTranslation(tx, postId, languageId);
     assertTransitionAllowed(translation.status, "published");
     await assertTranslationPublishReady(tx, post, translation, ctx.deps);
@@ -1025,7 +1078,7 @@ export async function publishTranslation(
       summary: `Published the ${language.code} translation of ${post.channel} post #${post.id} — "${updated.title}"`,
     });
     return updated;
-  });
+  }
 }
 
 /** draft|published -> archived, for one translation. Revision when leaving published. */
@@ -1034,7 +1087,26 @@ export async function archiveTranslation(
   languageId: number,
   ctx: TransitionContext,
 ): Promise<EditorialPostTranslation> {
-  return db.transaction(async (tx) => {
+  return db.transaction(async (tx) => archiveTranslationInTx(tx, postId, languageId, ctx));
+}
+
+/**
+ * The archive transition's body, in a CALLER-SUPPLIED transaction — same
+ * reasoning as publishTranslationInTx, and used by the same caller.
+ *
+ * The News → Editorial migration needs it because a legacy row with
+ * `is_active = false` is content that WAS public and has since been
+ * hidden. Representing that faithfully means publish-then-archive, so the
+ * row carries its real publication date AND its real current visibility,
+ * and both transitions land in the one per-post transaction.
+ */
+export async function archiveTranslationInTx(
+  tx: DbClient,
+  postId: number,
+  languageId: number,
+  ctx: TransitionContext,
+): Promise<EditorialPostTranslation> {
+  {
     const { post, translation, language } = await lockPostAndTranslation(tx, postId, languageId);
     assertTransitionAllowed(translation.status, "archived");
     await recordTranslationRevisionIfPublished(
@@ -1061,7 +1133,7 @@ export async function archiveTranslation(
       summary: `Archived the ${language.code} translation of ${post.channel} post #${post.id} — "${updated.title}"`,
     });
     return updated;
-  });
+  }
 }
 
 /** archived -> draft, for one translation. publishedAt is preserved, never cleared. */
@@ -1104,6 +1176,7 @@ export interface CreateTranslationInput {
   featureImageAlt?: string | null;
   listingImageUrl?: string | null;
   body: { blocks: unknown[] };
+  gallery?: { items: unknown[] } | null;
   readingTimeOverrideMinutes?: number | null;
   seoTitle?: string | null;
   seoDescription?: string | null;
@@ -1169,6 +1242,7 @@ export async function createTranslation(
         featureImageAlt: input.featureImageAlt ?? null,
         listingImageUrl: input.listingImageUrl ?? null,
         body: input.body as never,
+        gallery: (input.gallery ?? { items: [] }) as never,
         readingTimeOverrideMinutes: input.readingTimeOverrideMinutes ?? null,
         seoTitle: input.seoTitle ?? null,
         seoDescription: input.seoDescription ?? null,
@@ -1197,6 +1271,7 @@ export interface UpdateTranslationInput {
   featureImageAlt?: string | null;
   listingImageUrl?: string | null;
   body?: { blocks: unknown[] };
+  gallery?: { items: unknown[] };
   readingTimeOverrideMinutes?: number | null;
   seoTitle?: string | null;
   seoDescription?: string | null;
@@ -1246,6 +1321,7 @@ export async function updateTranslation(
     const updates: Record<string, unknown> = { updatedByAdminId: ctx.actorAdminId };
     for (const key of [
       "title", "deck", "contextLabel", "featureImageAlt", "listingImageUrl", "body",
+      "gallery",
       "readingTimeOverrideMinutes", "seoTitle", "seoDescription", "ogImageUrl",
     ] as const) {
       if (input[key] !== undefined) updates[key] = input[key];
@@ -1359,6 +1435,10 @@ export async function restoreTranslationRevision(
         // `?? null` because a pre-0128 snapshot has no such key at all;
         // absent means "the column was null when this was taken".
         listingImageUrl: snapshot.listingImageUrl ?? null,
+        // `readStoredGallery` because a pre-0129 snapshot has no such key
+        // at all; absent means "the gallery was empty when this was
+        // taken", which is exactly what the column would have held.
+        gallery: readStoredGallery(snapshot.gallery),
         authorSnapshot: snapshot.authorSnapshot,
         readingTimeOverrideMinutes: snapshot.readingTimeOverrideMinutes,
         seoTitle: snapshot.seoTitle,
@@ -1575,7 +1655,26 @@ export async function createPost(
   input: CreatePostInput,
   ctx: TransitionContext,
 ): Promise<{ post: EditorialPost; translation: EditorialPostTranslation | null }> {
-  return db.transaction(async (tx) => {
+  return db.transaction(async (tx) => createPostInTx(tx, input, ctx));
+}
+
+/**
+ * `createPost`'s body, in a CALLER-SUPPLIED transaction — same reasoning
+ * as publishTranslationInTx.
+ *
+ * The News → Editorial migration creates the post, its translation, its
+ * topics, its gallery and its publish transition as ONE unit of work per
+ * legacy row. Using this rather than a hand-rolled INSERT is what keeps
+ * the migrated rows indistinguishable from Admin-authored ones: the same
+ * channel/author invariant check, the same slug resolution, the same
+ * `channel` denormalization, and the same audit rows.
+ */
+export async function createPostInTx(
+  tx: DbClient,
+  input: CreatePostInput,
+  ctx: TransitionContext,
+): Promise<{ post: EditorialPost; translation: EditorialPostTranslation | null }> {
+  {
     if (input.authorId != null) {
       await assertAuthorAssignableToChannel(tx, input.channel, input.authorId);
     }
@@ -1622,6 +1721,7 @@ export async function createPost(
         featureImageAlt: input.translation.featureImageAlt ?? null,
         listingImageUrl: input.translation.listingImageUrl ?? null,
         body: input.translation.body as never,
+        gallery: (input.translation.gallery ?? { items: [] }) as never,
         readingTimeOverrideMinutes: input.translation.readingTimeOverrideMinutes ?? null,
         seoTitle: input.translation.seoTitle ?? null,
         seoDescription: input.translation.seoDescription ?? null,
@@ -1639,7 +1739,7 @@ export async function createPost(
       summary: `Added a ${language.code} draft translation to ${post.channel} post #${post.id} — "${translation.title}"`,
     });
     return { post, translation };
-  });
+  }
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -1656,9 +1756,18 @@ const TRANSLATION_AUDIT_FIELDS = [
  * 250-block document in every audit row would bloat admin_activity_logs for
  * no benefit, and the full prior body is already preserved in
  * editorial_post_revisions where it belongs.
+ *
+ * The `gallery` is excluded for exactly the same reason, and for exactly
+ * the same reason it is not simply invisible: `galleryItemCount` is
+ * recorded instead, so an audit reader can see that a gallery was added
+ * to or emptied without the log carrying 30 URLs per row. The full prior
+ * gallery lives in the revision snapshot, like the body.
  */
 export function translationAuditFields(row: EditorialPostTranslation): Record<string, unknown> {
-  return Object.fromEntries(
-    TRANSLATION_AUDIT_FIELDS.map((key) => [key, row[key as keyof EditorialPostTranslation]]),
-  );
+  return {
+    ...Object.fromEntries(
+      TRANSLATION_AUDIT_FIELDS.map((key) => [key, row[key as keyof EditorialPostTranslation]]),
+    ),
+    galleryItemCount: readStoredGallery(row.gallery).items.length,
+  };
 }

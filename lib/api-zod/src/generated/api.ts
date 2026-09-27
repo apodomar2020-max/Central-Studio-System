@@ -5462,6 +5462,10 @@ export const createEditorialPostBodyTranslationBodyBlocksItemFiveAttributionRole
 
 export const createEditorialPostBodyTranslationBodyBlocksMax = 250;
 
+export const createEditorialPostBodyTranslationGalleryItemsItemAltMax = 200;
+
+export const createEditorialPostBodyTranslationGalleryItemsMax = 30;
+
 export const CreateEditorialPostBody = zod
   .object({
     channel: zod.enum(["news", "experience"]),
@@ -5567,6 +5571,23 @@ export const CreateEditorialPostBody = zod
             )
             .max(createEditorialPostBodyTranslationBodyBlocksMax),
         }),
+        gallery: zod
+          .object({
+            items: zod
+              .array(
+                zod.object({
+                  url: zod.string().min(1),
+                  alt: zod
+                    .string()
+                    .min(1)
+                    .max(
+                      createEditorialPostBodyTranslationGalleryItemsItemAltMax,
+                    ),
+                }),
+              )
+              .max(createEditorialPostBodyTranslationGalleryItemsMax),
+          })
+          .optional(),
         readingTimeOverrideMinutes: zod.number().nullish(),
         seoTitle: zod.string().nullish(),
         seoDescription: zod.string().nullish(),
@@ -5601,6 +5622,10 @@ export const createEditorialPostResponseTranslationOneBodyBlocksItemFiveAttribut
 export const createEditorialPostResponseTranslationOneBodyBlocksItemFiveAttributionRoleMax = 200;
 
 export const createEditorialPostResponseTranslationOneBodyBlocksMax = 250;
+
+export const createEditorialPostResponseTranslationOneGalleryItemsItemAltMax = 200;
+
+export const createEditorialPostResponseTranslationOneGalleryItemsMax = 30;
 
 export const CreateEditorialPostResponse = zod.object({
   post: zod
@@ -5717,6 +5742,21 @@ export const CreateEditorialPostResponse = zod.object({
             )
             .max(createEditorialPostResponseTranslationOneBodyBlocksMax),
         }),
+        gallery: zod.object({
+          items: zod
+            .array(
+              zod.object({
+                url: zod.string().min(1),
+                alt: zod
+                  .string()
+                  .min(1)
+                  .max(
+                    createEditorialPostResponseTranslationOneGalleryItemsItemAltMax,
+                  ),
+              }),
+            )
+            .max(createEditorialPostResponseTranslationOneGalleryItemsMax),
+        }),
         bodyVersion: zod.number(),
         status: zod.enum(["draft", "published", "archived"]),
         publishedAt: zod.string().nullable(),
@@ -5771,6 +5811,10 @@ export const getEditorialPostResponseTranslationsItemBodyBlocksItemFiveAttributi
 export const getEditorialPostResponseTranslationsItemBodyBlocksItemFiveAttributionRoleMax = 200;
 
 export const getEditorialPostResponseTranslationsItemBodyBlocksMax = 250;
+
+export const getEditorialPostResponseTranslationsItemGalleryItemsItemAltMax = 200;
+
+export const getEditorialPostResponseTranslationsItemGalleryItemsMax = 30;
 
 export const GetEditorialPostResponse = zod.object({
   post: zod
@@ -5887,6 +5931,21 @@ export const GetEditorialPostResponse = zod.object({
             )
             .max(getEditorialPostResponseTranslationsItemBodyBlocksMax),
         }),
+        gallery: zod.object({
+          items: zod
+            .array(
+              zod.object({
+                url: zod.string().min(1),
+                alt: zod
+                  .string()
+                  .min(1)
+                  .max(
+                    getEditorialPostResponseTranslationsItemGalleryItemsItemAltMax,
+                  ),
+              }),
+            )
+            .max(getEditorialPostResponseTranslationsItemGalleryItemsMax),
+        }),
         bodyVersion: zod.number(),
         status: zod.enum(["draft", "published", "archived"]),
         publishedAt: zod.string().nullable(),
@@ -5997,6 +6056,10 @@ export const listEditorialPostTranslationsResponseBodyBlocksItemFiveAttributionR
 
 export const listEditorialPostTranslationsResponseBodyBlocksMax = 250;
 
+export const listEditorialPostTranslationsResponseGalleryItemsItemAltMax = 200;
+
+export const listEditorialPostTranslationsResponseGalleryItemsMax = 30;
+
 export const ListEditorialPostTranslationsResponseItem = zod
   .object({
     id: zod.number(),
@@ -6095,6 +6158,19 @@ export const ListEditorialPostTranslationsResponseItem = zod
         )
         .max(listEditorialPostTranslationsResponseBodyBlocksMax),
     }),
+    gallery: zod.object({
+      items: zod
+        .array(
+          zod.object({
+            url: zod.string().min(1),
+            alt: zod
+              .string()
+              .min(1)
+              .max(listEditorialPostTranslationsResponseGalleryItemsItemAltMax),
+          }),
+        )
+        .max(listEditorialPostTranslationsResponseGalleryItemsMax),
+    }),
     bodyVersion: zod.number(),
     status: zod.enum(["draft", "published", "archived"]),
     publishedAt: zod.string().nullable(),
@@ -6156,6 +6232,10 @@ export const createEditorialPostTranslationBodyBodyBlocksItemFiveAttributionMax 
 export const createEditorialPostTranslationBodyBodyBlocksItemFiveAttributionRoleMax = 200;
 
 export const createEditorialPostTranslationBodyBodyBlocksMax = 250;
+
+export const createEditorialPostTranslationBodyGalleryItemsItemAltMax = 200;
+
+export const createEditorialPostTranslationBodyGalleryItemsMax = 30;
 
 export const CreateEditorialPostTranslationBody = zod
   .object({
@@ -6251,6 +6331,21 @@ export const CreateEditorialPostTranslationBody = zod
         )
         .max(createEditorialPostTranslationBodyBodyBlocksMax),
     }),
+    gallery: zod
+      .object({
+        items: zod
+          .array(
+            zod.object({
+              url: zod.string().min(1),
+              alt: zod
+                .string()
+                .min(1)
+                .max(createEditorialPostTranslationBodyGalleryItemsItemAltMax),
+            }),
+          )
+          .max(createEditorialPostTranslationBodyGalleryItemsMax),
+      })
+      .optional(),
     readingTimeOverrideMinutes: zod.number().nullish(),
     seoTitle: zod.string().nullish(),
     seoDescription: zod.string().nullish(),
@@ -6280,6 +6375,10 @@ export const createEditorialPostTranslationResponseBodyBlocksItemFiveAttribution
 export const createEditorialPostTranslationResponseBodyBlocksItemFiveAttributionRoleMax = 200;
 
 export const createEditorialPostTranslationResponseBodyBlocksMax = 250;
+
+export const createEditorialPostTranslationResponseGalleryItemsItemAltMax = 200;
+
+export const createEditorialPostTranslationResponseGalleryItemsMax = 30;
 
 export const CreateEditorialPostTranslationResponse = zod
   .object({
@@ -6379,6 +6478,21 @@ export const CreateEditorialPostTranslationResponse = zod
         )
         .max(createEditorialPostTranslationResponseBodyBlocksMax),
     }),
+    gallery: zod.object({
+      items: zod
+        .array(
+          zod.object({
+            url: zod.string().min(1),
+            alt: zod
+              .string()
+              .min(1)
+              .max(
+                createEditorialPostTranslationResponseGalleryItemsItemAltMax,
+              ),
+          }),
+        )
+        .max(createEditorialPostTranslationResponseGalleryItemsMax),
+    }),
     bodyVersion: zod.number(),
     status: zod.enum(["draft", "published", "archived"]),
     publishedAt: zod.string().nullable(),
@@ -6431,6 +6545,10 @@ export const getEditorialPostTranslationResponseBodyBlocksItemFiveAttributionMax
 export const getEditorialPostTranslationResponseBodyBlocksItemFiveAttributionRoleMax = 200;
 
 export const getEditorialPostTranslationResponseBodyBlocksMax = 250;
+
+export const getEditorialPostTranslationResponseGalleryItemsItemAltMax = 200;
+
+export const getEditorialPostTranslationResponseGalleryItemsMax = 30;
 
 export const GetEditorialPostTranslationResponse = zod
   .object({
@@ -6530,6 +6648,19 @@ export const GetEditorialPostTranslationResponse = zod
         )
         .max(getEditorialPostTranslationResponseBodyBlocksMax),
     }),
+    gallery: zod.object({
+      items: zod
+        .array(
+          zod.object({
+            url: zod.string().min(1),
+            alt: zod
+              .string()
+              .min(1)
+              .max(getEditorialPostTranslationResponseGalleryItemsItemAltMax),
+          }),
+        )
+        .max(getEditorialPostTranslationResponseGalleryItemsMax),
+    }),
     bodyVersion: zod.number(),
     status: zod.enum(["draft", "published", "archived"]),
     publishedAt: zod.string().nullable(),
@@ -6586,6 +6717,10 @@ export const updateEditorialPostTranslationBodyBodyBlocksItemFiveAttributionMax 
 export const updateEditorialPostTranslationBodyBodyBlocksItemFiveAttributionRoleMax = 200;
 
 export const updateEditorialPostTranslationBodyBodyBlocksMax = 250;
+
+export const updateEditorialPostTranslationBodyGalleryItemsItemAltMax = 200;
+
+export const updateEditorialPostTranslationBodyGalleryItemsMax = 30;
 
 export const UpdateEditorialPostTranslationBody = zod
   .object({
@@ -6687,6 +6822,21 @@ export const UpdateEditorialPostTranslationBody = zod
           .max(updateEditorialPostTranslationBodyBodyBlocksMax),
       })
       .optional(),
+    gallery: zod
+      .object({
+        items: zod
+          .array(
+            zod.object({
+              url: zod.string().min(1),
+              alt: zod
+                .string()
+                .min(1)
+                .max(updateEditorialPostTranslationBodyGalleryItemsItemAltMax),
+            }),
+          )
+          .max(updateEditorialPostTranslationBodyGalleryItemsMax),
+      })
+      .optional(),
     readingTimeOverrideMinutes: zod.number().nullish(),
     seoTitle: zod.string().nullish(),
     seoDescription: zod.string().nullish(),
@@ -6716,6 +6866,10 @@ export const updateEditorialPostTranslationResponseBodyBlocksItemFiveAttribution
 export const updateEditorialPostTranslationResponseBodyBlocksItemFiveAttributionRoleMax = 200;
 
 export const updateEditorialPostTranslationResponseBodyBlocksMax = 250;
+
+export const updateEditorialPostTranslationResponseGalleryItemsItemAltMax = 200;
+
+export const updateEditorialPostTranslationResponseGalleryItemsMax = 30;
 
 export const UpdateEditorialPostTranslationResponse = zod
   .object({
@@ -6815,6 +6969,21 @@ export const UpdateEditorialPostTranslationResponse = zod
         )
         .max(updateEditorialPostTranslationResponseBodyBlocksMax),
     }),
+    gallery: zod.object({
+      items: zod
+        .array(
+          zod.object({
+            url: zod.string().min(1),
+            alt: zod
+              .string()
+              .min(1)
+              .max(
+                updateEditorialPostTranslationResponseGalleryItemsItemAltMax,
+              ),
+          }),
+        )
+        .max(updateEditorialPostTranslationResponseGalleryItemsMax),
+    }),
     bodyVersion: zod.number(),
     status: zod.enum(["draft", "published", "archived"]),
     publishedAt: zod.string().nullable(),
@@ -6867,6 +7036,10 @@ export const publishEditorialPostTranslationResponseBodyBlocksItemFiveAttributio
 export const publishEditorialPostTranslationResponseBodyBlocksItemFiveAttributionRoleMax = 200;
 
 export const publishEditorialPostTranslationResponseBodyBlocksMax = 250;
+
+export const publishEditorialPostTranslationResponseGalleryItemsItemAltMax = 200;
+
+export const publishEditorialPostTranslationResponseGalleryItemsMax = 30;
 
 export const PublishEditorialPostTranslationResponse = zod
   .object({
@@ -6966,6 +7139,21 @@ export const PublishEditorialPostTranslationResponse = zod
         )
         .max(publishEditorialPostTranslationResponseBodyBlocksMax),
     }),
+    gallery: zod.object({
+      items: zod
+        .array(
+          zod.object({
+            url: zod.string().min(1),
+            alt: zod
+              .string()
+              .min(1)
+              .max(
+                publishEditorialPostTranslationResponseGalleryItemsItemAltMax,
+              ),
+          }),
+        )
+        .max(publishEditorialPostTranslationResponseGalleryItemsMax),
+    }),
     bodyVersion: zod.number(),
     status: zod.enum(["draft", "published", "archived"]),
     publishedAt: zod.string().nullable(),
@@ -7018,6 +7206,10 @@ export const archiveEditorialPostTranslationResponseBodyBlocksItemFiveAttributio
 export const archiveEditorialPostTranslationResponseBodyBlocksItemFiveAttributionRoleMax = 200;
 
 export const archiveEditorialPostTranslationResponseBodyBlocksMax = 250;
+
+export const archiveEditorialPostTranslationResponseGalleryItemsItemAltMax = 200;
+
+export const archiveEditorialPostTranslationResponseGalleryItemsMax = 30;
 
 export const ArchiveEditorialPostTranslationResponse = zod
   .object({
@@ -7117,6 +7309,21 @@ export const ArchiveEditorialPostTranslationResponse = zod
         )
         .max(archiveEditorialPostTranslationResponseBodyBlocksMax),
     }),
+    gallery: zod.object({
+      items: zod
+        .array(
+          zod.object({
+            url: zod.string().min(1),
+            alt: zod
+              .string()
+              .min(1)
+              .max(
+                archiveEditorialPostTranslationResponseGalleryItemsItemAltMax,
+              ),
+          }),
+        )
+        .max(archiveEditorialPostTranslationResponseGalleryItemsMax),
+    }),
     bodyVersion: zod.number(),
     status: zod.enum(["draft", "published", "archived"]),
     publishedAt: zod.string().nullable(),
@@ -7169,6 +7376,10 @@ export const restoreEditorialPostTranslationResponseBodyBlocksItemFiveAttributio
 export const restoreEditorialPostTranslationResponseBodyBlocksItemFiveAttributionRoleMax = 200;
 
 export const restoreEditorialPostTranslationResponseBodyBlocksMax = 250;
+
+export const restoreEditorialPostTranslationResponseGalleryItemsItemAltMax = 200;
+
+export const restoreEditorialPostTranslationResponseGalleryItemsMax = 30;
 
 export const RestoreEditorialPostTranslationResponse = zod
   .object({
@@ -7267,6 +7478,21 @@ export const RestoreEditorialPostTranslationResponse = zod
           ]),
         )
         .max(restoreEditorialPostTranslationResponseBodyBlocksMax),
+    }),
+    gallery: zod.object({
+      items: zod
+        .array(
+          zod.object({
+            url: zod.string().min(1),
+            alt: zod
+              .string()
+              .min(1)
+              .max(
+                restoreEditorialPostTranslationResponseGalleryItemsItemAltMax,
+              ),
+          }),
+        )
+        .max(restoreEditorialPostTranslationResponseGalleryItemsMax),
     }),
     bodyVersion: zod.number(),
     status: zod.enum(["draft", "published", "archived"]),
@@ -7463,6 +7689,10 @@ export const getEditorialPostRevisionResponseSnapshotOneBodyBlocksItemFiveAttrib
 
 export const getEditorialPostRevisionResponseSnapshotOneBodyBlocksMax = 250;
 
+export const getEditorialPostRevisionResponseSnapshotOneGalleryOneItemsItemAltMax = 200;
+
+export const getEditorialPostRevisionResponseSnapshotOneGalleryOneItemsMax = 30;
+
 export const GetEditorialPostRevisionResponse = zod.object({
   id: zod.number(),
   postId: zod.number(),
@@ -7571,6 +7801,28 @@ export const GetEditorialPostRevisionResponse = zod.object({
         bodyVersion: zod.number(),
         featureImageAlt: zod.string().nullable(),
         listingImageUrl: zod.string().nullish(),
+        gallery: zod
+          .union([
+            zod.object({
+              items: zod
+                .array(
+                  zod.object({
+                    url: zod.string().min(1),
+                    alt: zod
+                      .string()
+                      .min(1)
+                      .max(
+                        getEditorialPostRevisionResponseSnapshotOneGalleryOneItemsItemAltMax,
+                      ),
+                  }),
+                )
+                .max(
+                  getEditorialPostRevisionResponseSnapshotOneGalleryOneItemsMax,
+                ),
+            }),
+            zod.null(),
+          ])
+          .optional(),
         authorSnapshot: zod.union([
           zod.object({
             name: zod.string(),
@@ -7633,6 +7885,10 @@ export const restoreEditorialPostRevisionResponseBodyBlocksItemFiveAttributionMa
 export const restoreEditorialPostRevisionResponseBodyBlocksItemFiveAttributionRoleMax = 200;
 
 export const restoreEditorialPostRevisionResponseBodyBlocksMax = 250;
+
+export const restoreEditorialPostRevisionResponseGalleryItemsItemAltMax = 200;
+
+export const restoreEditorialPostRevisionResponseGalleryItemsMax = 30;
 
 export const RestoreEditorialPostRevisionResponse = zod
   .object({
@@ -7731,6 +7987,19 @@ export const RestoreEditorialPostRevisionResponse = zod
           ]),
         )
         .max(restoreEditorialPostRevisionResponseBodyBlocksMax),
+    }),
+    gallery: zod.object({
+      items: zod
+        .array(
+          zod.object({
+            url: zod.string().min(1),
+            alt: zod
+              .string()
+              .min(1)
+              .max(restoreEditorialPostRevisionResponseGalleryItemsItemAltMax),
+          }),
+        )
+        .max(restoreEditorialPostRevisionResponseGalleryItemsMax),
     }),
     bodyVersion: zod.number(),
     status: zod.enum(["draft", "published", "archived"]),

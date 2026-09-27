@@ -317,6 +317,10 @@ const READY = {
   languageIsActive: true,
   title: "Opening night",
   blocks: [{ type: "paragraph" }],
+  // Final Editorial, Phase B: the gallery is part of the readiness gate,
+  // so every fixture states it. An empty gallery is ready — the rule is
+  // "every gallery image has alt text", not "there must be a gallery".
+  galleryItems: [] as Array<{ alt?: string }>,
   featureImageUrl: "https://a.test/b.jpg",
   featureImageAlt: "A dancer",
   author: { publicName: "Nour", status: "active" as const, biography: "Bio" },
@@ -388,4 +392,37 @@ test("the media trust boundary is deliberately NOT mirrored client-side", () => 
   const source = readFileSync(new URL("./editorial-post-form.ts", import.meta.url), "utf8");
   assert.doesNotMatch(source, /picsum\.photos|images\.unsplash\.com/);
   assert.match(source, /NOT mirrored/);
+});
+
+// ─── Gallery readiness (Final Editorial, Phase B) ────────────────────────────
+
+test("an empty gallery is READY — the rule is alt text, not the presence of a gallery", () => {
+  assert.equal(isPublishReady(publishReadiness({ ...READY, galleryItems: [] })), true);
+});
+
+test("a gallery image with no alt text BLOCKS publishing, in the server's wording", () => {
+  const blocking = blockingReadiness(
+    publishReadiness({ ...READY, galleryItems: [{ alt: "Fine." }, { alt: "" }] }),
+  );
+  assert.deepEqual(
+    blocking.map((item) => item.message),
+    ["Every gallery image needs alt text before publishing (missing on image 2)."],
+  );
+});
+
+test("gallery alt readiness names the 1-based image numbers, like the server does", () => {
+  const blocking = blockingReadiness(
+    publishReadiness({ ...READY, galleryItems: [{ alt: "" }, { alt: "ok" }, { alt: "   " }] }),
+  );
+  assert.match(blocking[0].message, /missing on image 1, 3/);
+});
+
+test("the gallery readiness message is one the server actually raises", () => {
+  // Pinned against the service source so the Admin's copy cannot drift
+  // from the 400 an operator would otherwise be left to decode.
+  const source = readFileSync(
+    new URL("../../../api-server/src/lib/editorialPostsService.ts", import.meta.url),
+    "utf8",
+  );
+  assert.ok(source.includes("Every gallery image needs alt text before publishing (missing on image"));
 });

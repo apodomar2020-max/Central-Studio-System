@@ -6344,6 +6344,40 @@ components:
           maxItems: 250
           items: { $ref: "#/components/schemas/EditorialBodyBlock" }
 
+    # ─── Gallery (Final Editorial — Phase B) ─────────────────────────────────
+    #
+    # An ORDERED list of media items a translation shows alongside — not
+    # inside — its body. `alt` is REQUIRED, exactly as it is on the image
+    # BODY block and for the same reason: a gallery is pictures a reader is
+    # meant to look at, and one with no alt text is invisible to a reader
+    # who cannot see it.
+    #
+    # There is deliberately NO caption. The legacy field this capability
+    # preserves, website_news_posts.galleryImages, is a bare array of URLs
+    # carrying no caption and no alt of any kind, so a caption would be a
+    # field no existing content can fill and no migration can populate
+    # honestly. Adding it later would be purely additive.
+    EditorialGalleryItem:
+      type: object
+      required: [url, alt]
+      properties:
+        # Checked at the SAME media trust boundary as every other Editorial
+        # image — allowlist, DNS, redirects, Content-Type. There is no
+        # separate, weaker validation path for gallery URLs.
+        url: { type: string, minLength: 1 }
+        alt: { type: string, minLength: 1, maxLength: 200 }
+
+    EditorialGallery:
+      type: object
+      required: [items]
+      properties:
+        # The array ORDER is the display order. There is no position field,
+        # for the same reason body.blocks has none.
+        items:
+          type: array
+          maxItems: 30
+          items: { $ref: "#/components/schemas/EditorialGalleryItem" }
+
     EditorialAuthorSnapshot:
       type: object
       required: [name, role, avatarUrl, biography]
@@ -6561,7 +6595,8 @@ components:
       description: One language's rendering of a post, with its own independent lifecycle.
       required:
         [id, postId, languageId, languageCode, channel, title, slug, deck,
-         contextLabel, featureImageAlt, listingImageUrl, body, bodyVersion,
+         contextLabel, featureImageAlt, listingImageUrl, body, gallery,
+         bodyVersion,
          status, publishedAt, readingTimeOverrideMinutes, seoTitle,
          seoDescription, ogImageUrl, authorSnapshot, createdAt, updatedAt,
          updatedByAdminId]
@@ -6596,6 +6631,11 @@ components:
         # it is about how THIS language's content appears in a list.
         listingImageUrl: { type: ["string", "null"] }
         body: { $ref: "#/components/schemas/EditorialBody" }
+        # Ordered, translation-scoped media gallery (migration 0129).
+        # Always present: the column is NOT NULL with an empty default, so
+        # a translation with no gallery carries { "items": [] } rather
+        # than null — a collection has no meaningful null.
+        gallery: { $ref: "#/components/schemas/EditorialGallery" }
         bodyVersion: { type: integer }
         status: { type: string, enum: [draft, published, archived] }
         # Stamped once, on THIS translation's own first publish. Never
@@ -6652,6 +6692,9 @@ components:
         # Editorial image URL. Distinct from the post's featureImageUrl.
         listingImageUrl: { type: ["string", "null"] }
         body: { $ref: "#/components/schemas/EditorialBody" }
+        # Optional. Omit it for an empty gallery. Every URL is checked at
+        # the media trust boundary like every other Editorial image.
+        gallery: { $ref: "#/components/schemas/EditorialGallery" }
         readingTimeOverrideMinutes: { type: ["integer", "null"] }
         seoTitle: { type: ["string", "null"] }
         seoDescription: { type: ["string", "null"] }
@@ -6671,6 +6714,10 @@ components:
         featureImageAlt: { type: ["string", "null"] }
         listingImageUrl: { type: ["string", "null"] }
         body: { $ref: "#/components/schemas/EditorialBody" }
+        # Sent WHOLE, never patched item by item: reordering, removing and
+        # editing are all "here is the gallery now", which is the only
+        # shape that cannot lose an item to a lost update.
+        gallery: { $ref: "#/components/schemas/EditorialGallery" }
         readingTimeOverrideMinutes: { type: ["integer", "null"] }
         seoTitle: { type: ["string", "null"] }
         seoDescription: { type: ["string", "null"] }
@@ -6857,6 +6904,15 @@ components:
         # is read as null on restore, which is exactly what the column held
         # when that snapshot was taken.
         listingImageUrl: { type: ["string", "null"] }
+        # DELIBERATELY NOT in `required`, for exactly the reason
+        # listingImageUrl above is not: revisions written before Phase B
+        # are stored jsonb and physically cannot carry this key. Absent is
+        # read as an EMPTY gallery on restore, which is what the column
+        # would have held when that snapshot was taken.
+        gallery:
+          oneOf:
+            - { $ref: "#/components/schemas/EditorialGallery" }
+            - { type: "null" }
         authorSnapshot:
           oneOf:
             - { $ref: "#/components/schemas/EditorialAuthorSnapshot" }

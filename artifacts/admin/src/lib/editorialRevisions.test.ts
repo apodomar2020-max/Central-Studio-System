@@ -273,7 +273,15 @@ test("the empty state explains why an untouched post has no history rather than 
 test("the restorable set is EXACTLY the columns restoreTranslationRevision writes", () => {
   const body = service.slice(service.indexOf("export async function restoreTranslationRevision"));
   const setBlock = body.slice(body.indexOf(".set({"), body.indexOf(".where(eq(editorialPostTranslationsTable.id, translation.id))"));
-  const written = [...setBlock.matchAll(/^\s+(\w+): snapshot\./gm)].map((match) => match[1]!);
+  // Matches a key written FROM ITS OWN snapshot key, however it is read.
+  // Phase B widened this from a literal `key: snapshot.key` prefix: the
+  // gallery is restored as `gallery: readStoredGallery(snapshot.gallery)`,
+  // because a pre-0129 snapshot physically cannot carry the key and absent
+  // has to be read as the empty gallery the column then held. Back-
+  // referencing the key name keeps the check STRICTER than a bare
+  // "mentions snapshot" — a field restored from the wrong snapshot key
+  // still fails.
+  const written = [...setBlock.matchAll(/^\s+(\w+):[^,\n]*snapshot\.\1\b/gm)].map((match) => match[1]!);
   // Everything offered as restorable must genuinely be written back...
   for (const key of RESTORABLE_FIELD_KEYS) {
     assert.ok(written.includes(key), `${key} is offered as restorable but the service does not write it`);
@@ -825,4 +833,171 @@ test("no restore copy claims the public website changes while coexistence is sti
   assert.match(published.description, /Published right now/);
   assert.match(published.description, /immediately/);
   assert.equal(published.destructive, true);
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// Final Editorial, Phase B — GALLERY comparison
+//
+// THE PRECEDENT THESE TESTS EXIST FOR. Phase A shipped `blockText` with a
+// `default: return ""` branch, so every QUOTE block flattened to the empty
+// string: two completely different quotes compared as identical and quote
+// edits were invisible in the revision comparison. The bug was not that the
+// code was wrong in an obvious way — it was that nothing asserted a change
+// was DETECTED, only that comparison ran.
+//
+// A gallery has three further ways to fall into the same trap, so each gets
+// an explicit test that a real change is SEEN:
+//   1. comparing by item COUNT hides a url edit, an alt edit and a reorder;
+//   2. comparing by url only hides an alt edit;
+//   3. comparing order-insensitively hides a reorder.
+// ════════════════════════════════════════════════════════════════════════════
+
+const {
+  compareGalleryItems,
+  galleryChanged,
+  galleryFingerprint,
+  galleryItemText,
+  readSnapshotGallery,
+  summariseGalleryComparison,
+} = await import("./editorial-revisions.ts");
+
+const g = (...pairs: Array<[string, string]>) => pairs.map(([url, alt]) => ({ url, alt }));
+
+const snapshotBase = {
+  title: "T", slug: "s", deck: null, contextLabel: null, featureImageAlt: null,
+  listingImageUrl: null, authorSnapshot: null, readingTimeOverrideMinutes: null,
+  seoTitle: null, seoDescription: null, ogImageUrl: null,
+  status: "published" as const, publishedAt: null,
+};
+const currentBase = { ...snapshotBase };
+
+test("gallery: a pre-0129 snapshot with no gallery key reads as EMPTY, not as a crash", () => {
+  // Revisions written before the column existed physically cannot carry
+  // the key. Absent must mean "the gallery was empty then", which is what
+  // the column would have held.
+  assert.deepEqual(readSnapshotGallery(undefined), []);
+  assert.deepEqual(readSnapshotGallery(null), []);
+  assert.deepEqual(readSnapshotGallery({}), []);
+  assert.deepEqual(readSnapshotGallery({ items: "nonsense" } as never), []);
+});
+
+test("gallery: a malformed stored item degrades to empty strings rather than throwing", () => {
+  assert.deepEqual(readSnapshotGallery({ items: [{ url: 1 }, null] } as never), [
+    { url: "", alt: "" },
+    { url: "", alt: "" },
+  ]);
+});
+
+test("gallery: item text flattens EVERY authored string — url AND alt", () => {
+  // The Phase A quote bug in miniature: if either string were dropped,
+  // edits to it would be invisible.
+  const text = galleryItemText({ url: "https://x.test/a.jpg", alt: "A dancer." });
+  assert.match(text, /https:\/\/x\.test\/a\.jpg/);
+  assert.match(text, /A dancer\./);
+});
+
+test("gallery: an ALT-ONLY edit changes the fingerprint", () => {
+  assert.notEqual(
+    galleryFingerprint(g(["u", "before"])),
+    galleryFingerprint(g(["u", "after"])),
+  );
+});
+
+test("gallery: a URL-ONLY edit changes the fingerprint", () => {
+  assert.notEqual(
+    galleryFingerprint(g(["before", "a"])),
+    galleryFingerprint(g(["after", "a"])),
+  );
+});
+
+test("gallery: a PURE REORDER changes the fingerprint", () => {
+  assert.notEqual(
+    galleryFingerprint(g(["a", "A"], ["b", "B"])),
+    galleryFingerprint(g(["b", "B"], ["a", "A"])),
+  );
+});
+
+test("gallery: an identical gallery has an identical fingerprint", () => {
+  assert.equal(
+    galleryFingerprint(g(["a", "A"], ["b", "B"])),
+    galleryFingerprint(g(["a", "A"], ["b", "B"])),
+  );
+});
+
+test("gallery: the field row is CHANGED even when the item COUNT is unchanged", () => {
+  // The row displays a count, and a count cannot detect a reorder or an
+  // alt edit. `changed` must therefore be computed from the faithful
+  // flattening, not from the displayed text.
+  for (const [was, now] of [
+    [g(["a", "A"], ["b", "B"]), g(["b", "B"], ["a", "A"])],   // reorder
+    [g(["a", "A"]), g(["a", "A2"])],                            // alt edit
+    [g(["a", "A"]), g(["a2", "A"])],                            // url edit
+  ] as const) {
+    const rows = compareTranslationSnapshot(
+      { ...snapshotBase, gallery: { items: was } } as never,
+      { ...currentBase, gallery: { items: now } } as never,
+    );
+    const row = rows.find((r) => r.key === "gallery");
+    assert.ok(row, "a gallery row must be present");
+    assert.equal(row!.changed, true, `expected a change to be detected for ${JSON.stringify(now)}`);
+    assert.equal(row!.was, row!.now, "the displayed COUNT is deliberately identical here");
+  }
+});
+
+test("gallery: an untouched gallery reports unchanged", () => {
+  const rows = compareTranslationSnapshot(
+    { ...snapshotBase, gallery: { items: g(["a", "A"]) } } as never,
+    { ...currentBase, gallery: { items: g(["a", "A"]) } } as never,
+  );
+  assert.equal(rows.find((r) => r.key === "gallery")!.changed, false);
+});
+
+test("gallery: the gallery is offered as RESTORABLE", () => {
+  assert.ok(RESTORABLE_FIELD_KEYS.includes("gallery"));
+});
+
+test("gallery: a reorder reads as MOVED, never as an add plus a remove", () => {
+  // The distinction is what makes a reorder legible to a reviewer.
+  const entries = compareGalleryItems(g(["a", "A"], ["b", "B"]), g(["b", "B"], ["a", "A"]));
+  assert.equal(entries.length, 2);
+  assert.ok(entries.every((e) => e.kind === "moved"), JSON.stringify(entries));
+  assert.equal(galleryChanged(entries), true);
+});
+
+test("gallery: an edited item reads as MODIFIED, carrying both texts", () => {
+  const entries = compareGalleryItems(g(["a", "A"]), g(["a", "A2"]));
+  assert.equal(entries[0].kind, "modified");
+  assert.match(entries[0].wasText ?? "", /A$/);
+  assert.match(entries[0].nowText ?? "", /A2$/);
+});
+
+test("gallery: an added item and a removed item are each named", () => {
+  const added = compareGalleryItems(g(["a", "A"]), g(["a", "A"], ["b", "B"]));
+  assert.deepEqual(added.map((e) => e.kind), ["unchanged", "added"]);
+
+  const removed = compareGalleryItems(g(["a", "A"], ["b", "B"]), g(["a", "A"]));
+  assert.deepEqual(removed.map((e) => e.kind), ["unchanged", "removed"]);
+  // A removal has no position in the current gallery but is still reported.
+  assert.equal(removed[1].nowIndex, null);
+  assert.equal(removed[1].wasIndex, 1);
+});
+
+test("gallery: an identical gallery reports every item unchanged and no change overall", () => {
+  const entries = compareGalleryItems(g(["a", "A"], ["b", "B"]), g(["a", "A"], ["b", "B"]));
+  assert.ok(entries.every((e) => e.kind === "unchanged"));
+  assert.equal(galleryChanged(entries), false);
+  assert.match(summariseGalleryComparison(entries), /identical/);
+});
+
+test("gallery: the summary names what actually happened", () => {
+  const entries = compareGalleryItems(g(["a", "A"], ["b", "B"]), g(["b", "B"], ["c", "C"]));
+  const summary = summariseGalleryComparison(entries);
+  assert.match(summary, /^Gallery: /);
+  assert.doesNotMatch(summary, /identical/);
+});
+
+test("gallery: comparison labels are the SAME vocabulary the body comparison uses", () => {
+  // One vocabulary for both collections: a reviewer learns "moved" once.
+  const entries = compareGalleryItems(g(["a", "A"]), g(["a", "A2"]));
+  assert.equal(entries[0].label, BLOCK_CHANGE_LABELS.modified);
 });

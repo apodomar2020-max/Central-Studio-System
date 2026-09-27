@@ -18,6 +18,7 @@ import { adminActivityActor, logActivity } from "../lib/activityLog";
 import { logger } from "../lib/logger";
 import { captureError } from "../lib/errorMonitoring";
 import { editorialBodySchema, collectBodyImageUrls } from "../lib/editorialBody";
+import { editorialGallerySchema, collectGalleryImageUrls } from "../lib/editorialGallery";
 import { validateEditorialMediaUrls } from "../lib/editorialMediaUrl";
 import { loadLanguageByCodeOrThrow } from "../lib/editorialLanguagesService";
 import {
@@ -176,6 +177,7 @@ function translationMediaUrls(input: {
   ogImageUrl?: string | null;
   listingImageUrl?: string | null;
   body?: { blocks: Array<Record<string, unknown>> };
+  gallery?: { items: Array<Record<string, unknown>> };
 }): string[] {
   const urls: string[] = [];
   if (input.ogImageUrl) urls.push(input.ogImageUrl);
@@ -184,6 +186,10 @@ function translationMediaUrls(input: {
   // Content-Type. No separate, weaker validation path for it.
   if (input.listingImageUrl) urls.push(input.listingImageUrl);
   if (input.body) urls.push(...collectBodyImageUrls(input.body as never));
+  // Gallery images are public-facing too, and cross the SAME boundary.
+  // Reusing this one helper is what keeps that true: there is no second
+  // place a gallery URL could be validated more weakly.
+  if (input.gallery) urls.push(...collectGalleryImageUrls(input.gallery as never));
   return urls;
 }
 
@@ -415,6 +421,16 @@ router.post(
           res.status(400).json({ error: bodyCheck.error.issues[0]?.message ?? "Invalid body content" });
           return;
         }
+        // Same treatment as the body: re-validate through the domain
+        // schema so the item cap and the REQUIRED alt carry domain
+        // messages, not wire-shape ones.
+        const galleryCheck = editorialGallerySchema.safeParse(
+          body.translation.gallery ?? { items: [] },
+        );
+        if (!galleryCheck.success) {
+          res.status(400).json({ error: galleryCheck.error.issues[0]?.message ?? "Invalid gallery" });
+          return;
+        }
         mediaUrls.push(...translationMediaUrls(body.translation as never));
         const language = await languageFromPath(body.translation.languageCode);
         translationLanguage = language;
@@ -427,6 +443,7 @@ router.post(
           featureImageAlt: body.translation.featureImageAlt ?? null,
           listingImageUrl: body.translation.listingImageUrl ?? null,
           body: bodyCheck.data as never,
+          gallery: galleryCheck.data as never,
           readingTimeOverrideMinutes: body.translation.readingTimeOverrideMinutes ?? null,
           seoTitle: body.translation.seoTitle ?? null,
           seoDescription: body.translation.seoDescription ?? null,
@@ -587,6 +604,11 @@ router.post(
       res.status(400).json({ error: bodyCheck.error.issues[0]?.message ?? "Invalid body content" });
       return;
     }
+    const galleryCheck = editorialGallerySchema.safeParse(body.gallery ?? { items: [] });
+    if (!galleryCheck.success) {
+      res.status(400).json({ error: galleryCheck.error.issues[0]?.message ?? "Invalid gallery" });
+      return;
+    }
 
     try {
       const mediaError = await validateEditorialMediaUrls(translationMediaUrls(body as never));
@@ -606,6 +628,7 @@ router.post(
           featureImageAlt: body.featureImageAlt ?? null,
           listingImageUrl: body.listingImageUrl ?? null,
           body: bodyCheck.data as never,
+          gallery: galleryCheck.data as never,
           readingTimeOverrideMinutes: body.readingTimeOverrideMinutes ?? null,
           seoTitle: body.seoTitle ?? null,
           seoDescription: body.seoDescription ?? null,
@@ -688,6 +711,18 @@ router.patch(
       const bodyCheck = editorialBodySchema.safeParse(body.body);
       if (!bodyCheck.success) {
         res.status(400).json({ error: bodyCheck.error.issues[0]?.message ?? "Invalid body content" });
+        return;
+      }
+    }
+
+    // Absent means "leave the gallery alone"; present means "this IS the
+    // gallery now". There is no per-item patch verb, deliberately — a
+    // whole-collection write is the only shape that cannot lose an item
+    // to a lost update when two editors reorder at once.
+    if (body.gallery !== undefined) {
+      const galleryCheck = editorialGallerySchema.safeParse(body.gallery);
+      if (!galleryCheck.success) {
+        res.status(400).json({ error: galleryCheck.error.issues[0]?.message ?? "Invalid gallery" });
         return;
       }
     }

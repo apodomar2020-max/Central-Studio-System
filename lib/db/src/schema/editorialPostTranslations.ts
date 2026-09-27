@@ -7,6 +7,7 @@ import {
   editorialPostsTable,
   type EditorialAuthorSnapshot,
   type EditorialBody,
+  type EditorialGallery,
   type EditorialPostStatus,
 } from "./editorialPosts";
 
@@ -137,6 +138,26 @@ export const editorialPostTranslationsTable = pgTable("editorial_post_translatio
    */
   listingImageUrl:            text("listing_image_url"),
   body:                       jsonb("body").notNull().$type<EditorialBody>(),
+  /**
+   * The ordered media gallery THIS translation shows — migration 0129.
+   *
+   * A first-class Editorial capability, not a migration holding pen. It
+   * exists because website_news_posts.gallery_images is a populated,
+   * Admin-editable field served on the UNAUTHENTICATED public detail
+   * endpoint, and Phase B may neither discard it nor smuggle it into the
+   * article body as image blocks (which would change the article's
+   * structure and demand invented alt text).
+   *
+   * Translation-level for the same reason feature_image_alt and
+   * listing_image_url are: every item carries REQUIRED alt text, and alt
+   * text is language-specific prose.
+   *
+   * NOT NULL with a '{"items": []}' default rather than nullable: a
+   * collection has no meaningful difference between "null" and "empty",
+   * and allowing both would put a null-vs-[] branch into every reader
+   * forever. `body` makes the same call for the same reason.
+   */
+  gallery:                    jsonb("gallery").notNull().default({ items: [] }).$type<EditorialGallery>(),
   bodyVersion:                integer("body_version").notNull().default(1),
   status:                     text("status").notNull().default("draft").$type<EditorialPostStatus>(),
   publishedAt:                timestamp("published_at", { withTimezone: true, mode: "string" }),
