@@ -57,6 +57,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
+import { WorkspaceRouteNav } from "@/components/admin/workspace-route-nav";
 import { useToast } from "@/hooks/use-toast";
 import { editorialErrorMessage } from "@/lib/editorial-errors";
 import {
@@ -78,6 +79,7 @@ import {
   type WebsiteLinksFormValues,
 } from "@/lib/editorial-website-links";
 import "../../admin2-final.css";
+import "../../admin2-operations.css";
 
 export default function WebsiteSettingsLinksPage() {
   const { toast } = useToast();
@@ -148,6 +150,13 @@ export default function WebsiteSettingsLinksPage() {
         <h2 className="text-base font-semibold text-foreground">Links</h2>
         <p className="text-sm text-muted-foreground">{WEBSITE_LINKS_PAGE_DESCRIPTION}</p>
       </div>
+      <WorkspaceRouteNav
+        ariaLabel="Website configuration workspace"
+        items={[
+          ...(can("website.settings", "view") ? [{ label: "Languages", href: "/website/settings/languages" }] : []),
+          ...(can("website.settings", "view") ? [{ label: "Links", href: "/website/settings/links" }] : []),
+        ]}
+      />
 
       {isLoading ? (
         <p className="text-sm text-muted-foreground" data-testid="website-links-loading">

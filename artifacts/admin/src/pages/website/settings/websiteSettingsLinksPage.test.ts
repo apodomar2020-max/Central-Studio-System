@@ -85,7 +85,10 @@ test("the SINGLETON contract is honoured — no add, no remove, no reorder, no l
 
 test("in-page gating uses website.settings:edit, matching the PATCH route's permission", () => {
   assert.match(pageCode, /const canEdit = can\("website\.settings", "edit"\);/);
-  assert.equal((pageCode.match(/can\("website\.[a-z]+", "[a-z]+"\)/g) ?? []).length, 1);
+  // The shared WorkspaceRouteNav switcher filters its items on :view (the
+  // Backgrounds/Users pattern); that is navigation, not in-page gating.
+  const gatingCode = pageCode.replace(/<WorkspaceRouteNav[\s\S]*?\/>/, "");
+  assert.equal((gatingCode.match(/can\("website\.[a-z]+", "[a-z]+"\)/g) ?? []).length, 1);
   assert.match(settingsRoute, /requireAdminPermission\("website\.settings", "edit"\)/);
   assert.match(settingsRoute, /requireAdminPermission\("website\.settings", "view"\)/);
 });

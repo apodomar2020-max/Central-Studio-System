@@ -48,6 +48,7 @@ import {
 } from "@/components/ui/select";
 import { useAdminConfirm } from "@/components/admin/admin-confirm";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
+import { WorkspaceRouteNav } from "@/components/admin/workspace-route-nav";
 import { useToast } from "@/hooks/use-toast";
 import { editorialErrorMessage } from "@/lib/editorial-errors";
 import {
@@ -67,6 +68,7 @@ import {
 } from "@/lib/editorial-languages";
 import { Plus, Pencil, EyeOff, RotateCcw, Star } from "lucide-react";
 import "../../admin2-final.css";
+import "../../admin2-operations.css";
 
 type DialogMode =
   | { kind: "closed" }
@@ -277,6 +279,13 @@ export default function WebsiteSettingsLanguagesPage() {
           </Button>
         )}
       </div>
+      <WorkspaceRouteNav
+        ariaLabel="Website configuration workspace"
+        items={[
+          ...(can("website.settings", "view") ? [{ label: "Languages", href: "/website/settings/languages" }] : []),
+          ...(can("website.settings", "view") ? [{ label: "Links", href: "/website/settings/links" }] : []),
+        ]}
+      />
 
       <div className="border rounded-md overflow-x-auto">
         <Table>

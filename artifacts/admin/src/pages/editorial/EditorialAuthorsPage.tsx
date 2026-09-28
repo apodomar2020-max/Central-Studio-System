@@ -71,6 +71,7 @@ import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useToast } from "@/hooks/use-toast";
 import { EditorialPageShell } from "@/components/editorial/editorial-page-shell";
+import { WorkspaceRouteNav } from "@/components/admin/workspace-route-nav";
 import { editorialErrorMessage } from "@/lib/editorial-errors";
 import {
   AUTHOR_AVATAR_ALLOWED_HOSTS_HINT,
@@ -100,6 +101,7 @@ import {
 } from "@/lib/editorial-authors";
 import { Plus, Pencil, Archive, RotateCcw, Info } from "lucide-react";
 import "../admin2-final.css";
+import "../admin2-operations.css";
 
 type DialogMode =
   | { kind: "closed" }
@@ -305,6 +307,15 @@ export default function EditorialAuthorsPage() {
         ) : undefined
       }
     >
+      <WorkspaceRouteNav
+        ariaLabel="Editorial workspace"
+        items={[
+          ...(can("website.posts", "view") ? [{ label: "Posts", href: "/editorial/posts" }] : []),
+          ...(can("website.posts", "view") ? [{ label: "Authors", href: "/editorial/authors" }] : []),
+          ...(can("website.posts", "view") ? [{ label: "Topics", href: "/editorial/topics" }] : []),
+          ...(can("website.posts", "view") ? [{ label: "Placements", href: "/editorial/placements" }] : []),
+        ]}
+      />
       <TableToolbar
         searchValue={search}
         onSearchChange={setSearch}
