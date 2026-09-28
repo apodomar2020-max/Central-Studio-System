@@ -79,7 +79,10 @@ test("the screen sits on EXACTLY the two pre-existing placement routes — nothi
 test("in-page gating uses website.posts:edit, matching the PUT route's own permission", () => {
   assert.match(pageCode, /const canEdit = can\("website\.posts", "edit"\);/);
   // Exactly one permission flag — the route guard already covers :view.
-  assert.equal((pageCode.match(/can\("website\.[a-z]+", "[a-z]+"\)/g) ?? []).length, 1);
+  // The shared WorkspaceRouteNav switcher filters its items on :view (the
+  // Backgrounds/Users pattern); that is navigation, not in-page gating.
+  const gatingCode = pageCode.replace(/<WorkspaceRouteNav[\s\S]*?\/>/, "");
+  assert.equal((gatingCode.match(/can\("website\.[a-z]+", "[a-z]+"\)/g) ?? []).length, 1);
   assert.match(route, /requireAdminPermission\("website\.posts", "edit"\)/);
   assert.match(route, /requireAdminPermission\("website\.posts", "view"\)/);
 });

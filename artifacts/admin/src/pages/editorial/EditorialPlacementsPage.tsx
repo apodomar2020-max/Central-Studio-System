@@ -67,6 +67,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { EditorialPageShell } from "@/components/editorial/editorial-page-shell";
+import { WorkspaceRouteNav } from "@/components/admin/workspace-route-nav";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useToast } from "@/hooks/use-toast";
@@ -106,6 +107,7 @@ import {
 } from "@/lib/editorial-placements";
 import { ArrowDown, ArrowUp, Plus, X } from "lucide-react";
 import "../admin2-final.css";
+import "../admin2-operations.css";
 
 interface PostDisplay {
   label: string;
@@ -297,6 +299,15 @@ export default function EditorialPlacementsPage() {
 
   return (
     <EditorialPageShell heading="Placements" description={PLACEMENTS_PAGE_DESCRIPTION}>
+      <WorkspaceRouteNav
+        ariaLabel="Editorial workspace"
+        items={[
+          ...(can("website.posts", "view") ? [{ label: "Posts", href: "/editorial/posts" }] : []),
+          ...(can("website.posts", "view") ? [{ label: "Authors", href: "/editorial/authors" }] : []),
+          ...(can("website.posts", "view") ? [{ label: "Topics", href: "/editorial/topics" }] : []),
+          ...(can("website.posts", "view") ? [{ label: "Placements", href: "/editorial/placements" }] : []),
+        ]}
+      />
       <div className="space-y-6" data-testid="placements-page">
         <p
           role="status"

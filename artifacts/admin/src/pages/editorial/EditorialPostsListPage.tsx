@@ -52,6 +52,7 @@ import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useEditorialReferenceData } from "@/hooks/use-editorial-reference-data";
 import { EditorialPageShell } from "@/components/editorial/editorial-page-shell";
+import { WorkspaceRouteNav } from "@/components/admin/workspace-route-nav";
 import {
   DEFAULT_POST_LIST_FILTERS,
   POST_LIST_PAGE_SIZE,
@@ -70,6 +71,7 @@ import {
 } from "@/lib/editorial-posts";
 import { Plus, ChevronLeft, ChevronRight, PenLine } from "lucide-react";
 import "../admin2-final.css";
+import "../admin2-operations.css";
 
 const CHANNEL_FILTERS = [
   { value: "all", label: "All" },
@@ -141,6 +143,15 @@ export default function EditorialPostsListPage() {
         ) : undefined
       }
     >
+      <WorkspaceRouteNav
+        ariaLabel="Editorial workspace"
+        items={[
+          ...(can("website.posts", "view") ? [{ label: "Posts", href: "/editorial/posts" }] : []),
+          ...(can("website.posts", "view") ? [{ label: "Authors", href: "/editorial/authors" }] : []),
+          ...(can("website.posts", "view") ? [{ label: "Topics", href: "/editorial/topics" }] : []),
+          ...(can("website.posts", "view") ? [{ label: "Placements", href: "/editorial/placements" }] : []),
+        ]}
+      />
       <TableToolbar
         searchValue={search}
         onSearchChange={(value) => { setSearch(value); setPage(1); }}
