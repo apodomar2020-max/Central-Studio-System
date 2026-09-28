@@ -5288,7 +5288,8 @@ components:
       required:
         [slug, category, categoryLabel, title, subtitle, heroImageUrl,
          publishedDate, readTime, authorName, authorRole, authorAvatarUrl,
-         galleryImages, tags, content, relatedItems]
+         galleryImages, tags, content, relatedItems, publishedAt,
+         featureImageAlt, body, gallery, author, topics]
       properties:
         slug: { type: string }
         category: { type: string }
@@ -5307,6 +5308,79 @@ components:
         relatedItems:
           type: array
           items: { $ref: "#/components/schemas/WebsiteNewsRelatedItem" }
+        # Additive Editorial-backed fields. Compatibility fields above remain
+        # available for the existing Website during the cutover.
+        publishedAt: { type: ["string", "null"] }
+        featureImageAlt: { type: ["string", "null"] }
+        body: { $ref: "#/components/schemas/PublicEditorialNewsBody" }
+        gallery: { $ref: "#/components/schemas/PublicEditorialNewsGallery" }
+        author:
+          type: ["object", "null"]
+          required: [name, role, avatarUrl]
+          properties:
+            name: { type: string }
+            role: { type: string }
+            avatarUrl: { type: ["string", "null"] }
+        topics:
+          type: array
+          items:
+            type: object
+            required: [name, slug]
+            properties:
+              name: { type: string }
+              slug: { type: string }
+
+    PublicEditorialNewsBody:
+      type: object
+      required: [blocks]
+      properties:
+        blocks:
+          type: array
+          items:
+            oneOf:
+              - type: object
+                required: [type, text]
+                properties:
+                  type: { type: string, enum: [paragraph] }
+                  text: { type: string }
+              - type: object
+                required: [type, level, text]
+                properties:
+                  type: { type: string, enum: [heading] }
+                  level: { type: integer, enum: [2, 3] }
+                  text: { type: string }
+              - type: object
+                required: [type, items]
+                properties:
+                  type: { type: string, enum: [bulleted-list] }
+                  items: { type: array, items: { type: string } }
+              - type: object
+                required: [type, url, alt]
+                properties:
+                  type: { type: string, enum: [image] }
+                  url: { type: string }
+                  alt: { type: string }
+                  caption: { type: string }
+              - type: object
+                required: [type, text]
+                properties:
+                  type: { type: string, enum: [quote] }
+                  text: { type: string }
+                  attribution: { type: string }
+                  attributionRole: { type: string }
+
+    PublicEditorialNewsGallery:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [url, alt]
+            properties:
+              url: { type: string }
+              alt: { type: string }
 
     CreateWebsiteNewsPostBody:
       type: object

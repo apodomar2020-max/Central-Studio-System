@@ -1935,6 +1935,61 @@ export interface PublicWebsiteNewsListItem {
   isFeatured: boolean;
 }
 
+/**
+ * @nullable
+ */
+export type PublicWebsiteNewsDetailAuthor = {
+  name: string;
+  role: string;
+  /** @nullable */
+  avatarUrl: string | null;
+} | null;
+
+export type PublicWebsiteNewsDetailTopicsItem = {
+  name: string;
+  slug: string;
+};
+
+export type PublicEditorialNewsBodyBlocksItem =
+  | {
+      type: "paragraph";
+      text: string;
+    }
+  | {
+      type: "heading";
+      level: 2 | 3;
+      text: string;
+    }
+  | {
+      type: "bulleted-list";
+      items: string[];
+    }
+  | {
+      type: "image";
+      url: string;
+      alt: string;
+      caption?: string;
+    }
+  | {
+      type: "quote";
+      text: string;
+      attribution?: string;
+      attributionRole?: string;
+    };
+
+export interface PublicEditorialNewsBody {
+  blocks: PublicEditorialNewsBodyBlocksItem[];
+}
+
+export type PublicEditorialNewsGalleryItemsItem = {
+  url: string;
+  alt: string;
+};
+
+export interface PublicEditorialNewsGallery {
+  items: PublicEditorialNewsGalleryItemsItem[];
+}
+
 export interface PublicWebsiteNewsDetail {
   slug: string;
   category: string;
@@ -1953,6 +2008,15 @@ export interface PublicWebsiteNewsDetail {
   tags: string[];
   content: WebsiteNewsContent;
   relatedItems: WebsiteNewsRelatedItem[];
+  /** @nullable */
+  publishedAt: string | null;
+  /** @nullable */
+  featureImageAlt: string | null;
+  body: PublicEditorialNewsBody;
+  gallery: PublicEditorialNewsGallery;
+  /** @nullable */
+  author: PublicWebsiteNewsDetailAuthor;
+  topics: PublicWebsiteNewsDetailTopicsItem[];
 }
 
 export interface CreateWebsiteNewsPostBody {

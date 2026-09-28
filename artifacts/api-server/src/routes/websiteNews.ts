@@ -25,6 +25,7 @@ import {
   DeactivateWebsiteNewsPostParams,
   DeactivateWebsiteNewsPostResponse,
 } from "@workspace/api-zod";
+import { getPublicEditorialNews, listPublicEditorialNews } from "../lib/publicEditorialNews";
 
 /**
  * Website CMS Wave 2 — News routes. No Performance routes here (see
@@ -154,14 +155,8 @@ async function resolveRelatedItems(refs: RelatedRef[]) {
 // ─── Public routes ──────────────────────────────────────────────────────────
 
 router.get("/website/news", async (_req, res): Promise<void> => {
-  const rows = await db
-    .select()
-    .from(websiteNewsPostsTable)
-    .where(eq(websiteNewsPostsTable.isActive, true))
-    .orderBy(desc(websiteNewsPostsTable.publishedAt), desc(websiteNewsPostsTable.id));
-
   res.set("Cache-Control", "no-store, max-age=0");
-  res.json(ListPublicWebsiteNewsResponse.parse(rows.map(toPublicListItem)));
+  res.json(ListPublicWebsiteNewsResponse.parse(await listPublicEditorialNews()));
 });
 
 router.get("/website/news/:slug", async (req, res): Promise<void> => {
@@ -170,38 +165,14 @@ router.get("/website/news/:slug", async (req, res): Promise<void> => {
     res.status(400).json({ error: params.error.message });
     return;
   }
-  const [row] = await db
-    .select()
-    .from(websiteNewsPostsTable)
-    .where(and(eq(websiteNewsPostsTable.slug, params.data.slug), eq(websiteNewsPostsTable.isActive, true)))
-    .limit(1);
+  const row = await getPublicEditorialNews(params.data.slug);
   if (!row) {
     res.status(404).json({ error: "News post not found" });
     return;
   }
 
-  const relatedItems = await resolveRelatedItems(row.relatedRefs as RelatedRef[]);
-
   res.set("Cache-Control", "no-store, max-age=0");
-  res.json(
-    GetPublicWebsiteNewsResponse.parse({
-      slug: row.slug,
-      category: row.category,
-      categoryLabel: row.categoryLabel,
-      title: row.title,
-      subtitle: row.subtitle,
-      heroImageUrl: row.heroImageUrl,
-      publishedDate: row.publishedDate,
-      readTime: row.readTime,
-      authorName: row.authorName,
-      authorRole: row.authorRole,
-      authorAvatarUrl: row.authorAvatarUrl,
-      galleryImages: row.galleryImages,
-      tags: row.tags,
-      content: row.content,
-      relatedItems,
-    }),
-  );
+  res.json(GetPublicWebsiteNewsResponse.parse(row));
 });
 
 // ─── Admin validation helpers ───────────────────────────────────────────────

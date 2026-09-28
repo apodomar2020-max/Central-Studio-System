@@ -2968,6 +2968,60 @@ export const GetPublicWebsiteNewsResponse = zod.object({
       date: zod.string().nullable(),
     }),
   ),
+  publishedAt: zod.string().nullable(),
+  featureImageAlt: zod.string().nullable(),
+  body: zod.object({
+    blocks: zod.array(
+      zod.union([
+        zod.object({
+          type: zod.enum(["paragraph"]),
+          text: zod.string(),
+        }),
+        zod.object({
+          type: zod.enum(["heading"]),
+          level: zod.union([zod.literal(2), zod.literal(3)]),
+          text: zod.string(),
+        }),
+        zod.object({
+          type: zod.enum(["bulleted-list"]),
+          items: zod.array(zod.string()),
+        }),
+        zod.object({
+          type: zod.enum(["image"]),
+          url: zod.string(),
+          alt: zod.string(),
+          caption: zod.string().optional(),
+        }),
+        zod.object({
+          type: zod.enum(["quote"]),
+          text: zod.string(),
+          attribution: zod.string().optional(),
+          attributionRole: zod.string().optional(),
+        }),
+      ]),
+    ),
+  }),
+  gallery: zod.object({
+    items: zod.array(
+      zod.object({
+        url: zod.string(),
+        alt: zod.string(),
+      }),
+    ),
+  }),
+  author: zod
+    .object({
+      name: zod.string(),
+      role: zod.string(),
+      avatarUrl: zod.string().nullable(),
+    })
+    .nullable(),
+  topics: zod.array(
+    zod.object({
+      name: zod.string(),
+      slug: zod.string(),
+    }),
+  ),
 });
 
 /**
