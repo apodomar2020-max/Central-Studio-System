@@ -5,15 +5,15 @@
  * The contextual TopBar renders only one level below the active top-level
  * group, so a nested group collapses into a single pill pointing at its first
  * child — Authors/Topics/Placements and Links had no visible desktop control.
- * The fix reuses the existing page-local WorkspaceRouteNav (the Backgrounds
- * and Users precedent). NAV_TREE data is covered by
- * components/layout/editorialNavigation.test.ts; this file proves the pages
- * actually RENDER the switcher.
+ * The shared EditorialWorkspaceNav composes the existing page-local
+ * WorkspaceRouteNav (the Backgrounds and Users precedent). NAV_TREE data is
+ * covered by components/layout/editorialNavigation.test.ts; this file proves
+ * the shared configuration and consuming pages stay aligned.
  *
  * The pages import `@/` aliases and generated hooks, so they cannot be mounted
  * under `node --test` (no jsdom in this workspace) — the established Admin
  * source-inspection convention applies. Active state is proven by evaluating
- * each page's item list against WorkspaceRouteNav's own active predicate,
+ * the shared item list against WorkspaceRouteNav's own active predicate,
  * which is itself pinned below so the two can never drift.
  */
 import assert from "node:assert/strict";
@@ -23,6 +23,7 @@ import test from "node:test";
 const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), "utf8");
 
 const component = read("../../components/admin/workspace-route-nav.tsx");
+const editorialWorkspaceNav = read("../../components/editorial/editorial-workspace-nav.tsx");
 const app = read("../../App.tsx");
 const nav = read("../../components/layout/nav-config.ts");
 
@@ -54,6 +55,7 @@ const EDITORIAL_ITEMS = [
   { perm: "website.posts", label: "Authors", href: "/editorial/authors" },
   { perm: "website.posts", label: "Topics", href: "/editorial/topics" },
   { perm: "website.posts", label: "Placements", href: "/editorial/placements" },
+  { perm: "website.news", label: "Compatibility", href: "/website/news" },
 ];
 
 const CONFIGURATION = [
@@ -71,12 +73,18 @@ test("WorkspaceRouteNav active predicate and <2-item guard are unchanged", () =>
   assert.match(component, /aria-current=\{active \? "page" : undefined\}/);
 });
 
+test("the shared Editorial switcher contains all primary destinations followed by Compatibility", () => {
+  const { ariaLabel, items } = workspaceNav(editorialWorkspaceNav);
+  assert.equal(ariaLabel, "Editorial workspace");
+  assert.deepEqual(items, EDITORIAL_ITEMS);
+});
+
 for (const { file, route, active } of EDITORIAL) {
-  test(`${file} renders all 4 Editorial destinations with ${active} active`, () => {
+  test(`${file} renders the shared Editorial workspace with ${active} active`, () => {
     const source = read(file);
-    assert.match(source, /import \{ WorkspaceRouteNav \} from "@\/components\/admin\/workspace-route-nav";/);
-    const { ariaLabel, items } = workspaceNav(source);
-    assert.equal(ariaLabel, "Editorial workspace");
+    assert.match(source, /import \{ EditorialWorkspaceNav \} from "@\/components\/editorial\/editorial-workspace-nav";/);
+    assert.match(source, /<EditorialWorkspaceNav \/>/);
+    const { items } = workspaceNav(editorialWorkspaceNav);
     assert.deepEqual(items, EDITORIAL_ITEMS);
     assert.deepEqual(items.filter((i) => isActive(route, i.href)).map((i) => i.label), [active]);
   });
@@ -104,13 +112,20 @@ test("RBAC unchanged: route guards still require the same permission each switch
   for (const key of ["editorialPosts", "editorialAuthors", "editorialTopics", "editorialPlacements"]) {
     assert.match(app, new RegExp(`${key}: \\[\\["website\\.posts", "view"\\]\\],`));
   }
+  assert.match(app, /websiteNews: \[\["website\.news", "view"\]\],/);
+  assert.match(app, /<Route path="\/website\/news">\{guarded\(ROUTE_PERMS\.websiteNews,/);
   assert.match(app, /websiteSettings: \[\["website\.settings", "view"\]\],/);
   assert.match(app, /<Route path="\/website\/settings\/languages">\{guarded\(ROUTE_PERMS\.websiteSettings,/);
   assert.match(app, /<Route path="\/website\/settings\/links">\{guarded\(ROUTE_PERMS\.websiteSettings,/);
-  // Items are filtered by the same can() the guard uses: an editor with only
-  // website.posts:view sees the Editorial switcher but no Configuration one.
+  // Items are filtered by the same can() the guards use: an editor with only
+  // website.posts:view sees the four primary Editorial destinations, while a
+  // compatibility-only user receives the existing /website/news route.
   const grants = new Set(["website.posts"]);
   const visible = (items: Item[]) => items.filter((i) => grants.has(i.perm));
   assert.equal(visible(EDITORIAL_ITEMS).length, 4);
+  assert.deepEqual(
+    EDITORIAL_ITEMS.filter((item) => new Set(["website.news"]).has(item.perm)).map((item) => item.href),
+    ["/website/news"],
+  );
   assert.ok(visible(CONFIGURATION_ITEMS).length < 2, "Configuration switcher renders nothing without website.settings:view");
 });

@@ -7,22 +7,22 @@ const read = (name: string) =>
 const list = read("./WebsiteNewsListPage.tsx");
 const editor = read("./WebsiteNewsEditorPage.tsx");
 
-test("Legacy News stays accessible with an explicit compatibility banner", () => {
-  assert.match(list, /data-testid="legacy-news-compatibility-banner"/);
-  assert.match(list, /Editorial is the primary workspace for News content/);
-  assert.match(list, /compatibility metadata/);
-  assert.match(list, /related-content data used by the public website/);
+test("Legacy News stays accessible as a local Editorial Compatibility workspace", () => {
+  assert.match(list, /<EditorialWorkspaceNav \/>/);
+  assert.doesNotMatch(list, /legacy-news-compatibility-banner/);
   assert.match(list, /useListAdminWebsiteNews\(\)/);
   assert.match(list, /button-add-news/);
   assert.match(list, /button-edit-news-\$\{post\.slug\}/);
 });
 
-test("Legacy News editor identifies the compatibility-sensitive fields without changing its save contract", () => {
-  assert.match(editor, /data-testid="legacy-news-editor-guidance"/);
-  assert.match(
-    editor,
-    /category,[\s\S]{0,80}fallback subtitle,[\s\S]{0,80}display date,[\s\S]{0,80}related-content references/,
-  );
+test("Legacy News editor keeps compatibility help local to sensitive fields without changing its save contract", () => {
+  assert.match(editor, /<EditorialWorkspaceNav \/>/);
+  assert.doesNotMatch(editor, /legacy-news-editor-guidance/);
+  assert.match(editor, /input-news-category[\s\S]{0,180}migrated public News compatibility/);
+  assert.match(editor, /input-news-category-label[\s\S]{0,180}migrated public News compatibility/);
+  assert.match(editor, /input-news-subtitle[\s\S]{0,180}fallback subtitle by migrated public News/);
+  assert.match(editor, /input-news-published-date[\s\S]{0,180}legacy display date for migrated public News/);
+  assert.match(editor, /Related Content[\s\S]{0,420}used by migrated public News/);
   assert.match(editor, /useCreateWebsiteNewsPost\(\)/);
   assert.match(editor, /useUpdateWebsiteNewsPost\(\)/);
   assert.match(editor, /button-save-news/);

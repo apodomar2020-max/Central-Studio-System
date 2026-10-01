@@ -313,19 +313,41 @@ export const NAV_TREE: NavNode[] = [
     }),
   ]),
 
-  // Website CMS Wave 1/2/3 — Backgrounds + News + Performance, the full
-  // target IA. The Ballet Backgrounds sub-link below is a public-website
+  // Website CMS — Editorial is the primary News workspace; the legacy News
+  // record surface remains a nested compatibility tool. The Ballet Backgrounds
+  // sub-link below is a public-website
   // background media editor and is fully separate from the existing
   // Ballet → Performances module (ballet.performances — internal student
   // performance-opportunity invitations, an unrelated feature).
   group("Website", Globe, [
+    // Editorial is first because it is the primary News authoring workspace.
+    // Compatibility stays here as a permission-filtered child so a
+    // compatibility-only operator still sees an Editorial destination.
+    group("Editorial", BookOpenText, [
+      link("Posts", "/editorial/posts", [["website.posts", "view"]], FileText, {
+        pageTitle: "Editorial Posts",
+        description: "Create and manage News content",
+      }),
+      link("Authors", "/editorial/authors", [["website.posts", "view"]], UsersRound, {
+        pageTitle: "Editorial Authors",
+        description: "Author profiles credited on Editorial posts",
+      }),
+      link("Topics", "/editorial/topics", [["website.posts", "view"]], Tag, {
+        pageTitle: "Editorial Topics",
+        description: "Topics used to organize Editorial posts",
+      }),
+      link("Placements", "/editorial/placements", [["website.posts", "view"]], Star, {
+        pageTitle: "Editorial Placements",
+        description: "Curated placement slots for Editorial posts",
+      }),
+      link("Compatibility", "/website/news", [["website.news", "view"]], Newspaper, {
+        pageTitle: "News Compatibility",
+        description: "Legacy metadata and relationships used by migrated public News",
+      }),
+    ]),
     link("Performance", "/website/performances", [["website.performance", "view"]], Theater, {
       pageTitle: "Performance",
       description: "Controls live Central Experience content on the public website",
-    }),
-    link("News — Compatibility", "/website/news", [["website.news", "view"]], Newspaper, {
-      pageTitle: "News — Compatibility",
-      description: "Compatibility metadata and relationships for migrated public News",
     }),
     group("Backgrounds", Image, [
       link("Home", "/website/backgrounds/home", [["website.backgrounds", "view"]], undefined, {
@@ -343,28 +365,6 @@ export const NAV_TREE: NavNode[] = [
       link("Classes", "/website/backgrounds/classes", [["website.backgrounds", "view"]], undefined, {
         pageTitle: "Classes Backgrounds",
         description: "Classes page — Section 1 (Hero)",
-      }),
-    ]),
-    // Unified Editorial CMS — migrated News is publicly delivered through a
-    // Legacy News compatibility bridge. Experience remains a future channel;
-    // live Central Experience content continues to be managed in Performance.
-    group("Editorial", BookOpenText, [
-      link("Posts", "/editorial/posts", [["website.posts", "view"]], FileText, {
-        pageTitle: "Editorial Posts",
-        description:
-          "Migrated News is public through a compatibility bridge; Experience is not connected to the public website",
-      }),
-      link("Authors", "/editorial/authors", [["website.posts", "view"]], UsersRound, {
-        pageTitle: "Editorial Authors",
-        description: "Author profiles credited on Editorial News and Experience posts",
-      }),
-      link("Topics", "/editorial/topics", [["website.posts", "view"]], Tag, {
-        pageTitle: "Editorial Topics",
-        description: "Topic taxonomy used to classify Editorial News and Experience posts",
-      }),
-      link("Placements", "/editorial/placements", [["website.posts", "view"]], Star, {
-        pageTitle: "Editorial Placements",
-        description: "Curated placement slots for Editorial News and Experience posts",
       }),
     ]),
     group("Configuration", Settings2, [

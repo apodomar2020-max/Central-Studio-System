@@ -52,7 +52,7 @@ import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useEditorialReferenceData } from "@/hooks/use-editorial-reference-data";
 import { EditorialPageShell } from "@/components/editorial/editorial-page-shell";
-import { WorkspaceRouteNav } from "@/components/admin/workspace-route-nav";
+import { EditorialWorkspaceNav } from "@/components/editorial/editorial-workspace-nav";
 import {
   DEFAULT_POST_LIST_FILTERS,
   POST_LIST_PAGE_SIZE,
@@ -69,14 +69,13 @@ import {
   translationSummaryLabel,
   type PostListFilters,
 } from "@/lib/editorial-posts";
-import { Info, Plus, ChevronLeft, ChevronRight, PenLine } from "lucide-react";
+import { Plus, ChevronLeft, ChevronRight, PenLine } from "lucide-react";
 import "../admin2-final.css";
 import "../admin2-operations.css";
 
 const CHANNEL_FILTERS = [
-  { value: "all", label: "All" },
   { value: "news", label: "News" },
-  { value: "experience", label: "Experience" },
+  { value: "all", label: "All" },
 ] as const;
 
 const STATUS_FILTERS = [
@@ -130,8 +129,6 @@ export default function EditorialPostsListPage() {
 
   return (
     <EditorialPageShell
-      heading="Posts"
-      description="Every unified Editorial post, across channels and languages. A post has no status of its own — each language's translation is published, drafted or archived independently."
       actions={
         capabilities.canCreate ? (
           <Button asChild className="gap-2 shrink-0" data-testid="button-new-post">
@@ -143,42 +140,7 @@ export default function EditorialPostsListPage() {
         ) : undefined
       }
     >
-      <WorkspaceRouteNav
-        ariaLabel="Editorial workspace"
-        items={[
-          ...(can("website.posts", "view") ? [{ label: "Posts", href: "/editorial/posts" }] : []),
-          ...(can("website.posts", "view") ? [{ label: "Authors", href: "/editorial/authors" }] : []),
-          ...(can("website.posts", "view") ? [{ label: "Topics", href: "/editorial/topics" }] : []),
-          ...(can("website.posts", "view") ? [{ label: "Placements", href: "/editorial/placements" }] : []),
-        ]}
-      />
-      {filters.channel === "news" && (
-        <div
-          role="status"
-          className="flex items-start gap-2 rounded-md border border-border bg-muted/40 px-3 py-2"
-          data-testid="editorial-news-guidance"
-        >
-          <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-          <p className="text-xs text-muted-foreground">
-            Migrated News posts are live on the public website. Public News still uses Legacy News compatibility
-            metadata and provenance. Published is an Editorial translation state and does not automatically mean
-            public eligibility.
-          </p>
-        </div>
-      )}
-      {filters.channel === "experience" && (
-        <div
-          role="status"
-          className="flex items-start gap-2 rounded-md border border-border bg-muted/40 px-3 py-2"
-          data-testid="editorial-experience-guidance"
-        >
-          <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-          <p className="text-xs text-muted-foreground">
-            Editorial Experience is not connected to the public website yet. Manage live Central Experience content
-            from the <Link href="/website/performances" className="underline">Performance section</Link>.
-          </p>
-        </div>
-      )}
+      <EditorialWorkspaceNav />
       <TableToolbar
         searchValue={search}
         onSearchChange={(value) => { setSearch(value); setPage(1); }}

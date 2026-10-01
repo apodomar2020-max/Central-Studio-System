@@ -162,22 +162,6 @@ export default function EditorialPostCreatePage() {
         <div className="grid gap-2">
           <Label>Channel</Label>
           <Badge variant="outline" className="w-fit">News</Badge>
-          <p className="text-xs text-muted-foreground" data-testid="new-post-channel-help">
-            New Editorial posts start in News. Editorial Experience is not connected to the public website; manage
-            live Central Experience content from the <Link href="/website/performances" className="underline">Performance section</Link>.
-          </p>
-        </div>
-
-        <div
-          role="status"
-          className="flex items-start gap-2 rounded-md border border-border bg-muted/40 px-3 py-2"
-          data-testid="editorial-news-guidance"
-        >
-          <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-          <p className="text-xs text-muted-foreground">
-            Migrated News posts are live on the public website. Public News still uses Legacy News compatibility
-            metadata and provenance. New Editorial News posts are not automatically public.
-          </p>
         </div>
 
         <div className="grid gap-2">

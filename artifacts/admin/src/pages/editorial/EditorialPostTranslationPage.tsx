@@ -167,7 +167,7 @@ import {
   saveSuccessMessage,
 } from "@/lib/editorial-post-dirty";
 import {
-  AlertTriangle, ArrowLeft, Check, ChevronDown, CircleDashed, Info, Plus, X,
+  AlertTriangle, ArrowLeft, Check, ChevronDown, CircleDashed, Plus, X,
 } from "lucide-react";
 import "../admin2-final.css";
 
@@ -924,33 +924,6 @@ export default function EditorialPostTranslationPage() {
         </p>
       )}
 
-      {postRow.channel === "news" ? (
-        <div
-          role="status"
-          className="flex items-start gap-2 rounded-md border border-border bg-muted/40 px-3 py-2"
-          data-testid="editorial-news-guidance"
-        >
-          <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-          <p className="text-xs text-muted-foreground">
-            Migrated News posts are live on the public website. Public News still uses Legacy News compatibility
-            metadata and provenance. Published is an Editorial translation state and does not automatically mean
-            public eligibility.
-          </p>
-        </div>
-      ) : (
-        <div
-          role="status"
-          className="flex items-start gap-2 rounded-md border border-border bg-muted/40 px-3 py-2"
-          data-testid="editorial-experience-guidance"
-        >
-          <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-          <p className="text-xs text-muted-foreground">
-            Editorial Experience is not connected to the public website yet. Manage live Central Experience content
-            from the <Link href="/website/performances" className="underline">Performance section</Link>.
-          </p>
-        </div>
-      )}
-
       {/* ─── Language switcher: prominent, never a buried field ───────────── */}
       <nav aria-label="Translations" className="rounded-md border border-border bg-card p-3">
         <div className="flex flex-wrap items-center gap-2">
@@ -1085,6 +1058,13 @@ export default function EditorialPostTranslationPage() {
               </ul>
               <p className="text-[11px] text-muted-foreground">{READINESS_ADVISORY_NOTE}</p>
             </div>
+
+            {postRow.channel === "news" && (
+              <p className="text-[11px] text-muted-foreground" data-testid="editorial-publication-guidance">
+                Publishing sets the Editorial translation state. New News posts require public eligibility before
+                appearing on the website.
+              </p>
+            )}
 
             {translationError && (
               <div

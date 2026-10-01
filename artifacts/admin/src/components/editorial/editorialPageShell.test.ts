@@ -12,38 +12,13 @@ import test from "node:test";
 // import, which node:test cannot resolve outside a Vite bundle.
 const shell = readFileSync(new URL("./editorial-page-shell.tsx", import.meta.url), "utf8");
 
-test("the banner text states the current Editorial authority model", () => {
-  assert.match(
-    shell,
-    /export const EDITORIAL_COEXISTENCE_NOTICE =\n\s+"Editorial supports News and Experience\. Migrated News is publicly served through a Legacy News compatibility bridge; Experience is not connected to the public website\.";/,
-  );
-  assert.doesNotMatch(shell, /Content published here is not live yet/);
-});
-
-test("the banner renders by default and is announced as a status", () => {
-  assert.match(shell, /const \[noticeDismissed, setNoticeDismissed\] = useState\(false\);/);
-  assert.match(shell, /\{!noticeDismissed && \(/);
-  assert.match(shell, /role="status"/);
-  assert.match(shell, /\{EDITORIAL_COEXISTENCE_NOTICE\}/);
-});
-
-test("the banner is dismissible from a real, keyboard-reachable, labelled button", () => {
-  assert.match(shell, /<Button\n\s+type="button"/);
-  assert.match(shell, /aria-label="Dismiss the Editorial coexistence notice"/);
-  assert.match(shell, /onClick=\{\(\) => setNoticeDismissed\(true\)\}/);
-  // Icon-only control: the glyph itself must be hidden from assistive tech.
-  assert.match(shell, /<X className="h-4 w-4" aria-hidden="true" \/>/);
+test("the shell has no persistent Editorial authority banner", () => {
+  assert.doesNotMatch(shell, /EDITORIAL_COEXISTENCE_NOTICE|editorial-coexistence-banner|noticeDismissed/);
+  assert.doesNotMatch(shell, /role="status"/);
   assert.doesNotMatch(shell, /<div[^>]*onClick/, "no clickable divs");
 });
 
-test("dismissal affects only the banner — nav, page chrome and children are untouched", () => {
-  // The dismiss state is read in exactly one place: the banner's own guard.
-  assert.equal(
-    (shell.match(/(?<![A-Za-z])noticeDismissed/g) ?? []).length,
-    2,
-    "the dismiss state is declared once and read in exactly one render guard",
-  );
-  // Children and the heading slot render unconditionally of the banner.
+test("the shell keeps children, optional context, and actions independent of navigation", () => {
   assert.match(shell, /\{children\}/);
   assert.match(shell, /\{\(heading \|\| description \|\| actions\) && \(/);
   // No navigation, layout or global concern is touched here.

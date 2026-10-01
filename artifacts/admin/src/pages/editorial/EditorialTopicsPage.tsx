@@ -67,7 +67,7 @@ import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useToast } from "@/hooks/use-toast";
 import { EditorialPageShell } from "@/components/editorial/editorial-page-shell";
-import { WorkspaceRouteNav } from "@/components/admin/workspace-route-nav";
+import { EditorialWorkspaceNav } from "@/components/editorial/editorial-workspace-nav";
 import { editorialErrorMessage } from "@/lib/editorial-errors";
 import {
   CHANNEL_OPTIONS,
@@ -302,8 +302,6 @@ export default function EditorialTopicsPage() {
 
   return (
     <EditorialPageShell
-      heading="Topics"
-      description="The topic taxonomy used to classify unified Editorial posts. Topics belong to one channel and are never deleted — retire one by archiving it, which keeps every post already tagged with it exactly as it is."
       actions={
         canCreate ? (
           <Button className="gap-2 shrink-0" data-testid="button-add-topic" onClick={openCreate}>
@@ -313,15 +311,7 @@ export default function EditorialTopicsPage() {
         ) : undefined
       }
     >
-      <WorkspaceRouteNav
-        ariaLabel="Editorial workspace"
-        items={[
-          ...(can("website.posts", "view") ? [{ label: "Posts", href: "/editorial/posts" }] : []),
-          ...(can("website.posts", "view") ? [{ label: "Authors", href: "/editorial/authors" }] : []),
-          ...(can("website.posts", "view") ? [{ label: "Topics", href: "/editorial/topics" }] : []),
-          ...(can("website.posts", "view") ? [{ label: "Placements", href: "/editorial/placements" }] : []),
-        ]}
-      />
+      <EditorialWorkspaceNav />
       <TableToolbar
         searchValue={search}
         onSearchChange={setSearch}

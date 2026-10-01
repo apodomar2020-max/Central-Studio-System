@@ -67,7 +67,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { EditorialPageShell } from "@/components/editorial/editorial-page-shell";
-import { WorkspaceRouteNav } from "@/components/admin/workspace-route-nav";
+import { EditorialWorkspaceNav } from "@/components/editorial/editorial-workspace-nav";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useToast } from "@/hooks/use-toast";
@@ -80,7 +80,6 @@ import {
   PLACEMENTS_EMPTY_STATE,
   PLACEMENTS_LIFECYCLE_NOTE,
   PLACEMENTS_NOT_PUBLIC_YET_NOTE,
-  PLACEMENTS_PAGE_DESCRIPTION,
   PLACEMENTS_SAVE_LABEL,
   PLACEMENT_CHANNELS,
   PLACEMENT_KEY_EXPLANATION,
@@ -298,16 +297,8 @@ export default function EditorialPlacementsPage() {
   };
 
   return (
-    <EditorialPageShell heading="Placements" description={PLACEMENTS_PAGE_DESCRIPTION}>
-      <WorkspaceRouteNav
-        ariaLabel="Editorial workspace"
-        items={[
-          ...(can("website.posts", "view") ? [{ label: "Posts", href: "/editorial/posts" }] : []),
-          ...(can("website.posts", "view") ? [{ label: "Authors", href: "/editorial/authors" }] : []),
-          ...(can("website.posts", "view") ? [{ label: "Topics", href: "/editorial/topics" }] : []),
-          ...(can("website.posts", "view") ? [{ label: "Placements", href: "/editorial/placements" }] : []),
-        ]}
-      />
+    <EditorialPageShell>
+      <EditorialWorkspaceNav />
       <div className="space-y-6" data-testid="placements-page">
         <p
           role="status"
