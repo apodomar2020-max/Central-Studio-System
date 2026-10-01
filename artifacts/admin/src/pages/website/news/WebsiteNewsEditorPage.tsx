@@ -42,7 +42,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
-import { ChevronLeft, Info, Loader2, Plus, Save, Trash2, ChevronUp, ChevronDown, ImageOff } from "lucide-react";
+import { EditorialWorkspaceNav } from "@/components/editorial/editorial-workspace-nav";
+import { ChevronLeft, Loader2, Plus, Save, Trash2, ChevronUp, ChevronDown, ImageOff } from "lucide-react";
 
 // ─── Form schema ────────────────────────────────────────────────────────────
 
@@ -293,19 +294,7 @@ export default function WebsiteNewsEditorPage() {
       <Button variant="ghost" size="sm" onClick={() => navigate("/website/news")} className="-ml-2 text-muted-foreground">
         <ChevronLeft className="mr-1 h-4 w-4" /> Back to News
       </Button>
-
-      <div
-        role="status"
-        className="flex items-start gap-2 rounded-md border border-border bg-muted/40 px-3 py-2"
-        data-testid="legacy-news-editor-guidance"
-      >
-        <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-        <p className="text-xs text-muted-foreground">
-          This screen still owns compatibility-sensitive fields used by the public website, including category,
-          category label, fallback subtitle, display date, and related-content references. Editorial is the primary
-          workspace for News content.
-        </p>
-      </div>
+      <EditorialWorkspaceNav />
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
         <fieldset disabled={!canSave} className="space-y-6">
@@ -328,6 +317,7 @@ export default function WebsiteNewsEditorPage() {
               <div className="space-y-1.5">
                 <Label>Published Date</Label>
                 <Input type="date" {...register("publishedDateInput")} data-testid="input-news-published-date" />
+                <p className="text-xs text-muted-foreground">Used as the legacy display date for migrated public News.</p>
               </div>
             </div>
 
@@ -335,6 +325,7 @@ export default function WebsiteNewsEditorPage() {
               <div className="space-y-1.5">
                 <Label>Category</Label>
                 <Input {...register("category")} list="news-category-options" placeholder="e.g. awards" data-testid="input-news-category" />
+                <p className="text-xs text-muted-foreground">Used by migrated public News compatibility.</p>
                 <datalist id="news-category-options">
                   {KNOWN_CATEGORIES.map((c) => <option key={c.value} value={c.value} />)}
                 </datalist>
@@ -343,6 +334,7 @@ export default function WebsiteNewsEditorPage() {
               <div className="space-y-1.5">
                 <Label>Category Label</Label>
                 <Input {...register("categoryLabel")} placeholder="e.g. Competition & Awards" data-testid="input-news-category-label" />
+                <p className="text-xs text-muted-foreground">Used by migrated public News compatibility.</p>
                 {errors.categoryLabel && <p className="text-xs text-destructive">{errors.categoryLabel.message}</p>}
               </div>
             </div>
@@ -350,6 +342,7 @@ export default function WebsiteNewsEditorPage() {
             <div className="space-y-1.5">
               <Label>Subtitle</Label>
               <Textarea rows={2} {...register("subtitle")} data-testid="input-news-subtitle" />
+              <p className="text-xs text-muted-foreground">Used as the fallback subtitle by migrated public News.</p>
               {errors.subtitle && <p className="text-xs text-destructive">{errors.subtitle.message}</p>}
             </div>
 
@@ -478,7 +471,7 @@ export default function WebsiteNewsEditorPage() {
             <h2 className="text-sm font-semibold text-foreground">Related Content</h2>
             <p className="text-xs text-muted-foreground">
               Order is preserved exactly as shown here. Both News and Performance references are validated against
-              existing posts.
+              existing posts and used by migrated public News.
             </p>
             <div className="space-y-2">
               {relatedArray.fields.map((field, index) => {

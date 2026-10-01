@@ -51,14 +51,18 @@ function visibleFor(granted: string[] | "all"): NavNode[] {
 }
 
 const website = () => findGroup(NAV_TREE, "Website");
+const editorialWorkspaceNav = readFileSync(
+  new URL("../editorial/editorial-workspace-nav.tsx", import.meta.url),
+  "utf8",
+);
 
 // ─── Structure ───────────────────────────────────────────────────────────────
 
-test("Editorial and Configuration are nested inside the existing Website group", () => {
-  assert.deepEqual(groupTitles(website().children), ["Backgrounds", "Editorial", "Configuration"]);
+test("Website presents Editorial, Performance, Backgrounds, and Configuration in operational order", () => {
+  assert.deepEqual(website().children.map((node) => node.title), ["Editorial", "Performance", "Backgrounds", "Configuration"]);
 });
 
-test("Editorial exposes exactly the four approved links, all on website.posts:view", () => {
+test("Editorial exposes primary content destinations followed by Compatibility", () => {
   const editorial = findGroup(website().children, "Editorial");
   assert.deepEqual(
     editorial.children.map((n) => (n.kind === "link" ? [n.title, n.href] : ["group", n.title])),
@@ -67,9 +71,10 @@ test("Editorial exposes exactly the four approved links, all on website.posts:vi
       ["Authors", "/editorial/authors"],
       ["Topics", "/editorial/topics"],
       ["Placements", "/editorial/placements"],
+      ["Compatibility", "/website/news"],
     ],
   );
-  for (const node of editorial.children) {
+  for (const node of editorial.children.slice(0, 4)) {
     assert.equal(node.kind, "link");
     if (node.kind !== "link") continue;
     assert.deepEqual(node.perm, [["website.posts", "view"]]);
@@ -77,6 +82,13 @@ test("Editorial exposes exactly the four approved links, all on website.posts:vi
     assert.ok(node.pageTitle, `${node.title} must carry a pageTitle`);
     assert.ok(node.description, `${node.title} must carry a description`);
   }
+  const compatibility = editorial.children.at(-1);
+  assert.ok(compatibility && compatibility.kind === "link");
+  if (!compatibility || compatibility.kind !== "link") return;
+  assert.deepEqual(compatibility.perm, [["website.news", "view"]]);
+  assert.equal(compatibility.href, "/website/news");
+  assert.equal(compatibility.pageTitle, "News Compatibility");
+  assert.equal(compatibility.description, "Legacy metadata and relationships used by migrated public News");
 });
 
 test("Website → Configuration exposes Languages and Links, both on website.settings:view", () => {
@@ -96,12 +108,11 @@ test("Website → Configuration exposes Languages and Links, both on website.set
   }
 });
 
-test("the Editorial entry distinguishes migrated News from not-live Experience", () => {
+test("the Editorial Posts entry uses concise News-authoring copy", () => {
   const editorial = findGroup(website().children, "Editorial");
   const posts = editorial.children.find((n) => n.kind === "link" && n.title === "Posts");
   assert.ok(posts && posts.kind === "link");
-  assert.match(posts.description ?? "", /Migrated News is public through a compatibility bridge/);
-  assert.match(posts.description ?? "", /Experience is not connected to the public website/);
+  assert.equal(posts.description, "Create and manage News content");
 });
 
 test("every new Editorial/Configuration link is reachable through NAV_ROUTES for the TopBar", () => {
@@ -110,6 +121,7 @@ test("every new Editorial/Configuration link is reachable through NAV_ROUTES for
     "/editorial/authors",
     "/editorial/topics",
     "/editorial/placements",
+    "/website/news",
     "/website/settings/languages",
     "/website/settings/links",
   ]) {
@@ -119,56 +131,20 @@ test("every new Editorial/Configuration link is reachable through NAV_ROUTES for
 
 // ─── Website authority labels ────────────────────────────────────────────────
 
-test("Performance and News labels state their current authority without changing routes or permissions", () => {
-  const legacy = website()
-    .children.filter((n) => !(n.kind === "group" && (n.title === "Editorial" || n.title === "Configuration")))
-    .map((n) =>
-      n.kind === "link"
-        ? { kind: n.kind, title: n.title, href: n.href, perm: n.perm, pageTitle: n.pageTitle, description: n.description }
-        : {
-            kind: n.kind,
-            title: n.title,
-            children: n.children.map((c) =>
-              c.kind === "link" ? { title: c.title, href: c.href, perm: c.perm, pageTitle: c.pageTitle } : { title: c.title },
-            ),
-          },
-    );
-
-  assert.deepEqual(legacy, [
-    {
-      kind: "link",
-      title: "Performance",
-      href: "/website/performances",
-      perm: [["website.performance", "view"]],
-      pageTitle: "Performance",
-      description: "Controls live Central Experience content on the public website",
-    },
-    {
-      kind: "link",
-      title: "News — Compatibility",
-      href: "/website/news",
-      perm: [["website.news", "view"]],
-      pageTitle: "News — Compatibility",
-      description: "Compatibility metadata and relationships for migrated public News",
-    },
-    {
-      kind: "group",
-      title: "Backgrounds",
-      children: [
-        { title: "Home", href: "/website/backgrounds/home", perm: [["website.backgrounds", "view"]], pageTitle: "Home Backgrounds" },
-        { title: "About Studio", href: "/website/backgrounds/about-studio", perm: [["website.backgrounds", "view"]], pageTitle: "About Studio Backgrounds" },
-        { title: "Ballet", href: "/website/backgrounds/ballet", perm: [["website.backgrounds", "view"]], pageTitle: "Ballet Backgrounds" },
-        { title: "Classes", href: "/website/backgrounds/classes", perm: [["website.backgrounds", "view"]], pageTitle: "Classes Backgrounds" },
-      ],
-    },
-  ]);
+test("Performance remains a first-class Website destination with its live-authority copy", () => {
+  const performance = website().children.find((node) => node.kind === "link" && node.title === "Performance");
+  assert.ok(performance && performance.kind === "link");
+  if (!performance || performance.kind !== "link") return;
+  assert.equal(performance.href, "/website/performances");
+  assert.deepEqual(performance.perm, [["website.performance", "view"]]);
+  assert.equal(performance.description, "Controls live Central Experience content on the public website");
 });
 
 // ─── Permission filtering ────────────────────────────────────────────────────
 
 test("Super Admin (can() returns true for everything) sees both Editorial and Configuration", () => {
   const visible = findGroup(visibleFor("all"), "Website");
-  assert.deepEqual(groupTitles(visible.children), ["Backgrounds", "Editorial", "Configuration"]);
+  assert.deepEqual(visible.children.map((node) => node.title), ["Editorial", "Performance", "Backgrounds", "Configuration"]);
 });
 
 test("website.posts:view alone shows Editorial and hides Configuration", () => {
@@ -183,7 +159,7 @@ test("website.settings:view alone shows Configuration and hides Editorial", () =
   assert.equal(visible.children.length, 1);
 });
 
-test("neither permission hides both groups — and, with nothing else granted, the whole Website group", () => {
+test("a Compatibility-only user still sees Editorial and its only permitted destination", () => {
   assert.equal(
     visibleFor([]).length,
     0,
@@ -192,9 +168,18 @@ test("neither permission hides both groups — and, with nothing else granted, t
   const legacyOnly = findGroup(visibleFor(["website.news:view"]), "Website");
   assert.deepEqual(
     legacyOnly.children.map((n) => n.title),
-    ["News — Compatibility"],
-    "a News-only user must still see News and neither new group",
+    ["Editorial"],
+    "a News-only user must still see the Editorial group",
   );
+  const editorial = findGroup(legacyOnly.children, "Editorial");
+  assert.deepEqual(editorial.children.map((n) => n.title), ["Compatibility"]);
+});
+
+test("the shared local Editorial navigation filters Compatibility with its existing permission", () => {
+  assert.match(editorialWorkspaceNav, /can\("website\.posts", "view"\)/);
+  assert.match(editorialWorkspaceNav, /can\("website\.news", "view"\)/);
+  assert.match(editorialWorkspaceNav, /label: "Compatibility", href: "\/website\/news"/);
+  assert.match(editorialWorkspaceNav, /<WorkspaceRouteNav/);
 });
 
 test("the local `allows` mirror still matches the real lib/permissions implementation", () => {

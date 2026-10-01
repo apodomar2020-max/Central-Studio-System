@@ -60,9 +60,10 @@ test("navigation is untouched — the Topics link already existed from Wave 2.1A
 
 // ─── Shell ───────────────────────────────────────────────────────────────────
 
-test("the page renders inside EditorialPageShell so it carries the coexistence banner", () => {
+test("the page renders inside EditorialPageShell without duplicating global page identity", () => {
   assert.match(page, /import \{ EditorialPageShell \} from "@\/components\/editorial\/editorial-page-shell";/);
-  assert.match(pageCode, /<EditorialPageShell\s+heading="Topics"/);
+  assert.match(pageCode, /<EditorialPageShell\s+actions=\{/);
+  assert.doesNotMatch(pageCode, /heading="Topics"/);
   assert.match(pageCode, /<\/EditorialPageShell>/);
   // The Add button lives in the shell's actions slot, not in a hand-rolled header.
   assert.match(pageCode, /actions=\{\s*canCreate \?/);

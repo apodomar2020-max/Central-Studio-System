@@ -558,14 +558,11 @@ test("Editorial authority guidance remains explicit without claiming universal p
     }
   }
 
-  // The shell sets the cross-channel baseline; channel-specific screens add
-  // the eligibility distinction without inventing a public-status badge.
-  assert.match(shell, /EDITORIAL_COEXISTENCE_NOTICE/);
-  assert.match(shell, /Migrated News is publicly served through a Legacy News compatibility bridge/);
-  assert.match(shell, /Experience is not connected to the public website/);
-  assert.doesNotMatch(shell, /Content published here is not live yet/);
-  assert.match(shell, /data-testid="editorial-coexistence-banner"/);
-  assert.match(create, /New Editorial News posts are not automatically public/);
+  // Editorial purpose is now conveyed by navigation and concise headers; the
+  // eligibility explanation is intentionally limited to lifecycle controls.
+  assert.doesNotMatch(shell, /EDITORIAL_COEXISTENCE_NOTICE|editorial-coexistence-banner/);
+  assert.doesNotMatch(create, /New Editorial News posts are not automatically public/);
+  assert.match(editorCode, /data-testid="editorial-publication-guidance"/);
   assert.doesNotMatch(editorCode, /data-testid="public-(badge|status)"/);
   assert.match(editorCode, /<EditorialPageShell/, "the editor renders inside the shell that carries it");
 });

@@ -42,9 +42,9 @@ const ALL_PAGES_CODE: Array<[string, string]> = ALL_PAGES.map(([name, source]) =
 const editorCode = codeOf(editor);
 const bodyEditorCode = codeOf(bodyEditor);
 
-// ─── Shell + coexistence ─────────────────────────────────────────────────────
+// ─── Shell ──────────────────────────────────────────────────────────────────
 
-test("every Posts screen renders inside EditorialPageShell (legacy coexistence banner)", () => {
+test("every Posts screen renders inside EditorialPageShell", () => {
   for (const [name, source] of ALL_PAGES) {
     assert.match(source, /<EditorialPageShell/, `${name} must use the Editorial shell`);
     assert.match(
@@ -107,13 +107,13 @@ test("the New post button is gated on create, not on edit", () => {
   assert.match(list, /capabilities\.canCreate \? \([\s\S]{0,300}button-new-post/);
 });
 
-test("channel guidance distinguishes News eligibility from not-live Experience", () => {
-  assert.match(list, /filters\.channel === "news"[\s\S]{0,800}editorial-news-guidance/);
-  assert.match(list, /Published is an Editorial translation state and does not automatically mean[\s\S]{0,80}public eligibility/);
-  assert.match(list, /filters\.channel === "experience"[\s\S]{0,800}editorial-experience-guidance/);
-  assert.match(list, /href="\/website\/performances"/);
-  assert.match(editor, /postRow\.channel === "news"[\s\S]{0,800}editorial-news-guidance/);
-  assert.match(editor, /editorial-experience-guidance/);
+test("News is the normal workflow and public-eligibility guidance is lifecycle-local", () => {
+  assert.match(list, /\{ value: "news", label: "News" \}/);
+  assert.match(list, /\{ value: "all", label: "All" \}/);
+  assert.doesNotMatch(list, /value: "experience"|editorial-(news|experience)-guidance/);
+  assert.doesNotMatch(editor, /editorial-(news|experience)-guidance/);
+  assert.match(editor, /data-testid="publish-card"[\s\S]{0,3500}data-testid="editorial-publication-guidance"/);
+  assert.match(editor, /Publishing sets the Editorial translation state[\s\S]{0,120}public eligibility/);
 });
 
 test("the list distinguishes empty-from-no-data and empty-from-filters", () => {
@@ -138,13 +138,12 @@ test("create filters authors to the chosen channel AND to active ones", () => {
   assert.match(create, /author\.channel === form\.channel && author\.status === "active"/);
 });
 
-test("normal New post creation is News-only and explains public eligibility", () => {
+test("normal New post creation is News-only without page-wide compatibility guidance", () => {
   assert.doesNotMatch(create, /select-post-channel/);
   assert.doesNotMatch(create, /CHANNEL_OPTIONS/);
   assert.match(create, /<Badge variant="outline" className="w-fit">News<\/Badge>/);
-  assert.match(create, /New Editorial News posts are not automatically public/);
-  assert.match(create, /href="\/website\/performances"/);
-  assert.match(create, /Publishing it does not automatically make it public/);
+  assert.doesNotMatch(create, /editorial-news-guidance|new-post-channel-help/);
+  assert.doesNotMatch(create, /New Editorial News posts are not automatically public/);
 });
 
 test("the create slug preview stops once the operator types (D6)", () => {

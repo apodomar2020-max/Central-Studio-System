@@ -50,9 +50,10 @@ test("navigation is untouched — the Authors link already existed from Wave 2.1
 
 // ─── Shell ───────────────────────────────────────────────────────────────────
 
-test("the page renders inside EditorialPageShell so it carries the coexistence banner", () => {
+test("the page renders inside EditorialPageShell without duplicating global page identity", () => {
   assert.match(page, /import \{ EditorialPageShell \} from "@\/components\/editorial\/editorial-page-shell";/);
-  assert.match(pageCode, /<EditorialPageShell\s+heading="Authors"/);
+  assert.match(pageCode, /<EditorialPageShell\s+actions=\{/);
+  assert.doesNotMatch(pageCode, /heading="Authors"/);
   assert.match(pageCode, /<\/EditorialPageShell>/);
   assert.match(pageCode, /actions=\{\s*canCreate \?/);
 });

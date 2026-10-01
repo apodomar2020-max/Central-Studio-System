@@ -246,8 +246,8 @@ test("the translation summary counts each status from data the list already retu
 
 // ─── Server-side filters (D9) ────────────────────────────────────────────────
 
-test("filter mapping sends only real parameters and omits every 'all'", () => {
-  assert.deepEqual(toPostListQuery(DEFAULT_POST_LIST_FILTERS, 1), { page: 1, limit: 25 });
+test("filter mapping sends the News default and omits explicit 'all' values", () => {
+  assert.deepEqual(toPostListQuery(DEFAULT_POST_LIST_FILTERS, 1), { page: 1, limit: 25, channel: "news" });
   assert.deepEqual(
     toPostListQuery(
       { search: " opening ", channel: "news", translationStatus: "draft", languageCode: "ar", authorId: 7, topicId: 3 },
@@ -276,7 +276,7 @@ test("NO sort parameter is produced — the endpoint has no sort contract (D9)",
 test("the active-filter badge counts filters, not the search box", () => {
   assert.equal(activePostFilterCount(DEFAULT_POST_LIST_FILTERS), 0);
   assert.equal(activePostFilterCount({ ...DEFAULT_POST_LIST_FILTERS, search: "x" }), 0);
-  assert.equal(activePostFilterCount({ ...DEFAULT_POST_LIST_FILTERS, channel: "news", authorId: 2 }), 2);
+  assert.equal(activePostFilterCount({ ...DEFAULT_POST_LIST_FILTERS, channel: "all", authorId: 2 }), 2);
 });
 
 test("pagination arithmetic handles the empty and partial-page cases", () => {

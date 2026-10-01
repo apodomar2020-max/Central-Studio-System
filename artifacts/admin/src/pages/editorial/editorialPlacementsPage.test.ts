@@ -56,9 +56,10 @@ test("navigation is untouched — the Placements link already existed from Wave 
 
 // ─── Shell ───────────────────────────────────────────────────────────────────
 
-test("the page renders inside EditorialPageShell so it carries the coexistence banner", () => {
+test("the page renders inside EditorialPageShell without duplicating global page identity", () => {
   assert.match(page, /import \{ EditorialPageShell \} from "@\/components\/editorial\/editorial-page-shell";/);
-  assert.match(pageCode, /<EditorialPageShell heading="Placements"/);
+  assert.match(pageCode, /<EditorialPageShell>/);
+  assert.doesNotMatch(pageCode, /heading="Placements"/);
   assert.match(pageCode, /<\/EditorialPageShell>/);
 });
 
@@ -79,9 +80,9 @@ test("the screen sits on EXACTLY the two pre-existing placement routes — nothi
 test("in-page gating uses website.posts:edit, matching the PUT route's own permission", () => {
   assert.match(pageCode, /const canEdit = can\("website\.posts", "edit"\);/);
   // Exactly one permission flag — the route guard already covers :view.
-  // The shared WorkspaceRouteNav switcher filters its items on :view (the
+  // The shared EditorialWorkspaceNav filters its items on :view (the
   // Backgrounds/Users pattern); that is navigation, not in-page gating.
-  const gatingCode = pageCode.replace(/<WorkspaceRouteNav[\s\S]*?\/>/, "");
+  const gatingCode = pageCode.replace(/<EditorialWorkspaceNav \/>/, "");
   assert.equal((gatingCode.match(/can\("website\.[a-z]+", "[a-z]+"\)/g) ?? []).length, 1);
   assert.match(route, /requireAdminPermission\("website\.posts", "edit"\)/);
   assert.match(route, /requireAdminPermission\("website\.posts", "view"\)/);

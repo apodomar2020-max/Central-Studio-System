@@ -312,7 +312,7 @@ export interface PostListFilters {
 
 export const DEFAULT_POST_LIST_FILTERS: PostListFilters = {
   search: "",
-  channel: "all",
+  channel: "news",
   translationStatus: "all",
   languageCode: "all",
   authorId: "all",
@@ -356,7 +356,7 @@ export function toPostListQuery(
 
 export function activePostFilterCount(filters: PostListFilters): number {
   return (
-    (filters.channel !== "all" ? 1 : 0) +
+    (filters.channel !== DEFAULT_POST_LIST_FILTERS.channel ? 1 : 0) +
     (filters.translationStatus !== "all" ? 1 : 0) +
     (filters.languageCode !== "all" ? 1 : 0) +
     (filters.authorId !== "all" ? 1 : 0) +
