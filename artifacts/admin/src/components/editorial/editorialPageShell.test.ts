@@ -12,11 +12,12 @@ import test from "node:test";
 // import, which node:test cannot resolve outside a Vite bundle.
 const shell = readFileSync(new URL("./editorial-page-shell.tsx", import.meta.url), "utf8");
 
-test("the banner text is exactly the approved coexistence wording", () => {
+test("the banner text states the current Editorial authority model", () => {
   assert.match(
     shell,
-    /export const EDITORIAL_COEXISTENCE_NOTICE =\n\s+"The public website still reads the existing News and Performance sections\. Content published here is not live yet\.";/,
+    /export const EDITORIAL_COEXISTENCE_NOTICE =\n\s+"Editorial supports News and Experience\. Migrated News is publicly served through a Legacy News compatibility bridge; Experience is not connected to the public website\.";/,
   );
+  assert.doesNotMatch(shell, /Content published here is not live yet/);
 });
 
 test("the banner renders by default and is announced as a status", () => {

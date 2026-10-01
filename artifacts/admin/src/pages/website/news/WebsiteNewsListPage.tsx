@@ -29,7 +29,7 @@ import { useAdminConfirm } from "@/components/admin/admin-confirm";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Pencil, EyeOff, RotateCcw, Star } from "lucide-react";
+import { Info, Plus, Pencil, EyeOff, RotateCcw, Star } from "lucide-react";
 
 type StatusFilter = "all" | "active" | "inactive";
 type SortOption = "newest" | "oldest" | "title";
@@ -101,7 +101,7 @@ export default function WebsiteNewsListPage() {
   const handleDeactivate = async (post: WebsiteNewsPost) => {
     const confirmed = await confirmAction({
       title: "Deactivate this News post?",
-      description: `"${post.title}" will be removed from the public News listing and its detail page immediately. It stays visible here and can be reactivated at any time.`,
+      description: `Deactivating "${post.title}" may affect compatibility metadata and related-content references. It does not reliably remove the migrated Editorial News post from public News pages. It stays visible here and can be reactivated at any time.`,
       confirmLabel: "Deactivate",
     });
     if (!confirmed) return;
@@ -136,6 +136,18 @@ export default function WebsiteNewsListPage() {
 
   return (
     <div className="admin2-final-page admin2-cms-workspace admin2-website-news space-y-6">
+      <div
+        role="status"
+        className="flex items-start gap-3 rounded-md border border-border bg-muted/40 px-4 py-3"
+        data-testid="legacy-news-compatibility-banner"
+      >
+        <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+        <p className="flex-1 text-sm text-muted-foreground">
+          Editorial is the primary workspace for News content. This section still supplies compatibility metadata and
+          related-content data used by the public website. Changes here can still affect public News metadata and
+          Performance-related News cards.
+        </p>
+      </div>
       <TableToolbar
         searchValue={searchInput}
         onSearchChange={setSearchInput}

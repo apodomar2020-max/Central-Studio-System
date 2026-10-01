@@ -7,10 +7,9 @@
  *    .admin2-cms-workspace spacing the existing News/Performance CMS pages
  *    already use), so Editorial pages sit in the same grid as the rest of
  *    the Website CMS;
- *  - the persistent legacy-coexistence banner, dismissible for the current
+ *  - the persistent Editorial authority banner, dismissible for the current
  *    visit only (component state — deliberately not persisted, so the notice
- *    reappears on the next navigation/reload while Editorial is still
- *    disconnected from the public website);
+ *    reappears on the next navigation/reload);
  *  - an optional heading/description slot. Page identity (title + description
  *    in the TopBar) is still authoritatively owned by nav-config, exactly as
  *    on every other admin page — this slot is for in-page sub-headings only.
@@ -30,7 +29,7 @@ import "@/pages/admin2-final.css";
  * sub-wave that needs to echo it) share a single source of truth.
  */
 export const EDITORIAL_COEXISTENCE_NOTICE =
-  "The public website still reads the existing News and Performance sections. Content published here is not live yet.";
+  "Editorial supports News and Experience. Migrated News is publicly served through a Legacy News compatibility bridge; Experience is not connected to the public website.";
 
 export function EditorialPageShell({
   heading,

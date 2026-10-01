@@ -527,7 +527,7 @@ test("cross-language revisions stay VISIBLE under 'All changes' — nothing is h
 
 // ─── 2.1E pre-PR: Published ≠ on the public website ──────────────────────────
 
-test("no Editorial Posts surface claims public-website exposure while coexistence is on", () => {
+test("Editorial authority guidance remains explicit without claiming universal public eligibility", () => {
   const shell = read("../../components/editorial/editorial-page-shell.tsx");
   const posts = read("../../lib/editorial-posts.ts");
   const revisions = read("../../lib/editorial-revisions.ts");
@@ -558,11 +558,15 @@ test("no Editorial Posts surface claims public-website exposure while coexistenc
     }
   }
 
-  // The ONE place the coexistence fact is stated is the shell's banner, and it
-  // must not be removed or weakened by this correction.
+  // The shell sets the cross-channel baseline; channel-specific screens add
+  // the eligibility distinction without inventing a public-status badge.
   assert.match(shell, /EDITORIAL_COEXISTENCE_NOTICE/);
-  assert.match(shell, /The public website still reads the existing News and Performance sections\. Content published here is not live yet\./);
+  assert.match(shell, /Migrated News is publicly served through a Legacy News compatibility bridge/);
+  assert.match(shell, /Experience is not connected to the public website/);
+  assert.doesNotMatch(shell, /Content published here is not live yet/);
   assert.match(shell, /data-testid="editorial-coexistence-banner"/);
+  assert.match(create, /New Editorial News posts are not automatically public/);
+  assert.doesNotMatch(editorCode, /data-testid="public-(badge|status)"/);
   assert.match(editorCode, /<EditorialPageShell/, "the editor renders inside the shell that carries it");
 });
 
