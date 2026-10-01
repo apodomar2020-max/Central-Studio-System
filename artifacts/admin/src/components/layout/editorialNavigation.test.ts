@@ -96,12 +96,12 @@ test("Website → Configuration exposes Languages and Links, both on website.set
   }
 });
 
-test("the Editorial entry states plainly that it is not connected to the public website", () => {
+test("the Editorial entry distinguishes migrated News from not-live Experience", () => {
   const editorial = findGroup(website().children, "Editorial");
   const posts = editorial.children.find((n) => n.kind === "link" && n.title === "Posts");
   assert.ok(posts && posts.kind === "link");
-  assert.match(posts.description ?? "", /not yet connected to the public website/i);
-  assert.match(posts.description ?? "", /News and Performance/);
+  assert.match(posts.description ?? "", /Migrated News is public through a compatibility bridge/);
+  assert.match(posts.description ?? "", /Experience is not connected to the public website/);
 });
 
 test("every new Editorial/Configuration link is reachable through NAV_ROUTES for the TopBar", () => {
@@ -117,9 +117,9 @@ test("every new Editorial/Configuration link is reachable through NAV_ROUTES for
   }
 });
 
-// ─── Legacy coexistence: the untouched entries ───────────────────────────────
+// ─── Website authority labels ────────────────────────────────────────────────
 
-test("the legacy Performance / News / Backgrounds entries are byte-identical to before this wave", () => {
+test("Performance and News labels state their current authority without changing routes or permissions", () => {
   const legacy = website()
     .children.filter((n) => !(n.kind === "group" && (n.title === "Editorial" || n.title === "Configuration")))
     .map((n) =>
@@ -141,15 +141,15 @@ test("the legacy Performance / News / Backgrounds entries are byte-identical to 
       href: "/website/performances",
       perm: [["website.performance", "view"]],
       pageTitle: "Performance",
-      description: "Public-website Performance repertoire, hero, and detail content",
+      description: "Controls live Central Experience content on the public website",
     },
     {
       kind: "link",
-      title: "News",
+      title: "News — Compatibility",
       href: "/website/news",
       perm: [["website.news", "view"]],
-      pageTitle: "News",
-      description: "Public-website News posts — listing, detail content, and related articles",
+      pageTitle: "News — Compatibility",
+      description: "Compatibility metadata and relationships for migrated public News",
     },
     {
       kind: "group",
@@ -192,7 +192,7 @@ test("neither permission hides both groups — and, with nothing else granted, t
   const legacyOnly = findGroup(visibleFor(["website.news:view"]), "Website");
   assert.deepEqual(
     legacyOnly.children.map((n) => n.title),
-    ["News"],
+    ["News — Compatibility"],
     "a News-only user must still see News and neither new group",
   );
 });

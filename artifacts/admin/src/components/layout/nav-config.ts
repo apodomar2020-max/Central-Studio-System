@@ -321,11 +321,11 @@ export const NAV_TREE: NavNode[] = [
   group("Website", Globe, [
     link("Performance", "/website/performances", [["website.performance", "view"]], Theater, {
       pageTitle: "Performance",
-      description: "Public-website Performance repertoire, hero, and detail content",
+      description: "Controls live Central Experience content on the public website",
     }),
-    link("News", "/website/news", [["website.news", "view"]], Newspaper, {
-      pageTitle: "News",
-      description: "Public-website News posts — listing, detail content, and related articles",
+    link("News — Compatibility", "/website/news", [["website.news", "view"]], Newspaper, {
+      pageTitle: "News — Compatibility",
+      description: "Compatibility metadata and relationships for migrated public News",
     }),
     group("Backgrounds", Image, [
       link("Home", "/website/backgrounds/home", [["website.backgrounds", "view"]], undefined, {
@@ -345,28 +345,26 @@ export const NAV_TREE: NavNode[] = [
         description: "Classes page — Section 1 (Hero)",
       }),
     ]),
-    // Unified Editorial CMS — Wave 2.1A Admin foundation. Strictly ADDITIVE:
-    // the Performance / News / Backgrounds entries above are the legacy
-    // modules the public website actually reads today and are untouched.
-    // Nothing published through this group reaches the public website yet;
-    // every Editorial page repeats that in a persistent page banner.
+    // Unified Editorial CMS — migrated News is publicly delivered through a
+    // Legacy News compatibility bridge. Experience remains a future channel;
+    // live Central Experience content continues to be managed in Performance.
     group("Editorial", BookOpenText, [
       link("Posts", "/editorial/posts", [["website.posts", "view"]], FileText, {
         pageTitle: "Editorial Posts",
         description:
-          "Unified Editorial CMS posts — not yet connected to the public website, which still reads the existing News and Performance sections",
+          "Migrated News is public through a compatibility bridge; Experience is not connected to the public website",
       }),
       link("Authors", "/editorial/authors", [["website.posts", "view"]], UsersRound, {
         pageTitle: "Editorial Authors",
-        description: "Author profiles credited on unified Editorial posts — not yet connected to the public website",
+        description: "Author profiles credited on Editorial News and Experience posts",
       }),
       link("Topics", "/editorial/topics", [["website.posts", "view"]], Tag, {
         pageTitle: "Editorial Topics",
-        description: "Topic taxonomy used to classify unified Editorial posts — not yet connected to the public website",
+        description: "Topic taxonomy used to classify Editorial News and Experience posts",
       }),
       link("Placements", "/editorial/placements", [["website.posts", "view"]], Star, {
         pageTitle: "Editorial Placements",
-        description: "Curated placement slots ordering featured unified Editorial posts — not yet connected to the public website",
+        description: "Curated placement slots for Editorial News and Experience posts",
       }),
     ]),
     group("Configuration", Settings2, [

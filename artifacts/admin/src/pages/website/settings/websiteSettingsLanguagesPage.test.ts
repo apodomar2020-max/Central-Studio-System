@@ -284,7 +284,7 @@ test("Website Settings \u2192 Links is a real page, routed and guarded exactly a
 });
 
 
-test("navigation is untouched — Editorial, News, Performance and Backgrounds entries are unchanged", () => {
+test("navigation retains Editorial, News, Performance and Backgrounds routes", () => {
   assert.match(nav, /\/website\/settings\/languages/);
   assert.match(nav, /\/website\/settings\/links/);
   assert.match(nav, /\/website\/news/);

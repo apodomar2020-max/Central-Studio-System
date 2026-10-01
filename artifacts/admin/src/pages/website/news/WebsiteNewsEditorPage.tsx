@@ -42,7 +42,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
-import { ChevronLeft, Loader2, Plus, Save, Trash2, ChevronUp, ChevronDown, ImageOff } from "lucide-react";
+import { ChevronLeft, Info, Loader2, Plus, Save, Trash2, ChevronUp, ChevronDown, ImageOff } from "lucide-react";
 
 // ─── Form schema ────────────────────────────────────────────────────────────
 
@@ -293,6 +293,19 @@ export default function WebsiteNewsEditorPage() {
       <Button variant="ghost" size="sm" onClick={() => navigate("/website/news")} className="-ml-2 text-muted-foreground">
         <ChevronLeft className="mr-1 h-4 w-4" /> Back to News
       </Button>
+
+      <div
+        role="status"
+        className="flex items-start gap-2 rounded-md border border-border bg-muted/40 px-3 py-2"
+        data-testid="legacy-news-editor-guidance"
+      >
+        <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+        <p className="text-xs text-muted-foreground">
+          This screen still owns compatibility-sensitive fields used by the public website, including category,
+          category label, fallback subtitle, display date, and related-content references. Editorial is the primary
+          workspace for News content.
+        </p>
+      </div>
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
         <fieldset disabled={!canSave} className="space-y-6">

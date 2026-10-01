@@ -107,6 +107,15 @@ test("the New post button is gated on create, not on edit", () => {
   assert.match(list, /capabilities\.canCreate \? \([\s\S]{0,300}button-new-post/);
 });
 
+test("channel guidance distinguishes News eligibility from not-live Experience", () => {
+  assert.match(list, /filters\.channel === "news"[\s\S]{0,800}editorial-news-guidance/);
+  assert.match(list, /Published is an Editorial translation state and does not automatically mean[\s\S]{0,80}public eligibility/);
+  assert.match(list, /filters\.channel === "experience"[\s\S]{0,800}editorial-experience-guidance/);
+  assert.match(list, /href="\/website\/performances"/);
+  assert.match(editor, /postRow\.channel === "news"[\s\S]{0,800}editorial-news-guidance/);
+  assert.match(editor, /editorial-experience-guidance/);
+});
+
 test("the list distinguishes empty-from-no-data and empty-from-filters", () => {
   assert.match(list, /No posts yet\./);
   assert.match(list, /No posts match the current search and filters\./);
@@ -127,6 +136,15 @@ test("create offers only ACTIVE languages", () => {
 
 test("create filters authors to the chosen channel AND to active ones", () => {
   assert.match(create, /author\.channel === form\.channel && author\.status === "active"/);
+});
+
+test("normal New post creation is News-only and explains public eligibility", () => {
+  assert.doesNotMatch(create, /select-post-channel/);
+  assert.doesNotMatch(create, /CHANNEL_OPTIONS/);
+  assert.match(create, /<Badge variant="outline" className="w-fit">News<\/Badge>/);
+  assert.match(create, /New Editorial News posts are not automatically public/);
+  assert.match(create, /href="\/website\/performances"/);
+  assert.match(create, /Publishing it does not automatically make it public/);
 });
 
 test("the create slug preview stops once the operator types (D6)", () => {

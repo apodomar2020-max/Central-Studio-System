@@ -69,7 +69,7 @@ import {
   translationSummaryLabel,
   type PostListFilters,
 } from "@/lib/editorial-posts";
-import { Plus, ChevronLeft, ChevronRight, PenLine } from "lucide-react";
+import { Info, Plus, ChevronLeft, ChevronRight, PenLine } from "lucide-react";
 import "../admin2-final.css";
 import "../admin2-operations.css";
 
@@ -152,6 +152,33 @@ export default function EditorialPostsListPage() {
           ...(can("website.posts", "view") ? [{ label: "Placements", href: "/editorial/placements" }] : []),
         ]}
       />
+      {filters.channel === "news" && (
+        <div
+          role="status"
+          className="flex items-start gap-2 rounded-md border border-border bg-muted/40 px-3 py-2"
+          data-testid="editorial-news-guidance"
+        >
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          <p className="text-xs text-muted-foreground">
+            Migrated News posts are live on the public website. Public News still uses Legacy News compatibility
+            metadata and provenance. Published is an Editorial translation state and does not automatically mean
+            public eligibility.
+          </p>
+        </div>
+      )}
+      {filters.channel === "experience" && (
+        <div
+          role="status"
+          className="flex items-start gap-2 rounded-md border border-border bg-muted/40 px-3 py-2"
+          data-testid="editorial-experience-guidance"
+        >
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          <p className="text-xs text-muted-foreground">
+            Editorial Experience is not connected to the public website yet. Manage live Central Experience content
+            from the <Link href="/website/performances" className="underline">Performance section</Link>.
+          </p>
+        </div>
+      )}
       <TableToolbar
         searchValue={search}
         onSearchChange={(value) => { setSearch(value); setPage(1); }}

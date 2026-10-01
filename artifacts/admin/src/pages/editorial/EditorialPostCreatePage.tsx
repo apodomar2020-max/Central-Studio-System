@@ -45,8 +45,6 @@ import { EditorialPageShell } from "@/components/editorial/editorial-page-shell"
 import { editorialErrorMessage } from "@/lib/editorial-errors";
 import { bylineState, bylineStatusLabel } from "@/lib/editorial-authors";
 import {
-  CHANNEL_OPTIONS,
-  POST_CHANNEL_IMMUTABLE_EXPLANATION,
   SHARED_ACROSS_LANGUAGES_LABEL,
   SLUG_AUTO_HINT,
   channelLabel,
@@ -114,7 +112,7 @@ export default function EditorialPostCreatePage() {
           const languageCode = result.translation?.languageCode ?? form.languageCode;
           toast({
             title: "Post created",
-            description: "It is a draft in this language and is not on the website yet.",
+            description: "It is an Editorial draft. Publishing it does not automatically make it public.",
           });
           navigate(`/editorial/posts/${result.post.id}/${languageCode}`);
         },
@@ -162,24 +160,23 @@ export default function EditorialPostCreatePage() {
         )}
 
         <div className="grid gap-2">
-          <Label htmlFor="create-post-channel">Channel</Label>
-          <Select
-            value={form.channel}
-            onValueChange={(value) =>
-              setForm((f) => ({ ...f, channel: value as typeof f.channel, authorId: null }))
-            }
-          >
-            <SelectTrigger id="create-post-channel" data-testid="select-post-channel" aria-describedby="create-post-channel-help">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {CHANNEL_OPTIONS.map((option) => (
-                <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <p id="create-post-channel-help" className="text-xs text-muted-foreground">
-            {errors.channel ?? POST_CHANNEL_IMMUTABLE_EXPLANATION}
+          <Label>Channel</Label>
+          <Badge variant="outline" className="w-fit">News</Badge>
+          <p className="text-xs text-muted-foreground" data-testid="new-post-channel-help">
+            New Editorial posts start in News. Editorial Experience is not connected to the public website; manage
+            live Central Experience content from the <Link href="/website/performances" className="underline">Performance section</Link>.
+          </p>
+        </div>
+
+        <div
+          role="status"
+          className="flex items-start gap-2 rounded-md border border-border bg-muted/40 px-3 py-2"
+          data-testid="editorial-news-guidance"
+        >
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          <p className="text-xs text-muted-foreground">
+            Migrated News posts are live on the public website. Public News still uses Legacy News compatibility
+            metadata and provenance. New Editorial News posts are not automatically public.
           </p>
         </div>
 
