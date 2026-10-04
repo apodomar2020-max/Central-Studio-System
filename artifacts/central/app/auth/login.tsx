@@ -27,6 +27,7 @@ import { useFacebookSignIn } from "@/hooks/useFacebookSignIn";
 import AppleSignInButton from "@/components/AppleSignInButton";
 import { BackBtn, GhostBtn, FacebookLogo, GoogleLogo } from "@/components/signup/SignupKit";
 import SocialLinkVerifyModal from "@/components/SocialLinkVerifyModal";
+import { useAppleSignIn } from "@/hooks/useAppleSignIn";
 import { continueAfterAuth, postAuthDestination } from "@/services/authProfile";
 import { clearSignupDrafts } from "./register";
 import { iosCapGuard, iosDisplayTextStyle, iosTextInputStyle } from "@/utils/iosTypography";
@@ -37,6 +38,7 @@ export default function LoginScreen() {
   const insets = useSafeAreaInsets();
   const google = useGoogleSignIn("social-login");
   const facebook = useFacebookSignIn("social-login");
+  const apple = useAppleSignIn("social-login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
@@ -110,7 +112,7 @@ export default function LoginScreen() {
         style={StyleSheet.absoluteFill}
         contentFit="cover"
         nativeControls={false}
-        allowsFullscreen={false}
+        fullscreenOptions={{ enable: false }}
       />
       {/* Dark gradient overlay so the form stays legible */}
       <LinearGradient
@@ -139,10 +141,10 @@ export default function LoginScreen() {
         <Text style={styles.title}>Welcome back</Text>
         <Text style={styles.subtitle}>Sign in to Central Studio</Text>
 
-        {(error || google.error || facebook.error) !== "" && (
+        {(error || google.error || facebook.error || apple.error) !== "" && (
           <View style={[styles.errorBanner, { backgroundColor: colors.error + "20", borderColor: colors.error + "50" }]}>
             <Ionicons name="alert-circle-outline" size={16} color={colors.error} />
-            <Text style={[styles.errorText, { color: colors.error }]}>{error || google.error || facebook.error}</Text>
+            <Text style={[styles.errorText, { color: colors.error }]}>{error || google.error || facebook.error || apple.error}</Text>
           </View>
         )}
 
@@ -194,10 +196,10 @@ export default function LoginScreen() {
             <View style={styles.dividerLine} />
           </View>
 
-          <AppleSignInButton />
+          <AppleSignInButton onPress={apple.signIn} loading={apple.loading} disabled={google.loading || facebook.loading} />
           <View style={{ flexDirection: "row", gap: 10 }}>
-            <GhostBtn label="Google" icon={<GoogleLogo />} onPress={google.signIn} disabled={google.loading} />
-            <GhostBtn label="Facebook" icon={<FacebookLogo />} onPress={facebook.signIn} disabled={facebook.loading} />
+            <GhostBtn label="Google" icon={<GoogleLogo />} onPress={google.signIn} disabled={google.loading || apple.loading || facebook.loading} />
+            <GhostBtn label="Facebook" icon={<FacebookLogo />} onPress={facebook.signIn} disabled={facebook.loading || apple.loading || google.loading} />
           </View>
         </View>
 
@@ -207,6 +209,9 @@ export default function LoginScreen() {
             <Text style={[styles.registerLink, { color: colors.studio.primary }]}> Create one</Text>
           </TouchableOpacity>
         </View>
+        <TouchableOpacity onPress={() => pushOnce("/account/delete" as never)}>
+          <Text style={styles.registerNote}>Check a saved account deletion request</Text>
+        </TouchableOpacity>
 
         <TouchableOpacity onPress={continueAsGuest} style={styles.guestBtn}>
           <Text style={styles.guestText}>Continue browsing as guest</Text>
@@ -214,8 +219,8 @@ export default function LoginScreen() {
       </KeyboardAwareScrollView>
 
       <SocialLinkVerifyModal
-        challenge={google.linkChallenge ?? facebook.linkChallenge}
-        onClose={() => { google.clearLinkChallenge(); facebook.clearLinkChallenge(); }}
+        challenge={apple.linkChallenge ?? google.linkChallenge ?? facebook.linkChallenge}
+        onClose={() => { apple.clearLinkChallenge(); google.clearLinkChallenge(); facebook.clearLinkChallenge(); }}
       />
     </View>
   );

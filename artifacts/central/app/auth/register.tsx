@@ -40,6 +40,8 @@ import { useGoogleSignIn } from "@/hooks/useGoogleSignIn";
 import { useFacebookSignIn } from "@/hooks/useFacebookSignIn";
 import BotChallenge from "@/components/BotChallenge";
 import SocialLinkVerifyModal from "@/components/SocialLinkVerifyModal";
+import AppleSignInButton from "@/components/AppleSignInButton";
+import { useAppleSignIn } from "@/hooks/useAppleSignIn";
 
 // Stable social icon elements.
 const FACEBOOK_ICON = <FacebookLogo />;
@@ -131,6 +133,7 @@ export default function RegisterScreen() {
   const insets = useSafeAreaInsets();
   const google = useGoogleSignIn("social-signup");
   const facebook = useFacebookSignIn("social-signup");
+  const apple = useAppleSignIn("social-signup");
 
   // Plain controlled state (same proven pattern as the Sign In screen).
   const [firstName, setFirstName] = useState(draftFirstName);
@@ -366,9 +369,11 @@ export default function RegisterScreen() {
             />
 
             <Divider label="or sign up with" />
+            <AppleSignInButton onPress={apple.signIn} loading={apple.loading} disabled={google.loading || facebook.loading} />
+            {!!apple.error && <Text style={{ color: "#EF4444" }}>{apple.error}</Text>}
             <View style={{ flexDirection: "row", gap: 10 }}>
-              <GhostBtn label="Facebook" icon={FACEBOOK_ICON} onPress={() => facebook.signIn()} disabled={facebook.loading} />
-              <GhostBtn label="Google" icon={GOOGLE_ICON} onPress={() => google.signIn()} disabled={google.loading} />
+              <GhostBtn label="Facebook" icon={FACEBOOK_ICON} onPress={() => facebook.signIn()} disabled={facebook.loading || apple.loading || google.loading} />
+              <GhostBtn label="Google" icon={GOOGLE_ICON} onPress={() => google.signIn()} disabled={google.loading || apple.loading || facebook.loading} />
             </View>
             <Text style={styles.terms}>
               By continuing you agree to our <Text style={styles.termsLink}>Terms</Text> and <Text style={styles.termsLink}>Privacy Policy</Text>
@@ -382,8 +387,8 @@ export default function RegisterScreen() {
       </KeyboardAvoidingView>
 
       <SocialLinkVerifyModal
-        challenge={google.linkChallenge ?? facebook.linkChallenge}
-        onClose={() => { google.clearLinkChallenge(); facebook.clearLinkChallenge(); }}
+        challenge={apple.linkChallenge ?? google.linkChallenge ?? facebook.linkChallenge}
+        onClose={() => { apple.clearLinkChallenge(); google.clearLinkChallenge(); facebook.clearLinkChallenge(); }}
       />
     </View>
   );

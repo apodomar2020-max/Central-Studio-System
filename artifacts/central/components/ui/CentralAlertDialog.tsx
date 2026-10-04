@@ -129,9 +129,9 @@ export default function CentralAlertDialog({
   return (
     <Modal visible={mounted} transparent animationType="none" statusBarTranslucent onRequestClose={onRequestClose}>
       <View style={styles.root}>
-        <Animated.View style={[StyleSheet.absoluteFillObject, styles.backdropLayer, { opacity: backdropOpacity }]}>
+        <Animated.View style={[StyleSheet.absoluteFill, styles.backdropLayer, { opacity: backdropOpacity }]}>
           <Pressable
-            style={StyleSheet.absoluteFillObject}
+            style={StyleSheet.absoluteFill}
             onPress={handleBackdropPress}
             accessibilityRole={alert.dismissible ? "button" : undefined}
             accessibilityLabel={alert.dismissible ? "Dismiss dialog" : undefined}

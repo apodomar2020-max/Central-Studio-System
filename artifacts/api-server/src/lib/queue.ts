@@ -9,6 +9,8 @@ export const QUEUE_NAMES = {
   balletCancellationFinalization: "ballet-cancellation-finalization",
   balletAutoAbsence: "ballet-auto-absence",
   packageCreditExpiration: "package-credit-expiration",
+  accountMaintenance: "account-maintenance",
+  pushReceipts: "push-receipts",
 } as const;
 
 export type QueueName = typeof QUEUE_NAMES[keyof typeof QUEUE_NAMES];

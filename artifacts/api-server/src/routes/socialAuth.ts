@@ -11,6 +11,8 @@
  * The ONLY question that matters here is: may this provider identity attach
  * itself to an account that already exists? The answer is derived exclusively
  * from `identity.emailTrust` — never from anything stored on the student row.
+ * Apple email collisions always require the existing ownership OTP, even
+ * when Apple attests the email; repeat sign-in resolves by stable subject.
  *
  *   Branch 1  provider id already linked
  *             → sign in. No email lookup, no linking decision. Every existing
@@ -61,13 +63,14 @@
  * prep, provider subject still unlinked) before atomically attaching the
  * provider id and issuing a token — see /auth/social-link/verify below.
  *
- * Apple stays fail-closed (socialProviders.ts throws before any of this runs).
+ * Apple validates a one-use nonce and exchanges its authorization code before resolution.
  */
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db, studentsTable } from "@workspace/db";
 import { logger } from "../lib/logger";
+import { createAppleChallenge, consumeAppleChallenge, exchangeAppleCode, persistAppleCredential, attachAppleCredential } from "../lib/appleAuthorization";
 import { isActiveAccountStatus } from "../lib/studentAccountStatus";
 import {
   signStudentToken,
@@ -228,9 +231,10 @@ async function resolveSocialLogin(identity: ProviderIdentity): Promise<SocialLog
         lastLoginAt: now,
         ...(promote ? { emailVerified: true, emailVerifiedAt: now } : {}),
       })
-      .where(eq(studentsTable.id, linked.id))
+      .where(and(eq(studentsTable.id, linked.id), eq(studentsTable.accountStatus, "active")))
       .returning();
-    const student = updated!;
+    if (!updated) return { kind: "accountDeactivated" };
+    const student = updated;
     return { kind: "ok", student, verified: student.emailVerified };
   }
 
@@ -293,7 +297,7 @@ async function resolveSocialLogin(identity: ProviderIdentity): Promise<SocialLog
     return { kind: "accountDeactivated" };
   }
 
-  if (emailTrust !== "provider_attested") {
+  if (provider === "apple" || emailTrust !== "provider_attested") {
     return {
       kind: "linkVerificationRequired",
       maskedEmail: maskEmail(existing.email),
@@ -321,6 +325,7 @@ async function resolveSocialLogin(identity: ProviderIdentity): Promise<SocialLog
       .for("update")
       .limit(1);
     if (!locked) return { kind: "vanished" as const };
+    if (!isActiveAccountStatus(locked.accountStatus)) return { kind: "inactive" as const };
 
     const currentId = readProviderId(locked, provider);
     if (currentId != null && currentId !== providerId) {
@@ -346,6 +351,7 @@ async function resolveSocialLogin(identity: ProviderIdentity): Promise<SocialLog
 
   if (linkResult.kind === "conflict") return { kind: "providerAlreadyLinked" };
   if (linkResult.kind === "vanished") return { kind: "needsEmail" };
+  if (linkResult.kind === "inactive") return { kind: "accountDeactivated" };
 
   return { kind: "ok", student: linkResult.student, verified: linkResult.student.emailVerified };
 }
@@ -362,7 +368,7 @@ async function resolveSocialLogin(identity: ProviderIdentity): Promise<SocialLog
 // that still sends `email` is accepted and the field is silently ignored
 // rather than rejected. No shipped client sends it (verified across
 // artifacts/central: useGoogleSignIn posts { idToken }, useFacebookSignIn
-// posts { accessToken }, Apple has no call site at all).
+// posts { accessToken }, Apple posts signed identity/code/challenge only).
 //
 // Do not reintroduce this field. If a client-collected address is ever needed
 // for the Security-01B2 link challenge, it must arrive on a dedicated,
@@ -372,6 +378,9 @@ const SocialBody = z
     token: z.string().min(1).optional(),
     idToken: z.string().min(1).optional(),
     accessToken: z.string().min(1).optional(),
+    authorizationCode: z.string().min(1).max(4096).optional(),
+    challengeId: z.string().min(1).max(128).optional(),
+    displayName: z.string().trim().max(150).optional(),
   })
   .refine((b) => !!(b.token || b.idToken || b.accessToken), {
     message: "A provider token is required",
@@ -389,7 +398,17 @@ function makeHandler(provider: ProviderName) {
     // 1. Validate the provider token server-side.
     let identity: ProviderIdentity;
     try {
-      identity = await verifyProviderToken(provider, providerToken);
+      if (provider === "apple") {
+        if (!process.env.APPLE_CLIENT_ID) throw new ProviderNotConfiguredError("apple", ["APPLE_CLIENT_ID"]);
+        if (!parsed.data.challengeId || !parsed.data.authorizationCode) {
+          res.status(400).json({ error: "Apple authorization code and challenge are required." }); return;
+        }
+        const nonce = await consumeAppleChallenge(parsed.data.challengeId);
+        identity = await verifyProviderToken(provider, providerToken, nonce);
+        const envelope = await exchangeAppleCode(parsed.data.authorizationCode, identity.providerId, nonce);
+        await persistAppleCredential(identity.providerId, envelope);
+        identity.name = parsed.data.displayName || null;
+      } else { identity = await verifyProviderToken(provider, providerToken); }
     } catch (err) {
       if (err instanceof ProviderNotConfiguredError) {
         // Configuration details (missing env var names) are logged server-side
@@ -405,11 +424,18 @@ function makeHandler(provider: ProviderName) {
         res.status(401).json({ error: err.message });
         return;
       }
+      if (provider === "apple") { res.status(503).json({ error: "Apple sign-in is temporarily unavailable. Please try again." }); return; }
       throw err;
     }
 
     // 2. Resolve / link the account.
     const result = await resolveSocialLogin(identity);
+    if (provider === "apple" && result.kind === "ok") {
+      await db.transaction(async tx => {
+        const [owner] = await tx.select().from(studentsTable).where(eq(studentsTable.id, result.student.id)).for("update");
+        if (owner?.accountStatus === "active" && owner.appleId === identity.providerId) await attachAppleCredential(tx, owner.id, identity.providerId);
+      });
+    }
 
     if (result.kind === "needsEmail") {
       // Unchanged response shape. Note it is now purely informational: there
@@ -529,6 +555,10 @@ function limitEnv(name: string, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 const socialAuthIpLimiter = ipRateLimiter("social-auth", { limit: limitEnv("AUTH_SOCIAL_IP_LIMIT", 60), windowSeconds: 15 * 60 });
+router.post("/auth/apple/challenge", socialAuthIpLimiter, async (_req, res) => {
+  try { res.json(await createAppleChallenge()); }
+  catch { res.status(503).json({ error: "Apple sign-in is temporarily unavailable." }); }
+});
 
 router.post("/auth/google", socialAuthIpLimiter, makeHandler("google"));
 router.post("/auth/apple", socialAuthIpLimiter, makeHandler("apple"));
@@ -662,6 +692,7 @@ router.post("/auth/social-link/verify", socialLinkIpLimiter, async (req, res): P
       .returning();
 
     await consumeChallenge(tx, challenge.id);
+    if (provider === "apple") await attachAppleCredential(tx, updated!.id, challenge.providerId);
     return { kind: "linked" as const, student: updated!, provider };
   });
 
@@ -695,7 +726,7 @@ router.post("/auth/social-link/verify", socialLinkIpLimiter, async (req, res): P
     await createStudentNotification(db, {
       studentId: student.id,
       title: "Sign-in method linked",
-      body: `A ${provider === "google" ? "Google" : "Facebook"} account was linked to your Central Studio account.`,
+      body: `A ${provider === "google" ? "Google" : provider === "apple" ? "Apple" : "Facebook"} account was linked to your Central Studio account.`,
       type: "security",
       source: "system",
     });

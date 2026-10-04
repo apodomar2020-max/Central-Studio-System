@@ -14,6 +14,7 @@ import {
   unregisterPushDeviceForLogout,
 } from "@/services/pushNotifications";
 import { createLogoutCoordinator } from "@/services/logoutCoordinator";
+import { isAccountDeletionInProgress } from "@/services/accountDeletion";
 import { getStudentToken, setStudentToken, clearStudentToken } from "@/services/secureTokenStorage";
 import { stripSensitiveChildFields } from "@/services/childProfilePrivacy";
 import { presentUserFacingError } from "@/utils/userFacingError";
@@ -300,6 +301,14 @@ const AUTH_SCOPED_STORAGE_KEYS = [
 ];
 
 async function clearAuthScopedStorage() {
+  const stored = await AsyncStorage.getItem("user").catch(() => null);
+  if (stored) {
+    try {
+      const departing = JSON.parse(stored);
+      if (departing.id && typeof departing.email === "string") await AsyncStorage.removeItem(`feedback_queue_v1:${departing.id}:${departing.email.trim().toLowerCase()}`);
+    } catch { /* malformed cached data is removed below */ }
+  }
+  try { (await import("react-native-fbsdk-next")).LoginManager.logOut(); } catch { /* native SDK unavailable */ }
   await Promise.all([
     AsyncStorage.multiRemove(AUTH_SCOPED_STORAGE_KEYS),
     clearStudentToken(),
@@ -582,6 +591,7 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
   // safe without extra guarding.
   useEffect(() => {
     setSessionRevokedHandler(() => {
+      if (isAccountDeletionInProgress()) return;
       void setUser(null);
       router.replace("/onboarding/welcome" as never);
     });
@@ -605,6 +615,7 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
   useEffect(() => {
     let deactivationHandled = false;
     setAccountDeactivatedHandler(() => {
+      if (isAccountDeletionInProgress()) return;
       if (deactivationHandled) return;
       deactivationHandled = true;
       presentCentralAlert({

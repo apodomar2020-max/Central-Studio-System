@@ -7,6 +7,8 @@ import {
 } from "@workspace/db";
 import { logger } from "./logger";
 import { isPushDeviceEligible } from "./pushDeviceEligibility";
+import { parseExpoResult, pushTokenHash } from "./pushReceiptProtocol";
+import { retireAttemptedPushToken } from "./pushReceipts";
 
 type PushData = Record<string, unknown>;
 
@@ -164,6 +166,7 @@ async function sendToDevices(args: SendPushInput, devices: PushDevice[]) {
 
 async function sendChunkToDevices(args: SendPushInput, devices: PushDevice[]) {
   if (devices.length === 0) return { sent: 0, failed: 0 };
+  const attemptedAt = new Date().toISOString();
 
   const messages = devices.map((device) => {
     const message: Record<string, unknown> = {
@@ -182,6 +185,7 @@ async function sendChunkToDevices(args: SendPushInput, devices: PushDevice[]) {
   try {
     const response = await fetch("https://exp.host/--/api/v2/push/send", {
       method: "POST",
+      signal: AbortSignal.timeout(10000),
       headers: expoHeaders(),
       body: JSON.stringify(messages),
     });
@@ -199,19 +203,18 @@ async function sendChunkToDevices(args: SendPushInput, devices: PushDevice[]) {
 
     await Promise.all(devices.map(async (device, index) => {
       const receipt = receipts[index] ?? {};
-      const ok = response.ok && receipt.status !== "error";
+      const ticket = parseExpoResult(receipt, true);
+      const ok = response.ok && ticket.ok;
       if (ok) sent += 1; else failed += 1;
       logger.info({
         notificationId: args.notificationId ?? null,
         studentId: args.studentId,
         deviceId: device.id,
         platform: device.platform,
-        ticketStatus: typeof receipt.status === "string" ? receipt.status : null,
-        ticketId: typeof receipt.id === "string" ? receipt.id : null,
-        ticketErrorCode: typeof receipt.details === "object" && receipt.details
-          ? String((receipt.details as Record<string, unknown>).error ?? "")
-          : null,
-        ticketErrorMessage: typeof receipt.message === "string" ? receipt.message : null,
+        ticketStatus: ok ? "ok" : "error",
+        ticketId: ticket.id,
+        ticketErrorCode: ticket.error,
+        ticketErrorMessage: ok ? null : "Expo rejected push ticket.",
       }, "[PUSH_DIAG] Expo push ticket processed");
       await db.insert(notificationDeliveryLogsTable).values({
         notificationId: args.notificationId ?? null,
@@ -220,18 +223,20 @@ async function sendChunkToDevices(args: SendPushInput, devices: PushDevice[]) {
         channel: "push",
         provider: "expo",
         status: ok ? "sent" : "failed",
-        providerMessageId: typeof receipt.id === "string" ? receipt.id : null,
-        errorCode: typeof receipt.details === "object" && receipt.details
-          ? String((receipt.details as Record<string, unknown>).error ?? "")
-          : null,
-        errorMessage: ok ? null : typeof receipt.message === "string" ? receipt.message : `Expo push HTTP ${response.status}`,
+        providerMessageId: ticket.id,
+        attemptedTokenHash: pushTokenHash(device.pushToken), attemptedAt,
+        receiptStatus: ok ? "pending" : null,
+        receiptNextCheckAt: ok ? new Date(Date.now() + 15 * 60000).toISOString() : null,
+        errorCode: ok ? null : ticket.error ?? "expo_request_failed",
+        errorMessage: ok ? null : `Expo push ticket rejected (HTTP ${response.status}).`,
         sentAt: ok ? new Date().toISOString() : null,
       });
+      if (ticket.error === "DeviceNotRegistered") await retireAttemptedPushToken(device.id, pushTokenHash(device.pushToken), attemptedAt);
     }));
 
     return { sent, failed };
   } catch (error) {
-    logger.warn({ err: error, studentId: args.studentId }, "Expo push send failed");
+    logger.warn({ studentId: args.studentId }, "Expo push send failed");
     await Promise.all(devices.map((device) => db.insert(notificationDeliveryLogsTable).values({
       notificationId: args.notificationId ?? null,
       studentId: args.studentId,
@@ -240,7 +245,7 @@ async function sendChunkToDevices(args: SendPushInput, devices: PushDevice[]) {
       provider: "expo",
       status: "failed",
       errorCode: "expo_request_failed",
-      errorMessage: error instanceof Error ? error.message : "Expo push request failed",
+      errorMessage: "Expo push request failed",
     })));
     return { sent: 0, failed: devices.length };
   }

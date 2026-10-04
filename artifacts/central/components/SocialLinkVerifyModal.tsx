@@ -58,7 +58,7 @@ export default function SocialLinkVerifyModal({ challenge, onClose }: Props) {
 
   if (!challenge) return null;
 
-  const providerLabel = challenge.provider === "google" ? "Google" : "Facebook";
+  const providerLabel = challenge.provider === "google" ? "Google" : challenge.provider === "apple" ? "Apple" : "Facebook";
 
   async function handleVerify() {
     if (!challenge || code.length !== CODE_LENGTH || submitting) return;

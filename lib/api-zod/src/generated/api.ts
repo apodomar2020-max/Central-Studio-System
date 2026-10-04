@@ -8,6 +8,220 @@
 import * as zod from "zod";
 
 /**
+ * @summary Operational queue for existing users.delete administrators
+ */
+export const ListPendingCustomerDeletionsResponse = zod.object({
+  requests: zod.array(zod.record(zod.string(), zod.unknown())).optional(),
+});
+
+/**
+ * @summary Create a single-use Apple nonce challenge
+ */
+export const CreateAppleAuthChallengeResponse = zod.object({
+  challengeId: zod.string(),
+  nonce: zod.string(),
+  expiresIn: zod.number(),
+});
+
+/**
+ * @summary Verify Apple identity and authorization code; use OTP ownership linking on email collision
+ */
+export const signInWithAppleBodyAuthorizationCodeMax = 4096;
+
+export const signInWithAppleBodyChallengeIdMax = 128;
+
+export const signInWithAppleBodyDisplayNameMax = 150;
+
+export const SignInWithAppleBody = zod.object({
+  idToken: zod.string(),
+  authorizationCode: zod.string().max(signInWithAppleBodyAuthorizationCodeMax),
+  challengeId: zod.string().max(signInWithAppleBodyChallengeIdMax),
+  displayName: zod
+    .string()
+    .max(signInWithAppleBodyDisplayNameMax)
+    .optional()
+    .describe("Optional one-time display metadata; never an account selector"),
+});
+
+export const SignInWithAppleResponse = zod.object({
+  student: zod.record(zod.string(), zod.unknown()).optional(),
+  accessToken: zod.string().optional(),
+  requiresOtp: zod.boolean().optional(),
+  requiresEmail: zod.boolean().optional(),
+  requiresLinkVerification: zod.boolean().optional(),
+  linkChallengeId: zod.string().optional(),
+  expiresIn: zod.number().optional(),
+  provider: zod.string().optional(),
+  error: zod.string().optional(),
+});
+
+/**
+ * @summary Get authenticated account deletion disclosure and linked providers
+ */
+export const GetMyAccountDeletionResponse = zod.object({
+  disclosure: zod.object({
+    deleted: zod.array(zod.string()),
+    retained: zod.array(zod.string()),
+    pending: zod.string(),
+  }),
+  linkedProviders: zod.array(zod.enum(["apple", "google", "facebook"])),
+  request: zod.union([
+    zod.object({
+      requestId: zod.string().uuid(),
+      status: zod.enum(["pending", "completed"]),
+      blockers: zod.array(
+        zod.object({
+          key: zod.string(),
+          label: zod.string(),
+        }),
+      ),
+      appleRevocation: zod.enum([
+        "not_applicable",
+        "pending",
+        "revoked",
+        "manual_required",
+      ]),
+      appleManualRevocation: zod.string().nullable(),
+      statusToken: zod.string().optional(),
+      requestedAt: zod.coerce.date().nullish(),
+      completedAt: zod.coerce.date().nullish(),
+      disclosure: zod.object({
+        deleted: zod.array(zod.string()),
+        retained: zod.array(zod.string()),
+        pending: zod.string(),
+      }),
+    }),
+    zod.null(),
+  ]),
+});
+
+/**
+ * @summary Consume a short-lived deletion proof and request permanent account deletion
+ */
+export const requestMyAccountDeletionBodyDeletionProofMin = 20;
+export const requestMyAccountDeletionBodyDeletionProofMax = 128;
+
+export const RequestMyAccountDeletionBody = zod.object({
+  deletionProof: zod
+    .string()
+    .min(requestMyAccountDeletionBodyDeletionProofMin)
+    .max(requestMyAccountDeletionBodyDeletionProofMax),
+  confirmation: zod.enum(["DELETE"]),
+});
+
+export const RequestMyAccountDeletionResponse = zod.object({
+  requestId: zod.string().uuid(),
+  status: zod.enum(["pending", "completed"]),
+  blockers: zod.array(
+    zod.object({
+      key: zod.string(),
+      label: zod.string(),
+    }),
+  ),
+  appleRevocation: zod.enum([
+    "not_applicable",
+    "pending",
+    "revoked",
+    "manual_required",
+  ]),
+  appleManualRevocation: zod.string().nullable(),
+  statusToken: zod.string().optional(),
+  requestedAt: zod.coerce.date().nullish(),
+  completedAt: zod.coerce.date().nullish(),
+  disclosure: zod.object({
+    deleted: zod.array(zod.string()),
+    retained: zod.array(zod.string()),
+    pending: zod.string(),
+  }),
+});
+
+/**
+ * @summary Send a deletion-specific ownership code to the authenticated account email
+ */
+export const SendMyAccountDeletionCodeResponse = zod.object({
+  ok: zod.boolean(),
+});
+
+/**
+ * @summary Confirm ownership with a password or deletion-specific email code
+ */
+export const reauthenticateMyAccountDeletionBodyPasswordMax = 256;
+
+export const reauthenticateMyAccountDeletionBodyCodeRegExp = new RegExp(
+  "^\\d{6}$",
+);
+
+export const ReauthenticateMyAccountDeletionBody = zod.object({
+  password: zod
+    .string()
+    .max(reauthenticateMyAccountDeletionBodyPasswordMax)
+    .optional(),
+  code: zod
+    .string()
+    .regex(reauthenticateMyAccountDeletionBodyCodeRegExp)
+    .optional(),
+});
+
+export const ReauthenticateMyAccountDeletionResponse = zod.object({
+  deletionProof: zod.string(),
+  statusToken: zod.string(),
+  expiresIn: zod.number(),
+});
+
+/**
+ * @summary Revoke transient Google or Facebook authorization bound to the authenticated linked identity
+ */
+export const revokeMyDeletionProviderAccessBodyAccessTokenMax = 8192;
+
+export const RevokeMyDeletionProviderAccessBody = zod.object({
+  provider: zod.enum(["google", "facebook"]),
+  accessToken: zod
+    .string()
+    .max(revokeMyDeletionProviderAccessBodyAccessTokenMax),
+});
+
+export const RevokeMyDeletionProviderAccessResponse = zod.object({
+  status: zod.enum(["revoked", "manual_required"]),
+});
+
+/**
+ * @summary Read a deletion result using its limited status token after Central session revocation
+ */
+export const getSavedAccountDeletionStatusBodyStatusTokenMax = 2048;
+
+export const GetSavedAccountDeletionStatusBody = zod.object({
+  statusToken: zod
+    .string()
+    .max(getSavedAccountDeletionStatusBodyStatusTokenMax),
+});
+
+export const GetSavedAccountDeletionStatusResponse = zod.object({
+  requestId: zod.string().uuid(),
+  status: zod.enum(["pending", "completed"]),
+  blockers: zod.array(
+    zod.object({
+      key: zod.string(),
+      label: zod.string(),
+    }),
+  ),
+  appleRevocation: zod.enum([
+    "not_applicable",
+    "pending",
+    "revoked",
+    "manual_required",
+  ]),
+  appleManualRevocation: zod.string().nullable(),
+  statusToken: zod.string().optional(),
+  requestedAt: zod.coerce.date().nullish(),
+  completedAt: zod.coerce.date().nullish(),
+  disclosure: zod.object({
+    deleted: zod.array(zod.string()),
+    retained: zod.array(zod.string()),
+    pending: zod.string(),
+  }),
+});
+
+/**
  * @summary Health check
  */
 export const HealthCheckResponse = zod.object({

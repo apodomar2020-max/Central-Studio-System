@@ -918,6 +918,27 @@
       "when": 1788019200011,
       "tag": "0130_editorial_post_migration_source_unique",
       "breakpoints": true
+    },
+    {
+      "idx": 132,
+      "version": "7",
+      "when": 1791072000000,
+      "tag": "0131_apple_credentials",
+      "breakpoints": true
+    },
+    {
+      "idx": 133,
+      "version": "7",
+      "when": 1791072000001,
+      "tag": "0132_customer_deletion_requests",
+      "breakpoints": true
+    },
+    {
+      "idx": 134,
+      "version": "7",
+      "when": 1791072000002,
+      "tag": "0133_push_receipts",
+      "breakpoints": true
     }
   ]
 }

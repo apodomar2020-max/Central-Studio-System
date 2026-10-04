@@ -416,7 +416,7 @@ const s = StyleSheet.create({
     backgroundColor: "transparent",
   },
   performanceGlassBackdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: "rgba(1,8,10,0.40)",
   },
   performancePanelContent: { flex: 1, paddingHorizontal: 14, paddingTop: 15, paddingBottom: 11 },

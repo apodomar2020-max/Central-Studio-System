@@ -32,6 +32,8 @@ import { recordReminderWorkerRun } from "./lib/reminderWorkerHeartbeat";
 import { getPushStatus } from "./lib/pushNotifications";
 import { resolveCodeCommit } from "./lib/codeCommit";
 import { runPackageCreditExpirationBatch } from "./lib/packageCreditExpiration";
+import { reconcileCustomerDeletions } from "./lib/customerAccountDeletion";
+import { reconcilePushReceipts } from "./lib/pushReceipts";
 
 const deployedVersion = await resolveCodeCommit();
 
@@ -58,6 +60,8 @@ const whatsappWorker = new Worker<WhatsAppCampaignSendJob>(
   },
   { connection, concurrency: queueConcurrency("WHATSAPP_QUEUE_CONCURRENCY") },
 );
+const accountMaintenanceWorker = new Worker(QUEUE_NAMES.accountMaintenance, async () => reconcileCustomerDeletions(), { connection, concurrency: 1 });
+const pushReceiptsWorker = new Worker(QUEUE_NAMES.pushReceipts, async () => reconcilePushReceipts(), { connection, concurrency: 1 });
 
 const reportsWorker = new Worker<ReportJob>(
   QUEUE_NAMES.reports,
@@ -144,7 +148,7 @@ const packageCreditExpirationWorker = new Worker<PackageCreditExpirationJob>(
   { connection, concurrency: queueConcurrency("PACKAGE_CREDIT_EXPIRATION_QUEUE_CONCURRENCY") },
 );
 
-for (const worker of [whatsappWorker, reportsWorker, notificationAutomationWorker, balletCancellationFinalizationWorker, balletAutoAbsenceWorker, packageCreditExpirationWorker]) {
+for (const worker of [whatsappWorker, reportsWorker, notificationAutomationWorker, balletCancellationFinalizationWorker, balletAutoAbsenceWorker, packageCreditExpirationWorker, accountMaintenanceWorker, pushReceiptsWorker]) {
   worker.on("failed", (job, err) => {
     captureError(err, { component: "queue-worker", queue: worker.name, jobId: job?.id });
   });
@@ -275,13 +279,18 @@ await registerNotificationAutomationSchedulers();
 await registerBalletCancellationFinalizationSchedulers();
 await registerBalletAutoAbsenceSchedulers();
 await registerPackageCreditExpirationSchedulers();
+for (const name of [QUEUE_NAMES.accountMaintenance, QUEUE_NAMES.pushReceipts]) {
+  await getQueue(name)!.upsertJobScheduler(`${name}:reconcile`, { pattern: "*/5 * * * *" }, {
+    name: "reconcile", data: {}, opts: defaultJobOptions(),
+  });
+}
 
 logger.info("Queue worker started");
 
 async function shutdown() {
   logger.info("Queue worker shutting down");
   const connectionQuit = connection ? connection.quit() : Promise.resolve();
-  await Promise.all([whatsappWorker.close(), reportsWorker.close(), notificationAutomationWorker.close(), balletCancellationFinalizationWorker.close(), balletAutoAbsenceWorker.close(), packageCreditExpirationWorker.close(), connectionQuit]);
+  await Promise.all([whatsappWorker.close(), reportsWorker.close(), notificationAutomationWorker.close(), balletCancellationFinalizationWorker.close(), balletAutoAbsenceWorker.close(), packageCreditExpirationWorker.close(), accountMaintenanceWorker.close(), pushReceiptsWorker.close(), connectionQuit]);
   process.exit(0);
 }
 

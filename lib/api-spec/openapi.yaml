@@ -24,6 +24,256 @@ tags:
   - name: settings
 
 paths:
+  /students/customer-deletion-requests:
+    get:
+      operationId: listPendingCustomerDeletions
+      tags: [accountLifecycle]
+      summary: Operational queue for existing users.delete administrators
+      responses:
+        "200":
+          description: Up to 100 oldest pending requests; no credentials or profile PII
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  requests:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+        "403":
+          description: Administrator deletion permission required
+  /auth/apple/challenge:
+    post:
+      operationId: createAppleAuthChallenge
+      tags: [auth]
+      summary: Create a single-use Apple nonce challenge
+      responses:
+        "200":
+          description: Five-minute challenge
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppleAuthChallenge"
+        "503":
+          description: Apple sign-in unavailable
+  /auth/apple:
+    post:
+      operationId: signInWithApple
+      tags: [auth]
+      summary: Verify Apple identity and authorization code; use OTP ownership linking on email collision
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppleSignInBody"
+      responses:
+        "200":
+          description: Central session or email-required result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppleSignInResult"
+        "409":
+          description: Ownership challenge required or provider conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppleSignInResult"
+        "400":
+          description: Missing authorization or challenge
+        "401":
+          description: Invalid Apple identity
+        "403":
+          description: Account unavailable
+        "501":
+          description: Apple configuration unavailable
+        "503":
+          description: Apple service temporarily unavailable
+  /me/account-deletion:
+    get:
+      operationId: getMyAccountDeletion
+      tags: [accountLifecycle]
+      summary: Get authenticated account deletion disclosure and linked providers
+      responses:
+        "200":
+          description: Self-scoped disclosure
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [disclosure, linkedProviders, request]
+                properties:
+                  disclosure:
+                    $ref: "#/components/schemas/AccountDeletionDisclosure"
+                  linkedProviders:
+                    type: array
+                    items:
+                      type: string
+                      enum: [apple, google, facebook]
+                  request:
+                    anyOf:
+                      - $ref: "#/components/schemas/AccountDeletionStatus"
+                      - type: "null"
+        "401":
+          description: Student authentication required
+    post:
+      operationId: requestMyAccountDeletion
+      tags: [accountLifecycle]
+      summary: Consume a short-lived deletion proof and request permanent account deletion
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [deletionProof, confirmation]
+              properties:
+                deletionProof:
+                  type: string
+                  minLength: 20
+                  maxLength: 128
+                confirmation:
+                  type: string
+                  enum: [DELETE]
+      responses:
+        "200":
+          description: Completed deletion or durable pending request with scoped status token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountDeletionStatus"
+        "400":
+          description: Invalid confirmation
+        "401":
+          description: Student authentication required
+        "409":
+          description: Expired or invalid deletion proof
+  /me/account-deletion/code:
+    post:
+      operationId: sendMyAccountDeletionCode
+      tags: [accountLifecycle]
+      summary: Send a deletion-specific ownership code to the authenticated account email
+      responses:
+        "200":
+          description: Code sent
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok:
+                    type: boolean
+        "429":
+          description: Rate limited
+        "503":
+          description: Email temporarily unavailable
+  /me/account-deletion/reauth:
+    post:
+      operationId: reauthenticateMyAccountDeletion
+      tags: [accountLifecycle]
+      summary: Confirm ownership with a password or deletion-specific email code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                password:
+                  type: string
+                  maxLength: 256
+                code:
+                  type: string
+                  pattern: '^\d{6}$'
+      responses:
+        "200":
+          description: Single-use proof valid for five minutes
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [deletionProof, statusToken, expiresIn]
+                properties:
+                  deletionProof:
+                    type: string
+                  statusToken:
+                    type: string
+                  expiresIn:
+                    type: integer
+        "400":
+          description: Incorrect ownership confirmation
+        "401":
+          description: Student authentication required
+        "409":
+          description: Account changed
+  /me/account-deletion/revoke-provider:
+    post:
+      operationId: revokeMyDeletionProviderAccess
+      tags: [accountLifecycle]
+      summary: Revoke transient Google or Facebook authorization bound to the authenticated linked identity
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [provider, accessToken]
+              properties:
+                provider:
+                  type: string
+                  enum: [google, facebook]
+                accessToken:
+                  type: string
+                  maxLength: 8192
+      responses:
+        "200":
+          description: Honest provider revocation outcome
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    enum: [revoked, manual_required]
+        "400":
+          description: Invalid provider input
+        "401":
+          description: Student authentication required
+  /account-deletion/status:
+    post:
+      operationId: getSavedAccountDeletionStatus
+      tags: [accountLifecycle]
+      summary: Read a deletion result using its limited status token after Central session revocation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [statusToken]
+              properties:
+                statusToken:
+                  type: string
+                  maxLength: 2048
+      responses:
+        "200":
+          description: Deletion status without personal identifiers
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountDeletionStatus"
+        "401":
+          description: Status token unavailable or expired
   /healthz:
     get:
       operationId: healthCheck
@@ -3772,6 +4022,103 @@ paths:
 
 components:
   schemas:
+    AppleAuthChallenge:
+      type: object
+      required: [challengeId, nonce, expiresIn]
+      properties:
+        challengeId:
+          type: string
+        nonce:
+          type: string
+        expiresIn:
+          type: integer
+    AppleSignInBody:
+      type: object
+      required: [idToken, authorizationCode, challengeId]
+      properties:
+        idToken:
+          type: string
+        authorizationCode:
+          type: string
+          maxLength: 4096
+        challengeId:
+          type: string
+          maxLength: 128
+        displayName:
+          type: string
+          maxLength: 150
+          description: Optional one-time display metadata; never an account selector
+    AppleSignInResult:
+      type: object
+      properties:
+        student:
+          type: object
+          additionalProperties: true
+        accessToken:
+          type: string
+        requiresOtp:
+          type: boolean
+        requiresEmail:
+          type: boolean
+        requiresLinkVerification:
+          type: boolean
+        linkChallengeId:
+          type: string
+        expiresIn:
+          type: integer
+        provider:
+          type: string
+        error:
+          type: string
+    AccountDeletionDisclosure:
+      type: object
+      required: [deleted, retained, pending]
+      properties:
+        deleted:
+          type: array
+          items:
+            type: string
+        retained:
+          type: array
+          items:
+            type: string
+        pending:
+          type: string
+    AccountDeletionStatus:
+      type: object
+      required: [requestId, status, blockers, appleRevocation, appleManualRevocation, disclosure]
+      properties:
+        requestId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [pending, completed]
+        blockers:
+          type: array
+          items:
+            type: object
+            required: [key, label]
+            properties:
+              key:
+                type: string
+              label:
+                type: string
+        appleRevocation:
+          type: string
+          enum: [not_applicable, pending, revoked, manual_required]
+        appleManualRevocation:
+          type: [string, "null"]
+        statusToken:
+          type: string
+        requestedAt:
+          type: [string, "null"]
+          format: date-time
+        completedAt:
+          type: [string, "null"]
+          format: date-time
+        disclosure:
+          $ref: "#/components/schemas/AccountDeletionDisclosure"
     HealthStatus:
       type: object
       required: [status]

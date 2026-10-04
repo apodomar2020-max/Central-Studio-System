@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { AppState } from "react-native";
+import { loadExpoNotifications } from "@/services/notificationsRuntime";
 import { useAppContext } from "@/contexts/AppContext";
 import {
   isExpoGo,
@@ -64,6 +65,17 @@ export default function PushRegistrationGate() {
       // Permission denial or Expo-token failures should never block app use.
     });
   }, [user?.emailVerified, user?.id]);
+  useEffect(() => {
+    if (!user?.id || !user.emailVerified || isExpoGo()) return;
+    let cancelled = false;
+    let subscription: { remove: () => void } | undefined;
+    const refresh = () => { if (!cancelled && !isPushLogoutInProgress()) void registerPushNotificationsForCurrentUser().catch(() => {}); };
+    void loadExpoNotifications().then(notifications => {
+      if (!cancelled && notifications) subscription = notifications.addPushTokenListener(refresh);
+    });
+    const active = AppState.addEventListener("change", state => { if (state === "active") refresh(); });
+    return () => { cancelled = true; subscription?.remove(); active.remove(); };
+  }, [user?.id, user?.emailVerified]);
 
   return null;
 }

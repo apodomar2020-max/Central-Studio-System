@@ -1136,7 +1136,7 @@ const s = StyleSheet.create({
   },
   // Design: padding 18px 20px, all content justifyContent flex-end (bottom-aligned)
   heroGradient: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     justifyContent: "flex-end",
     paddingHorizontal: 20, paddingTop: 18, paddingBottom: 18,
   },

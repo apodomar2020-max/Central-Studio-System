@@ -51,6 +51,7 @@
     "fontkit": "^2.0.4",
     "helmet": "^8.2.0",
     "ioredis": "5.10.1",
+    "jose": "^6.2.12",
     "jsonwebtoken": "^9.0.2",
     "pdf-lib": "^1.17.1",
     "pino": "^9",

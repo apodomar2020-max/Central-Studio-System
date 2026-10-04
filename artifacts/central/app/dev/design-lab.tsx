@@ -612,7 +612,7 @@ const styles = StyleSheet.create({
   balletCard: { borderRadius: 18, minHeight: 160, overflow: "hidden" },
   balletCardImage: { borderRadius: 18 },
   balletOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: "rgba(4, 14, 22, 0.78)",
     borderRadius: 18,
   },

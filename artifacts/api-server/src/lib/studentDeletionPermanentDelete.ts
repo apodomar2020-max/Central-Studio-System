@@ -51,6 +51,7 @@
  * /deactivate and /reactivate.
  */
 import { sql } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
 import { db, studentsTable, notificationDevicesTable } from "@workspace/db";
 import { getActivePreparation } from "./studentDeletionPreparation";
 import { listEligibleBackfillTargets } from "./studentDeletionOwnershipBackfill";
@@ -79,7 +80,7 @@ export type PermanentDeleteOutcome =
  * embedded directly rather than a random value, guaranteeing no collision
  * across repeated runs or across different deleted students.
  */
-function tombstoneFields(studentId: number) {
+export function tombstoneFields(studentId: number) {
   return {
     name: `Deleted Student #${studentId}`,
     email: `deleted-student-${studentId}@tombstone.invalid`,
@@ -105,7 +106,7 @@ function tombstoneFields(studentId: number) {
 export async function applyStudentPermanentDelete(params: {
   studentId: number;
   workflowId: number;
-  adminId: number;
+  adminId: number | null;
 }): Promise<PermanentDeleteOutcome> {
   const { studentId, workflowId, adminId } = params;
 
@@ -169,6 +170,7 @@ export async function applyStudentPermanentDelete(params: {
         deletedByAdminId: adminId,
         tokenVersion: sql`${studentsTable.tokenVersion} + 1`,
         ...tombstoneFields(studentId),
+        qrToken: randomUUID(),
       })
       .where(sql`${studentsTable.id} = ${studentId}`);
 

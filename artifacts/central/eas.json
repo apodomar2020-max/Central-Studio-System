@@ -34,7 +34,8 @@
       "android": {
         "buildType": "app-bundle"
       },
-      "ios": {},
+      "ios": { "autoIncrement": true },
+      "environment": "production",
       "channel": "production",
       "env": {
         "EXPO_PUBLIC_API_URL": "https://supportive-magic-production-b800.up.railway.app",
@@ -49,9 +50,8 @@
         "track": "internal"
       },
       "ios": {
-        "appleId": "your@apple.com",
-        "ascAppId": "YOUR_APP_STORE_CONNECT_APP_ID",
-        "appleTeamId": "YOUR_TEAM_ID"
+        "ascAppId": "6818948549",
+        "appleTeamId": "W2HS3UGP53"
       }
     }
   }

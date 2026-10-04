@@ -42,6 +42,10 @@ mock.module("@/services/pushNotifications", {
   },
 });
 
+mock.module("@/services/notificationsRuntime", {
+  namedExports: { loadExpoNotifications: async () => null },
+});
+
 after(() => {
   mock.reset();
   delete (globalThis as { __DEV__?: boolean }).__DEV__;

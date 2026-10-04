@@ -133,7 +133,7 @@ function DirectTrailer({ url }: { url: string }) {
     instance.muted = false;
   });
 
-  return <VideoView player={player} style={StyleSheet.absoluteFill} contentFit="cover" nativeControls allowsFullscreen />;
+  return <VideoView player={player} style={StyleSheet.absoluteFill} contentFit="cover" nativeControls fullscreenOptions={{ enable: true }} />;
 }
 
 function youtubeThumbnail(url: string) {

@@ -124,7 +124,7 @@ async function makeStudent(tag: string, accountStatus: "active" | "deactivated" 
      VALUES ($1, $2, $3, $4, true, $5, $6, $7, $8) RETURNING id`,
     [
       `PD Test ${tag}`, email, opts.passwordHash ?? "$2a$12$abcdefghijklmnopqrstuv", accountStatus,
-      opts.phone ?? "+201000000000", opts.googleId ?? null, opts.facebookId ?? null,
+      opts.phone ?? `2010${String(Date.now() % 100000000 + seq).slice(-8).padStart(8, "0")}`, opts.googleId ?? null, opts.facebookId ?? null,
       opts.googleId ? "google" : opts.facebookId ? "facebook" : "local",
     ],
   );

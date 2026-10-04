@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { boolean, integer, jsonb, pgTable, serial, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { boolean, integer, jsonb, pgTable, serial, text, timestamp, uniqueIndex, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { NOTIFICATION_SOURCES, type NotificationSource } from "@workspace/api-zod";
@@ -91,11 +91,17 @@ export const notificationDeliveryLogsTable = pgTable("notification_delivery_logs
   provider: text("provider").notNull().default("expo"),
   status: text("status").notNull().default("queued"),
   providerMessageId: text("provider_message_id"),
+  attemptedTokenHash: text("attempted_token_hash"),
+  attemptedAt: timestamp("attempted_at", { withTimezone: true, mode: "string" }),
+  receiptStatus: text("receipt_status"),
+  receiptAttempts: integer("receipt_attempts").notNull().default(0),
+  receiptNextCheckAt: timestamp("receipt_next_check_at", { withTimezone: true, mode: "string" }),
+  receiptCheckedAt: timestamp("receipt_checked_at", { withTimezone: true, mode: "string" }),
   errorCode: text("error_code"),
   errorMessage: text("error_message"),
   sentAt: timestamp("sent_at", { withTimezone: true, mode: "string" }),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
-});
+}, t => [index("notification_delivery_receipt_pending_idx").on(t.receiptStatus, t.receiptNextCheckAt)]);
 
 export const notificationTemplatesTable = pgTable(
   "notification_templates",

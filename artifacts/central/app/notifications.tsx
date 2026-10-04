@@ -1,6 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
-import * as Notifications from "expo-notifications";
 import { router } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Platform, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
@@ -13,6 +12,7 @@ import type { Notification as ApiNotification } from "@workspace/api-client-reac
 import { ChildProfile, useAppContext } from "@/contexts/AppContext";
 import { formatRelativeOrCalendarTime, parseApiDate } from "@/utils/dateTime";
 import { registerPushNotificationsForCurrentUser } from "@/services/pushNotifications";
+import { loadExpoNotifications } from "@/services/notificationsRuntime";
 
 const HERO_IMAGE = require("@/assets/images/notifications-hero.png");
 
@@ -63,12 +63,15 @@ export default function NotificationsScreen() {
   const [apiNotifs, setApiNotifs] = useState<ApiItem[]>([]); const [loading, setLoading] = useState(true); const [refreshing, setRefreshing] = useState(false); const [permissionGranted, setPermissionGranted] = useState(true); const [askingPermission, setAskingPermission] = useState(false);
   const load = useCallback(async (refresh = false) => { refresh ? setRefreshing(true) : setLoading(true); try { setApiNotifs(await customFetch<ApiItem[]>("/api/notifications/my?limit=50&offset=0")); } catch { /* local notifications remain available */ } finally { setLoading(false); setRefreshing(false); } }, []);
   useEffect(() => { void load(); }, [load]);
-  useEffect(() => { if (Platform.OS === "web") return; Notifications.getPermissionsAsync().then((result) => setPermissionGranted(result.granted)).catch(() => setPermissionGranted(true)); }, []);
+  // Expo Go has no expo-notifications native module: the loader resolves null,
+  // we leave permissionGranted at its optimistic default, and the history list
+  // below still renders. Real builds read the true permission state.
+  useEffect(() => { if (Platform.OS === "web") return; void loadExpoNotifications().then((N) => { if (!N) return; return N.getPermissionsAsync().then((result) => setPermissionGranted(result.granted)); }).catch(() => setPermissionGranted(true)); }, []);
   const all = useMemo<DisplayNotif[]>(() => [...apiNotifs.filter((item) => !item.isDraft).map((item) => ({ id: `api-${item.id}`, title: item.title, body: item.body, type: inferType(item), isRead: Boolean(item.isRead), timestamp: timestamp(item.sentAt, item.createdAt, item.sent_at, item.created_at), metadata: item.metadata, source: "api" as const })), ...localNotifs.map((item) => ({ id: item.id, title: item.title, body: item.body, type: isKnownType(item.type) ? item.type : "system", isRead: item.isRead, timestamp: timestamp(item.createdAt), source: "local" as const }))].sort((a, b) => Number(a.isRead) - Number(b.isRead) || (b.timestamp ?? 0) - (a.timestamp ?? 0)), [apiNotifs, localNotifs]);
   const groups = useMemo(() => ({ today: all.filter((item) => groupFor(item.timestamp) === "today"), yesterday: all.filter((item) => groupFor(item.timestamp) === "yesterday"), earlier: all.filter((item) => groupFor(item.timestamp) === "earlier") }), [all]);
   const markRead = useCallback(async (item: DisplayNotif) => { if (item.isRead) return; if (item.source === "local") { markNotificationRead(item.id); return; } const id = Number(item.id.replace("api-", "")); setApiNotifs((items) => items.map((entry) => entry.id === id ? { ...entry, isRead: true } : entry)); try { await customFetch(`/api/notifications/${id}/read`, { method: "POST" }); } catch { void load(true); } }, [load, markNotificationRead]);
   const markAll = async () => { await Promise.all(all.filter((item) => !item.isRead).map(markRead)); };
-  const enableNotifications = async () => { setAskingPermission(true); try { const result = await Notifications.requestPermissionsAsync(); setPermissionGranted(result.granted); if (result.granted) await registerPushNotificationsForCurrentUser(); } finally { setAskingPermission(false); } };
+  const enableNotifications = async () => { setAskingPermission(true); try { const N = await loadExpoNotifications(); if (!N) { setPermissionGranted(true); return; } const result = await N.requestPermissionsAsync(); setPermissionGranted(result.granted); if (result.granted) await registerPushNotificationsForCurrentUser(); } finally { setAskingPermission(false); } };
   const renderGroup = (label: string, items: DisplayNotif[]) => items.length ? <View style={styles.group}><View style={styles.groupHeader}><Text style={styles.groupTitle}>{label}</Text><TouchableOpacity onPress={() => void markAll()}><Text style={styles.markAll}>Mark All As Read</Text></TouchableOpacity></View>{items.map((item) => <NotificationCard key={item.id} notif={item} avatarUrl={user?.avatarUrl} children={children} onRead={markRead} />)}</View> : null;
 
   return <View style={styles.container}>

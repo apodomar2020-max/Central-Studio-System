@@ -19,9 +19,15 @@
 import { BlurView } from "expo-blur";
 import { isLiquidGlassAvailable } from "expo-glass-effect";
 import { Tabs } from "expo-router";
-import { Icon, Label, NativeTabs } from "expo-router/unstable-native-tabs";
+import { NativeTabs } from "expo-router/unstable-native-tabs";
+
+// SDK 55: `Icon` / `Label` are no longer top-level exports of
+// `expo-router/unstable-native-tabs` — they are namespaced under
+// `NativeTabs.Trigger`. Aliased here so the JSX below is unchanged.
+const Icon = NativeTabs.Trigger.Icon;
+const Label = NativeTabs.Trigger.Label;
 import React from "react";
-import { Platform, StyleSheet, View } from "react-native";
+import { Platform, StyleSheet, View, type ColorValue } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle, Path } from "react-native-svg";
 
@@ -35,7 +41,9 @@ const TAB_HEIGHT    = 60; // unified height (design: 60px)
 
 type NavGlyphName = "home" | "bookings" | "classes" | "profile";
 
-function NavGlyph({ name, color, size = 24 }: { name: NavGlyphName; color: string; size?: number }) {
+// SDK 56: React Navigation / expo-router now type the `tabBarIcon` `color`
+// argument as `ColorValue` (not `string`); widen to match.
+function NavGlyph({ name, color, size = 24 }: { name: NavGlyphName; color: ColorValue; size?: number }) {
   const strokeProps = { stroke: color, strokeLinecap: "round" as const, fill: "none" };
   const dimensions = name === "bookings"
     ? { width: size * 22 / 21, viewBox: "0 0 22 21" }

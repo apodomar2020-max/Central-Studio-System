@@ -17,6 +17,7 @@ import {
   danceTypesTable,
   notificationDevicesTable,
   studentDeletionWorkflowsTable,
+  customerDeletionRequestsTable,
 } from "@workspace/db";
 import {
   CreateStudentBody,
@@ -115,6 +116,15 @@ function studentActivitySnapshot(row: {
 // Must be registered BEFORE /students/:id so Express doesn't try to coerce
 // the literal string "by-token" as a numeric :id.
 // ---------------------------------------------------------------------------
+router.get("/students/customer-deletion-requests", blockStudentJwt, requireAdminAuth, requireAdminPermission("users", "delete"), async (_req, res): Promise<void> => {
+  const requests = await db.select({ requestId: customerDeletionRequestsTable.id, studentId: customerDeletionRequestsTable.studentId,
+    workflowId: customerDeletionRequestsTable.workflowId, blockers: customerDeletionRequestsTable.blockers,
+    requestedAt: customerDeletionRequestsTable.requestedAt, updatedAt: customerDeletionRequestsTable.updatedAt,
+  }).from(customerDeletionRequestsTable).where(eq(customerDeletionRequestsTable.status, "pending"))
+    .orderBy(customerDeletionRequestsTable.updatedAt).limit(100);
+  res.json({ requests });
+});
+
 router.get("/students/by-token/:token", requireAdminAuth, requireAdminPermission("qr", "scan"), async (req, res): Promise<void> => {
   const params = GetStudentByTokenParams.safeParse(req.params);
   if (!params.success) {

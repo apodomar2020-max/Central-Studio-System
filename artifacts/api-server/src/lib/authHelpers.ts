@@ -72,7 +72,7 @@ export const PasswordSchema = z.string()
 // identity may attach to it. Shares all the same hashing/pepper/cooldown/
 // attempt-limit/single-use infrastructure as "verify"/"reset" — see
 // routes/socialAuth.ts and lib/socialLinkChallenge.ts.
-export type OtpPurpose = "verify" | "reset" | "social_link";
+export type OtpPurpose = "verify" | "reset" | "social_link" | "account_delete";
 
 // ─── OTP pepper (CS-SEC-M-01 / Security-06B) ───────────────────────────────
 //
@@ -165,6 +165,11 @@ function escapeHtml(value: string): string {
 
 function otpEmailContent(code: string, purpose: OtpPurpose): Omit<EmailPayload, "to"> {
   const escapedCode = escapeHtml(code);
+  if (purpose === "account_delete") return {
+    subject: "Confirm deletion of your Central Studio account",
+    text: `Your account deletion confirmation code is ${code}. It expires in ${Math.round(OTP_TTL_SECONDS / 60)} minutes. If you did not request deletion, do not share this code.`,
+    html: `<p>Confirm deletion of your Central Studio account with this code:</p><p>${escapedCode}</p><p>If you did not request deletion, do not share this code.</p>`,
+  };
   const isReset = purpose === "reset";
   const isSocialLink = purpose === "social_link";
   const title = isReset
@@ -175,7 +180,7 @@ function otpEmailContent(code: string, purpose: OtpPurpose): Omit<EmailPayload, 
   const intro = isReset
     ? "Use this code to reset your Central Studio password."
     : isSocialLink
-      ? "Someone requested to link a Google or Facebook sign-in to your Central Studio account. Use this code to confirm it's you."
+      ? "Someone requested to link a Google, Facebook, or Apple sign-in to your Central Studio account. Use this code to confirm it's you."
       : "Use this code to verify your Central Studio account.";
   const safety = isReset
     ? "If you did not request a password reset, you can ignore this email."

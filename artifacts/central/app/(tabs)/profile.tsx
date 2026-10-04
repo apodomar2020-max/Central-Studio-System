@@ -1101,6 +1101,13 @@ export default function ProfileScreen() {
 
         <Text style={[styles.sectionEyebrow, { marginTop: 24 }]}>PRIVACY & SECURITY</Text>
         <View style={styles.menuContainer}>
+          <TouchableOpacity onPress={() => pushOnce("/account/delete" as never)} style={[styles.menuItem, styles.menuItemBorder]} activeOpacity={0.7}>
+            <View style={styles.menuTextCol}>
+              <Text style={[styles.menuLabel, { color: "#F87171" }]}>Delete account</Text>
+              <Text style={styles.menuSubtitle}>Permanently remove your account</Text>
+            </View>
+            <PIcon name="chevron" size={17} stroke={2.4} color="#4C545E" />
+          </TouchableOpacity>
           <TouchableOpacity onPress={() => pushOnce("/change-password")} style={[styles.menuItem, styles.menuItemBorder]} activeOpacity={0.7}>
             <View style={[styles.menuIcon, { backgroundColor: "#9CA3AF15" }]}>
               <PIcon name="lock" size={19} stroke={2.1} color="#9CA3AF" />

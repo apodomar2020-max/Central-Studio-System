@@ -10,9 +10,8 @@
  *                endpoint and checks the audience against GOOGLE_CLIENT_ID).
  *   - Facebook : implemented (validates the access token via /debug_token with
  *                an app token, then reads the minimal profile via /me).
- *   - Apple    : NOT implemented — throws ProviderNotConfiguredError (fail
- *                closed). Do not implement it before Security-01B2 lands, or
- *                it will inherit the linking rules wholesale.
+ *   - Apple    : JOSE/JWKS validation with issuer, audience, signature,
+ *                expiry, stable subject and one-use server nonce.
  *
  * ─── Email trust (Security-01B1, CS-SEC-C-01) ────────────────────────────────
  *
@@ -28,6 +27,8 @@
  * provider identity is allowed to attach to an account that already exists.
  * See routes/socialAuth.ts for the linking rules that consume it.
  */
+
+import { validateAppleIdentity } from "./appleIdentity";
 
 export type ProviderName = "google" | "apple" | "facebook";
 
@@ -141,14 +142,18 @@ async function verifyGoogle(idToken: string): Promise<ProviderIdentity> {
   };
 }
 
-// ─── Apple (placeholder) ──────────────────────────────────────────────────────
+// ─── Apple ────────────────────────────────────────────────────────────────────
 
-async function verifyApple(_identityToken: string): Promise<ProviderIdentity> {
-  // TODO: verify _identityToken against Apple JWKS (https://appleid.apple.com/auth/keys),
-  // check iss === https://appleid.apple.com and aud === APPLE_CLIENT_ID, then map
-  // sub/email/email_verified. Apple may omit email after first sign-in or when the
-  // user hides it — the route handles the email-collection + OTP fallback.
-  throw new ProviderNotConfiguredError("apple", ["APPLE_CLIENT_ID"]);
+async function verifyApple(identityToken: string, nonce?: string): Promise<ProviderIdentity> {
+  const audience = process.env.APPLE_CLIENT_ID;
+  if (!audience) throw new ProviderNotConfiguredError("apple", ["APPLE_CLIENT_ID"]);
+  try {
+    const claims = await validateAppleIdentity(identityToken, audience, nonce);
+    const email = typeof claims.email === "string" ? claims.email.toLowerCase() : null;
+    return { provider: "apple", providerId: claims.sub!, email,
+      emailTrust: !email ? "none" : claims.email_verified === true || claims.email_verified === "true" ? "provider_attested" : "provider_asserted",
+      name: null, avatarUrl: null };
+  } catch { throw new ProviderTokenInvalidError("Invalid or expired Apple identity."); }
 }
 
 // ─── Facebook ─────────────────────────────────────────────────────────────────
@@ -232,12 +237,12 @@ async function verifyFacebook(accessToken: string): Promise<ProviderIdentity> {
 }
 
 /** Validate a provider token and return the normalized identity. */
-export function verifyProviderToken(provider: ProviderName, token: string): Promise<ProviderIdentity> {
+export function verifyProviderToken(provider: ProviderName, token: string, nonce?: string): Promise<ProviderIdentity> {
   switch (provider) {
     case "google":
       return verifyGoogle(token);
     case "apple":
-      return verifyApple(token);
+      return verifyApple(token, nonce);
     case "facebook":
       return verifyFacebook(token);
   }

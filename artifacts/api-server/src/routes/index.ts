@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import authRouter from "./auth";
 import socialAuthRouter from "./socialAuth";
+import accountDeletionRouter from "./accountDeletion";
 import healthRouter from "./health";
 import versionRouter from "./version";
 import dashboardRouter from "./dashboard";
@@ -69,6 +70,7 @@ router.use(healthRouter);
 router.use(versionRouter);
 router.use(authRouter);
 router.use(socialAuthRouter);
+router.use(accountDeletionRouter);
 router.use(emailOtpRouter);
 router.use(dashboardRouter);
 router.use(analyticsRouter);

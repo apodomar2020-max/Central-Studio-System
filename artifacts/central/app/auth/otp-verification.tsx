@@ -190,7 +190,7 @@ const styles = StyleSheet.create({
   codeBox: { flex: 1, maxWidth: 54, height: 82, borderRadius: 14, backgroundColor: "rgba(255,255,255,0.075)", alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "transparent" },
   codeBoxActive: { borderColor: "rgba(0,182,215,0.55)" },
   codeDigit: { color: "#FFFFFF", fontFamily: "Archivo_800ExtraBold", fontSize: 25 },
-  hiddenInput: { ...StyleSheet.absoluteFillObject, opacity: 0.01, color: "transparent" },
+  hiddenInput: { ...StyleSheet.absoluteFill, opacity: 0.01, color: "transparent" },
   actions: { width: "100%", alignItems: "center" },
   primaryButton: { borderRadius: 28 },
   resendRow: { flexDirection: "row", alignItems: "center", marginTop: 8 },

@@ -146,9 +146,9 @@ describe("facebook email trust", () => {
 });
 
 // ─── Apple ───────────────────────────────────────────────────────────────────
-describe("apple stays fail-closed", () => {
-  test("always throws ProviderNotConfiguredError and makes no network call", async () => {
-    process.env.APPLE_CLIENT_ID = "should-be-ignored";
+describe("apple configuration", () => {
+  test("missing audience fails closed and makes no network call", async () => {
+    delete process.env.APPLE_CLIENT_ID;
     await assert.rejects(
       () => verifyProviderToken("apple", "any-token"),
       (err: unknown) => {

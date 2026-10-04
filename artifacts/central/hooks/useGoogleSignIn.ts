@@ -27,7 +27,7 @@ const GOOGLE_NATIVE_REDIRECT_URI = "com.centralstudio.app:/oauthredirect";
 // short-lived OTP ownership challenge instead of linking silently. The
 // actual linking decision stays entirely server-side, keyed by `challengeId`
 // — this is only enough for the UI to render the verification modal.
-export type SocialLinkChallenge = { challengeId: string; provider: "google" | "facebook"; expiresIn: number };
+export type SocialLinkChallenge = { challengeId: string; provider: "google" | "facebook" | "apple"; expiresIn: number };
 
 export function useGoogleSignIn(source: AuthSource = "social-login") {
   const { setUser } = useAppContext();

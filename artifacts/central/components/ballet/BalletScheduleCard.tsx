@@ -267,7 +267,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     backgroundColor: "transparent",
   },
-  glassBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(1,8,10,0.38)" },
+  glassBackdrop: { ...StyleSheet.absoluteFill, backgroundColor: "rgba(1,8,10,0.38)" },
   panelContent: { flex: 1, paddingHorizontal: 12, paddingTop: 15, paddingBottom: 10 },
   detailsRow: { flex: 1, minHeight: 0, flexDirection: "row" },
   classInfoColumn: { width: "56%", minWidth: 0, paddingRight: 6 },

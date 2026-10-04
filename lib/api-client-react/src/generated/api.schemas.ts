@@ -5,6 +5,83 @@
  * Central Studio & Stage Admin API
  * OpenAPI spec version: 0.1.0
  */
+export interface AppleAuthChallenge {
+  challengeId: string;
+  nonce: string;
+  expiresIn: number;
+}
+
+export interface AppleSignInBody {
+  idToken: string;
+  /** @maxLength 4096 */
+  authorizationCode: string;
+  /** @maxLength 128 */
+  challengeId: string;
+  /**
+   * Optional one-time display metadata; never an account selector
+   * @maxLength 150
+   */
+  displayName?: string;
+}
+
+export type AppleSignInResultStudent = { [key: string]: unknown };
+
+export interface AppleSignInResult {
+  student?: AppleSignInResultStudent;
+  accessToken?: string;
+  requiresOtp?: boolean;
+  requiresEmail?: boolean;
+  requiresLinkVerification?: boolean;
+  linkChallengeId?: string;
+  expiresIn?: number;
+  provider?: string;
+  error?: string;
+}
+
+export interface AccountDeletionDisclosure {
+  deleted: string[];
+  retained: string[];
+  pending: string;
+}
+
+export type AccountDeletionStatusStatus =
+  (typeof AccountDeletionStatusStatus)[keyof typeof AccountDeletionStatusStatus];
+
+export const AccountDeletionStatusStatus = {
+  pending: "pending",
+  completed: "completed",
+} as const;
+
+export type AccountDeletionStatusBlockersItem = {
+  key: string;
+  label: string;
+};
+
+export type AccountDeletionStatusAppleRevocation =
+  (typeof AccountDeletionStatusAppleRevocation)[keyof typeof AccountDeletionStatusAppleRevocation];
+
+export const AccountDeletionStatusAppleRevocation = {
+  not_applicable: "not_applicable",
+  pending: "pending",
+  revoked: "revoked",
+  manual_required: "manual_required",
+} as const;
+
+export interface AccountDeletionStatus {
+  requestId: string;
+  status: AccountDeletionStatusStatus;
+  blockers: AccountDeletionStatusBlockersItem[];
+  appleRevocation: AccountDeletionStatusAppleRevocation;
+  /** @nullable */
+  appleManualRevocation: string | null;
+  statusToken?: string;
+  /** @nullable */
+  requestedAt?: string | null;
+  /** @nullable */
+  completedAt?: string | null;
+  disclosure: AccountDeletionDisclosure;
+}
+
 export interface HealthStatus {
   status: string;
 }
@@ -4182,6 +4259,93 @@ export interface EditorialRevision {
   /** @nullable */
   createdByAdminId: number | null;
 }
+
+export type ListPendingCustomerDeletions200RequestsItem = {
+  [key: string]: unknown;
+};
+
+export type ListPendingCustomerDeletions200 = {
+  requests?: ListPendingCustomerDeletions200RequestsItem[];
+};
+
+export type GetMyAccountDeletion200LinkedProvidersItem =
+  (typeof GetMyAccountDeletion200LinkedProvidersItem)[keyof typeof GetMyAccountDeletion200LinkedProvidersItem];
+
+export const GetMyAccountDeletion200LinkedProvidersItem = {
+  apple: "apple",
+  google: "google",
+  facebook: "facebook",
+} as const;
+
+export type GetMyAccountDeletion200 = {
+  disclosure: AccountDeletionDisclosure;
+  linkedProviders: GetMyAccountDeletion200LinkedProvidersItem[];
+  request: AccountDeletionStatus | null;
+};
+
+export type RequestMyAccountDeletionBodyConfirmation =
+  (typeof RequestMyAccountDeletionBodyConfirmation)[keyof typeof RequestMyAccountDeletionBodyConfirmation];
+
+export const RequestMyAccountDeletionBodyConfirmation = {
+  DELETE: "DELETE",
+} as const;
+
+export type RequestMyAccountDeletionBody = {
+  /**
+   * @minLength 20
+   * @maxLength 128
+   */
+  deletionProof: string;
+  confirmation: RequestMyAccountDeletionBodyConfirmation;
+};
+
+export type SendMyAccountDeletionCode200 = {
+  ok: boolean;
+};
+
+export type ReauthenticateMyAccountDeletionBody = {
+  /** @maxLength 256 */
+  password?: string;
+  /** @pattern ^\d{6}$ */
+  code?: string;
+};
+
+export type ReauthenticateMyAccountDeletion200 = {
+  deletionProof: string;
+  statusToken: string;
+  expiresIn: number;
+};
+
+export type RevokeMyDeletionProviderAccessBodyProvider =
+  (typeof RevokeMyDeletionProviderAccessBodyProvider)[keyof typeof RevokeMyDeletionProviderAccessBodyProvider];
+
+export const RevokeMyDeletionProviderAccessBodyProvider = {
+  google: "google",
+  facebook: "facebook",
+} as const;
+
+export type RevokeMyDeletionProviderAccessBody = {
+  provider: RevokeMyDeletionProviderAccessBodyProvider;
+  /** @maxLength 8192 */
+  accessToken: string;
+};
+
+export type RevokeMyDeletionProviderAccess200Status =
+  (typeof RevokeMyDeletionProviderAccess200Status)[keyof typeof RevokeMyDeletionProviderAccess200Status];
+
+export const RevokeMyDeletionProviderAccess200Status = {
+  revoked: "revoked",
+  manual_required: "manual_required",
+} as const;
+
+export type RevokeMyDeletionProviderAccess200 = {
+  status: RevokeMyDeletionProviderAccess200Status;
+};
+
+export type GetSavedAccountDeletionStatusBody = {
+  /** @maxLength 2048 */
+  statusToken: string;
+};
 
 export type UpdateAdminClassCapacitySettingsBody = {
   classCapacityEnabled: boolean;

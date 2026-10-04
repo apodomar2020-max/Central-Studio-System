@@ -7,14 +7,9 @@
     "icon": "./assets/images/icon.png",
     "scheme": "com.centralstudio.app",
     "userInterfaceStyle": "dark",
-    "newArchEnabled": true,
-    "splash": {
-      "image": "./assets/images/central_studio_logo.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#060C10"
-    },
     "ios": {
       "supportsTablet": false,
+      "usesAppleSignIn": true,
       "bundleIdentifier": "com.centralstudio.app",
       "infoPlist": {
         "UIUserInterfaceStyle": "Dark",
@@ -43,9 +38,23 @@
       "backgroundColor": "#060C10"
     },
     "plugins": [
+      "expo-apple-authentication",
+      "expo-asset",
+      ["expo-secure-store", { "faceIDPermission": false }],
+      ["expo-image-picker", { "photosPermission": false, "cameraPermission": false, "microphonePermission": false }],
+      ["expo-location", { "locationAlwaysAndWhenInUsePermission": false, "locationAlwaysPermission": false, "locationWhenInUsePermission": false, "motionUsagePermission": false }],
+      ["expo-audio", { "microphonePermission": false, "recordAudioAndroid": false, "enableBackgroundPlayback": false }],
       "expo-router",
       "expo-font",
       "expo-web-browser",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/central_studio_logo.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#060C10"
+        }
+      ],
       [
         "expo-notifications",
         {

@@ -14,6 +14,13 @@ export async function initErrorMonitoring(): Promise<void> {
       dsn,
       environment: process.env["NODE_ENV"] ?? "development",
       tracesSampleRate: Number(process.env["SENTRY_TRACES_SAMPLE_RATE"] ?? "0"),
+      sendDefaultPii: false,
+      beforeSend(event) {
+        delete event.user; delete event.request; delete event.extra; delete event.breadcrumbs;
+        delete event.message; delete event.contexts;
+        for (const exception of event.exception?.values ?? []) exception.value = "Server error (details removed for privacy)";
+        return event;
+      },
     });
     initialized = true;
     logger.info("Error monitoring initialized");
