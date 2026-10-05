@@ -40,7 +40,7 @@ function apiUrl(path: string): string {
 function apiHeaders(ip: string, key = API_KEY): Record<string, string> {
   return {
     "content-type": "application/json",
-    // Matches the logged-out mobile customFetch path exactly.
+    // An inert legacy header must neither grant nor deny capability cleanup.
     authorization: `Bearer ${key}`,
     "x-forwarded-for": ip,
   };
@@ -150,8 +150,9 @@ test("logged-out endpoint traverses global auth and is not student-JWT gated", a
     { deviceId: "auth-none", unregisterSecret: secret },
     { "content-type": "application/json", "x-forwarded-for": "198.51.100.11" },
   );
-  assert.equal(noCredentials.status, 401);
-  assert.equal((await deviceState(noCredentialsId)).is_active, true);
+  assert.equal(noCredentials.status, 200);
+  assert.deepEqual(await noCredentials.json(), GENERIC_SUCCESS);
+  assert.equal((await deviceState(noCredentialsId)).is_active, false);
 
   const invalidKeyId = await insertDevice({ studentId: student.id, token: "ExponentPushToken[auth-invalid]", deviceId: "auth-invalid", secret });
   const invalidKey = await post(
@@ -159,8 +160,9 @@ test("logged-out endpoint traverses global auth and is not student-JWT gated", a
     { deviceId: "auth-invalid", unregisterSecret: secret },
     apiHeaders("198.51.100.12", "wrong-api-key"),
   );
-  assert.equal(invalidKey.status, 403, "production global auth uses 403 for an invalid supplied API key");
-  assert.equal((await deviceState(invalidKeyId)).is_active, true);
+  assert.equal(invalidKey.status, 200);
+  assert.deepEqual(await invalidKey.json(), GENERIC_SUCCESS);
+  assert.equal((await deviceState(invalidKeyId)).is_active, false);
 });
 
 test("real installation endpoint enforces deviceId plus hash and returns one generic shape", async () => {
@@ -176,7 +178,7 @@ test("real installation endpoint enforces deviceId plus hash and returns one gen
   const wrong = await post(
     "/api/notifications/devices/unregister-by-installation",
     { deviceId: "install-a", unregisterSecret: "d".repeat(64) },
-    apiHeaders("198.51.100.20"),
+    { "content-type": "application/json", "x-forwarded-for": "198.51.100.20" },
   );
   assert.deepEqual(await wrong.json(), GENERIC_SUCCESS);
   assert.equal((await deviceState(a1)).is_active, true);
@@ -184,7 +186,7 @@ test("real installation endpoint enforces deviceId plus hash and returns one gen
   const malformed = await post(
     "/api/notifications/devices/unregister-by-installation",
     { deviceId: "install-a" },
-    apiHeaders("198.51.100.21"),
+    { "content-type": "application/json", "x-forwarded-for": "198.51.100.21" },
   );
   assert.equal(malformed.status, 200);
   assert.deepEqual(await malformed.json(), GENERIC_SUCCESS);
@@ -208,6 +210,161 @@ test("real installation endpoint enforces deviceId plus hash and returns one gen
     apiHeaders("198.51.100.23"),
   );
   assert.deepEqual(await again.json(), GENERIC_SUCCESS);
+});
+
+function registerAs(student: { id: number; email: string }, body: Record<string, unknown>) {
+  return post("/api/notifications/devices/register", body, {
+    "content-type": "application/json",
+    authorization: `Bearer ${studentToken(student.id, student.email)}`,
+  });
+}
+
+async function completeDeviceState(id: number) {
+  return (await pool.query("SELECT * FROM notification_devices WHERE id = $1", [id])).rows[0];
+}
+
+test("BOLA: conflicting claims preserve every victim field; proven handoff preserves capability", async () => {
+  const victim = await createStudent("bola-victim");
+  const attacker = await createStudent("bola-attacker");
+  const secret = "7".repeat(64);
+  const token = "ExponentPushToken[bola-victim]";
+  const id = await insertDevice({ studentId: victim.id, token, deviceId: "bola-device", secret });
+  const before = await completeDeviceState(id);
+  for (const proof of [
+    {}, { deviceId: "bola-device" },
+    { deviceId: "bola-device", unregisterSecret: "8".repeat(64) },
+    { deviceId: "wrong-device", unregisterSecret: secret },
+  ]) {
+    const response = await registerAs(attacker, { pushToken: token, ...proof });
+    assert.equal(response.status, 409);
+    assert.deepEqual(await response.json(), { error: "Device registration unavailable" });
+    assert.deepEqual(await completeDeviceState(id), before);
+  }
+  const handoff = await registerAs(attacker, { pushToken: token, deviceId: "bola-device", unregisterSecret: secret });
+  assert.equal(handoff.status, 200);
+  const after = await completeDeviceState(id);
+  assert.equal(after.student_id, attacker.id);
+  assert.equal(after.unregister_secret_hash, before.unregister_secret_hash);
+  const cleanup = await post("/api/notifications/devices/unregister-by-installation",
+    { deviceId: "bola-device", unregisterSecret: secret }, { "content-type": "application/json", "x-forwarded-for": "198.51.100.101" });
+  assert.equal(cleanup.status, 200);
+  assert.equal((await deviceState(id)).is_active, false);
+});
+
+test("BOLA: inactive and legacy null-hash rows stay protected; owner recovery rotates only own row", async () => {
+  const owner = await createStudent("recovery-owner");
+  const other = await createStudent("recovery-other");
+  for (const [label, secret] of [["inactive", "9".repeat(64)], ["legacy", null]] as const) {
+    const token = `ExponentPushToken[recovery-${label}]`;
+    const id = await insertDevice({ studentId: owner.id, token, deviceId: `recovery-${label}`, secret, active: false });
+    const before = await completeDeviceState(id);
+    assert.equal((await registerAs(other, { pushToken: token, deviceId: before.device_id, unregisterSecret: "a".repeat(64) })).status, 409);
+    assert.deepEqual(await completeDeviceState(id), before);
+    const recovered = await registerAs(owner, { pushToken: token, deviceId: "recovered-device", unregisterSecret: "b".repeat(64) });
+    assert.equal(recovered.status, 200);
+    const after = await completeDeviceState(id);
+    assert.equal(after.student_id, owner.id);
+    assert.equal(after.unregister_secret_hash, hashSecret("b".repeat(64)));
+    assert.equal(after.is_active, true);
+  }
+});
+
+test("BOLA: invalid and revoked sessions cannot claim ownership", async () => {
+  const owner = await createStudent("jwt-owner");
+  const other = await createStudent("jwt-other");
+  const token = "ExponentPushToken[jwt-victim]";
+  const id = await insertDevice({ studentId: owner.id, token, deviceId: "jwt-device", secret: "c".repeat(64) });
+  const before = await completeDeviceState(id);
+  const revoked = studentToken(other.id, other.email);
+  await pool.query("UPDATE students SET token_version = token_version + 1 WHERE id = $1", [other.id]);
+  for (const credential of ["invalid.jwt.signature", revoked]) {
+    const response = await post("/api/notifications/devices/register", { pushToken: token }, {
+      "content-type": "application/json", authorization: `Bearer ${credential}`,
+    });
+    assert.equal(response.status, 401);
+    assert.deepEqual(await completeDeviceState(id), before);
+  }
+});
+
+test("BOLA races: competing initial claims cannot overwrite the winner", async () => {
+  const a = await createStudent("race-a");
+  const b = await createStudent("race-b");
+  const token = "ExponentPushToken[race-claim]";
+  const requests = await Promise.all([
+    registerAs(a, { pushToken: token, deviceId: "race-a", unregisterSecret: "d".repeat(64) }),
+    registerAs(b, { pushToken: token, deviceId: "race-b", unregisterSecret: "e".repeat(64) }),
+  ]);
+  assert.deepEqual(requests.map(r => r.status).sort(), [200, 409]);
+  const rows = await pool.query("SELECT * FROM notification_devices WHERE push_token = $1", [token]);
+  assert.equal(rows.rowCount, 1);
+  const winner = requests[0].status === 200 ? a : b;
+  assert.equal(rows.rows[0].student_id, winner.id);
+});
+
+test("BOLA races: rotation and handoff are serialized; stale proof cannot overwrite recovery", async () => {
+  const a = await createStudent("rotate-a");
+  const b = await createStudent("rotate-b");
+  const token = "ExponentPushToken[race-rotation]";
+  const oldSecret = "f".repeat(64);
+  const newSecret = "1".repeat(64);
+  const id = await insertDevice({ studentId: a.id, token, deviceId: "rotate-device", secret: oldSecret });
+  const results = await Promise.all([
+    registerAs(a, { pushToken: token, deviceId: "rotate-device", unregisterSecret: newSecret }),
+    registerAs(b, { pushToken: token, deviceId: "rotate-device", unregisterSecret: oldSecret }),
+  ]);
+  assert.deepEqual(results.map(r => r.status).sort(), [200, 409]);
+  const row = await completeDeviceState(id);
+  assert.equal(row.student_id, results[0].status === 200 ? a.id : b.id);
+  assert.equal(row.unregister_secret_hash, hashSecret(results[0].status === 200 ? newSecret : oldSecret));
+});
+
+test("BOLA races: refresh versus handoff retires stale tokens, unregister versus registration stays atomic", async () => {
+  const a = await createStudent("refresh-race-a");
+  const b = await createStudent("refresh-race-b");
+  const secret = "2".repeat(64);
+  const token = "ExponentPushToken[refresh-race-old]";
+  await insertDevice({ studentId: a.id, token, deviceId: "refresh-race-device", secret });
+  const results = await Promise.all([
+    registerAs(a, { pushToken: "ExponentPushToken[refresh-race-new]", deviceId: "refresh-race-device", unregisterSecret: secret }),
+    registerAs(b, { pushToken: token, deviceId: "refresh-race-device", unregisterSecret: secret }),
+  ]);
+  assert.deepEqual(results.map(r => r.status), [200, 200]);
+  const active = await pool.query("SELECT * FROM notification_devices WHERE device_id = 'refresh-race-device' AND is_active");
+  assert.equal(active.rowCount, 1);
+  const current = active.rows[0];
+  const currentOwner = current.student_id === a.id ? a : b;
+  const concurrent = await Promise.all([
+    registerAs(currentOwner, { pushToken: current.push_token, deviceId: current.device_id, unregisterSecret: secret }),
+    post("/api/notifications/devices/unregister-by-installation", { deviceId: current.device_id, unregisterSecret: secret },
+      { "content-type": "application/json", "x-forwarded-for": "198.51.100.102" }),
+  ]);
+  assert.deepEqual(concurrent.map(r => r.status), [200, 200]);
+  const row = await completeDeviceState(current.id);
+  assert.equal(row.student_id, currentOwner.id);
+  assert.equal(row.unregister_secret_hash, hashSecret(secret));
+});
+
+test("BOLA lifecycle: queued registration cannot reactivate after account deactivation", async () => {
+  const owner = await createStudent("deactivate-race");
+  const token = "ExponentPushToken[deactivate-race]";
+  const id = await insertDevice({ studentId: owner.id, token, deviceId: "deactivate-race", secret: "3".repeat(64) });
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SELECT id FROM students WHERE id = $1 FOR UPDATE", [owner.id]);
+    const pending = registerAs(owner, { pushToken: token, deviceId: "deactivate-race", unregisterSecret: "3".repeat(64) });
+    // The HTTP request may validate before or after deactivation; either
+    // ordering must reject, and the transaction recheck covers the former.
+    await new Promise(resolve => setTimeout(resolve, 50));
+    await client.query("UPDATE students SET account_status = 'deactivated', token_version = token_version + 1 WHERE id = $1", [owner.id]);
+    await client.query("UPDATE notification_devices SET is_active = false WHERE id = $1", [id]);
+    await client.query("COMMIT");
+    assert.equal((await pending).status, 401);
+    assert.equal((await deviceState(id)).is_active, false);
+  } finally {
+    await client.query("ROLLBACK");
+    client.release();
+  }
 });
 
 test("production registration transaction hashes secrets and handles refresh and account handoff", async () => {
@@ -353,6 +510,45 @@ test("registration transaction rolls back prior deactivation when insert fails",
   assert.equal((await pool.query(`SELECT count(*)::int AS count FROM notification_devices WHERE push_token = 'ExponentPushToken[rollback-fail]'`)).rows[0].count, 0);
   await pool.query(`DROP TRIGGER notification_devices_test_fail_insert ON notification_devices`);
   await pool.query(`DROP FUNCTION notification_devices_test_fail_insert()`);
+});
+
+test("BOLA atomicity: failed handoff update rolls back all prior retirement", async () => {
+  const a = await createStudent("update-rollback-a");
+  const b = await createStudent("update-rollback-b");
+  const secret = "4".repeat(64);
+  const id = await insertDevice({ studentId: a.id, token: "ExponentPushToken[update-rollback]", deviceId: "update-rollback", secret });
+  const prior = await insertDevice({ studentId: a.id, token: "ExponentPushToken[update-rollback-prior]", deviceId: "update-rollback", secret });
+  const before = await completeDeviceState(id);
+  const beforePrior = await completeDeviceState(prior);
+  await pool.query(`CREATE FUNCTION notification_devices_test_fail_update() RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN IF NEW.student_id <> OLD.student_id AND NEW.push_token = 'ExponentPushToken[update-rollback]'
+    THEN RAISE EXCEPTION 'injected update failure'; END IF; RETURN NEW; END $$`);
+  await pool.query("CREATE TRIGGER notification_devices_test_fail_update BEFORE UPDATE ON notification_devices FOR EACH ROW EXECUTE FUNCTION notification_devices_test_fail_update()");
+  try {
+    const response = await registerAs(b, { pushToken: before.push_token, deviceId: before.device_id, unregisterSecret: secret });
+    assert.equal(response.status, 500);
+    assert.deepEqual(await response.json(), { error: "Device registration failed" });
+    assert.deepEqual(await completeDeviceState(id), before);
+    assert.deepEqual(await completeDeviceState(prior), beforePrior);
+  } finally {
+    await pool.query("DROP TRIGGER notification_devices_test_fail_update ON notification_devices");
+    await pool.query("DROP FUNCTION notification_devices_test_fail_update()");
+  }
+});
+
+test("BOLA lifecycle: transaction rechecks deleted, missing and revoked account state", async () => {
+  const { registerNotificationDevice, DeviceRegistrationSessionInvalid } = await import("../lib/notificationDeviceRegistration");
+  for (const state of ["deactivated", "deleted", "revoked", "missing"]) {
+    const owner = await createStudent(`transaction-${state}`);
+    if (state === "missing") await pool.query("DELETE FROM students WHERE id = $1", [owner.id]);
+    else if (state === "revoked") await pool.query("UPDATE students SET token_version = token_version + 1 WHERE id = $1", [owner.id]);
+    else await pool.query("UPDATE students SET account_status = $1 WHERE id = $2", [state, owner.id]);
+    await assert.rejects(registerNotificationDevice({
+      studentId: owner.id, tokenVersion: 0, pushToken: `ExponentPushToken[transaction-${state}]`,
+      provider: "expo", platform: "ios", deviceId: `transaction-${state}`, unregisterSecret: "5".repeat(64),
+    }), DeviceRegistrationSessionInvalid);
+    assert.equal((await pool.query("SELECT count(*)::int AS count FROM notification_devices WHERE student_id = $1", [owner.id])).rows[0].count, 0);
+  }
 });
 
 test("real Push selection excludes inactive/non-Expo rows and reflects unregister immediately", async () => {

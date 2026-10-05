@@ -29,9 +29,9 @@ import {
 import { diffFields, logActivity } from "../lib/activityLog";
 import { enqueueJob, QUEUE_NAMES, type NotificationAutomationJob } from "../lib/queue";
 import {
-  resolveRegistrationSecret,
   unregisterByInstallation,
 } from "../lib/installationUnregister";
+import { registerNotificationDevice, DeviceRegistrationConflict, DeviceRegistrationSessionInvalid } from "../lib/notificationDeviceRegistration";
 import {
   CreateNotificationBody,
   GetNotificationParams,
@@ -564,96 +564,30 @@ router.post("/notifications/devices/register", requireStudentAuth, requireVerifi
   }
 
   const studentId: number = req.studentId;
-  const now = new Date().toISOString();
-  const registrationSecret = resolveRegistrationSecret(parsed.data.unregisterSecret);
-  const [existingDevice] = await db
-    .select({ id: notificationDevicesTable.id })
-    .from(notificationDevicesTable)
-    .where(eq(notificationDevicesTable.pushToken, parsed.data.pushToken))
-    .limit(1);
-  logger.info({
-    studentId,
-    platform: parsed.data.platform,
-    provider: parsed.data.provider,
-    tokenPrefix: tokenPrefix(parsed.data.pushToken),
-    action: existingDevice ? "update" : "create",
-  }, "[PUSH_DIAG] notification device db write start");
-  const device = await (async () => {
-    try {
-      return await db.transaction(async (tx) => {
-        if (parsed.data.deviceId && parsed.data.unregisterSecret) {
-          // Possession of the existing installation secret safely proves which
-          // prior rows belong to this physical installation. Deactivate them in
-          // the same transaction before activating the current token so token
-          // refresh and cross-account reassignment cannot leave a stale active row.
-          await tx
-            .update(notificationDevicesTable)
-            .set({ isActive: false, updatedAt: now })
-            .where(or(
-              // The authenticated owner may retire their own older rows even if
-              // SecureStore was lost and this registration rotated the secret.
-              and(
-                eq(notificationDevicesTable.studentId, studentId),
-                eq(notificationDevicesTable.deviceId, parsed.data.deviceId),
-              ),
-              // The installation credential may retire the same physical
-              // installation across an account handoff.
-              and(
-                eq(notificationDevicesTable.deviceId, parsed.data.deviceId),
-                eq(notificationDevicesTable.unregisterSecretHash, registrationSecret.secretHash),
-              ),
-            ));
-        }
-
-        const [registered] = await tx
-          .insert(notificationDevicesTable)
-          .values({
-            studentId,
-            pushToken: parsed.data.pushToken,
-            provider: parsed.data.provider,
-            platform: parsed.data.platform,
-            deviceId: parsed.data.deviceId ?? null,
-            unregisterSecretHash: registrationSecret.secretHash,
-            isActive: true,
-            lastSeenAt: now,
-            updatedAt: now,
-          })
-          .onConflictDoUpdate({
-            target: notificationDevicesTable.pushToken,
-            set: {
-              studentId,
-              provider: parsed.data.provider,
-              platform: parsed.data.platform,
-              deviceId: parsed.data.deviceId ?? null,
-              unregisterSecretHash: registrationSecret.secretHash,
-              isActive: true,
-              lastSeenAt: now,
-              updatedAt: now,
-            },
-          })
-          .returning();
-        return registered;
-      });
-    } catch (error) {
-      logger.error({
-        studentId,
-        platform: parsed.data.platform,
-        provider: parsed.data.provider,
-        tokenPrefix: tokenPrefix(parsed.data.pushToken),
-        errorName: error instanceof Error ? error.name : "unknown",
-      }, "Notification device registration database write failed");
+  let registration;
+  try {
+    registration = await registerNotificationDevice({
+      ...parsed.data, studentId, tokenVersion: req.studentTokenVersion,
+    });
+  } catch (error) {
+    if (error instanceof DeviceRegistrationConflict) {
+      res.status(409).json({ error: "Device registration unavailable" });
+    } else if (error instanceof DeviceRegistrationSessionInvalid) {
+      res.status(401).json({ error: "Session unavailable" });
+    } else {
+      logger.error({ studentId, errorName: error instanceof Error ? error.name : "unknown" }, "Notification device registration failed");
       res.status(500).json({ error: "Device registration failed" });
-      return null;
     }
-  })();
-  if (!device) return;
+    return;
+  }
+  const { device, secret: registrationSecret } = registration;
 
   logger.info({
     studentId,
     platform: parsed.data.platform,
     provider: parsed.data.provider,
     tokenPrefix: tokenPrefix(parsed.data.pushToken),
-    action: existingDevice ? "updated" : "created",
+    action: registration.action,
     isActive: device.isActive,
     deviceId: device.id,
   }, "[PUSH_DIAG] notification device registered");

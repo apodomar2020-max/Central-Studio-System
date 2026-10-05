@@ -91,6 +91,7 @@ declare global {
       studentId?: number;
       studentEmail?: string;
       studentJwtVerified?: boolean;
+      studentTokenVersion?: number;
       // Email-verification state carried in the JWT. May be undefined for
       // legacy tokens issued before mandatory verification — see
       // requireVerifiedStudent, which only blocks an explicit `false`.
@@ -274,6 +275,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     req.studentId = payload.sub;
     req.studentEmail = payload.email;
     req.studentJwtVerified = true;
+    req.studentTokenVersion = payload.tokenVersion ?? LEGACY_TOKEN_VERSION;
     req.studentEmailVerified = payload.emailVerified;
     next();
     return;
