@@ -56,6 +56,20 @@ delete process.env.BREVO_API_KEY;
 process.env.IDENTITY_PROVENANCE_PEPPER = "test-regression-identity-provenance-pepper".padEnd(64, "0");
 
 const LEGACY_BEARER = process.env.API_SECRET_KEY;
+const VALID_BOT_TOKEN = "security04b-synthetic-valid";
+process.env.TURNSTILE_SECRET_KEY = "security04b-synthetic-provider-secret";
+const originalFetch = globalThis.fetch;
+globalThis.fetch = (async (input: any, init?: RequestInit) => {
+  const target = typeof input === "string" ? input : input?.url;
+  if (target === "https://challenges.cloudflare.com/turnstile/v0/siteverify") {
+    const body = new URLSearchParams(String(init?.body ?? ""));
+    return Response.json({
+      success: body.get("response") === VALID_BOT_TOKEN,
+      action: "register",
+    });
+  }
+  return originalFetch(input, init);
+}) as typeof fetch;
 
 let app: import("express").Express;
 let server: import("node:http").Server;
@@ -122,6 +136,7 @@ before(async () => {
 });
 
 after(async () => {
+  globalThis.fetch = originalFetch;
   await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
   await pool.end();
 });
@@ -135,9 +150,12 @@ function freshEmail(tag: string): string {
 /** Registers + verifies a fresh student, returns a valid current access token. */
 async function makeVerifiedStudent(tag: string, password = "OriginalPass123") {
   const email = freshEmail(tag);
-  const reg = await post("/api/auth/register", { body: { name: "S04B Test User", email, password } });
-  assert.equal(reg.status, 201);
-  const studentId: number = reg.json.student.id;
+  const reg = await post("/api/auth/register", { body: { name: "S04B Test User", email, password, botToken: VALID_BOT_TOKEN } });
+  assert.equal(reg.status, 200);
+  assert.deepEqual(reg.json, { ok: true });
+  const rows = await pool.query("SELECT id FROM students WHERE email = $1", [email]);
+  assert.equal(rows.rowCount, 1);
+  const studentId: number = rows.rows[0].id;
   await pool.query(`UPDATE students SET email_verified = true, email_verified_at = now() WHERE id = $1`, [studentId]);
   const login = await post("/api/auth/login", { body: { email, password } });
   assert.equal(login.status, 200);
@@ -214,14 +232,28 @@ test("E4: /auth/login with NO header at all also reaches the real handler (ident
 test("E5: /auth/register with legacy bearer succeeds exactly as with no header", async () => {
   const withLegacy = await post("/api/auth/register", {
     token: LEGACY_BEARER,
-    body: { name: "Legacy Client", email: freshEmail("legacyreg"), password: "SomePass123" },
+    body: { name: "Legacy Client", email: freshEmail("legacyreg"), password: "SomePass123", botToken: VALID_BOT_TOKEN },
   });
-  assert.equal(withLegacy.status, 201);
+  assert.equal(withLegacy.status, 200);
+  assert.deepEqual(withLegacy.json, { ok: true });
 
   const withNone = await post("/api/auth/register", {
-    body: { name: "Keyless Client", email: freshEmail("keylessreg"), password: "SomePass123" },
+    body: { name: "Keyless Client", email: freshEmail("keylessreg"), password: "SomePass123", botToken: VALID_BOT_TOKEN },
   });
-  assert.equal(withNone.status, 201);
+  assert.equal(withNone.status, 200);
+  assert.deepEqual(withNone.json, withLegacy.json);
+});
+
+test("E5b: actual bot middleware rejects missing and invalid challenges without creating students", async () => {
+  for (const botToken of [undefined, "security04b-synthetic-invalid"]) {
+    const email = freshEmail("bot-rejected");
+    const result = await post("/api/auth/register", {
+      body: { name: "Rejected Fixture", email, password: "SomePass123", botToken },
+    });
+    assert.equal(result.status, 403);
+    assert.equal(result.json.code, "BOT_VERIFICATION_FAILED");
+    assert.equal((await pool.query("SELECT id FROM students WHERE email = $1", [email])).rowCount, 0);
+  }
 });
 
 test("E6: valid student JWT -> unchanged behavior (still authenticates /auth/me)", async () => {

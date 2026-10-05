@@ -36,6 +36,20 @@ delete process.env.BREVO_API_KEY;
 process.env.IDENTITY_PROVENANCE_PEPPER = "test-regression-identity-provenance-pepper".padEnd(64, "0");
 
 const LEGACY_BEARER = process.env.API_SECRET_KEY;
+const VALID_BOT_TOKEN = "security04b-synthetic-valid";
+process.env.TURNSTILE_SECRET_KEY = "security04b-synthetic-provider-secret";
+const originalFetch = globalThis.fetch;
+globalThis.fetch = (async (input: any, init?: RequestInit) => {
+  const target = typeof input === "string" ? input : input?.url;
+  if (target === "https://challenges.cloudflare.com/turnstile/v0/siteverify") {
+    const body = new URLSearchParams(String(init?.body ?? ""));
+    return Response.json({
+      success: body.get("response") === VALID_BOT_TOKEN,
+      action: "register",
+    });
+  }
+  return originalFetch(input, init);
+}) as typeof fetch;
 
 let app: import("express").Express;
 let server: import("node:http").Server;
@@ -99,6 +113,7 @@ before(async () => {
 });
 
 after(async () => {
+  globalThis.fetch = originalFetch;
   await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
   await pool.end();
 });
@@ -111,9 +126,12 @@ function freshEmail(tag: string): string {
 
 async function makeVerifiedStudent(tag: string, password = "OriginalPass123") {
   const email = freshEmail(tag);
-  const reg = await post("/api/auth/register", { body: { name: "Matrix Test User", email, password } });
-  assert.equal(reg.status, 201);
-  const studentId: number = reg.json.student.id;
+  const reg = await post("/api/auth/register", { body: { name: "Matrix Test User", email, password, botToken: VALID_BOT_TOKEN } });
+  assert.equal(reg.status, 200);
+  assert.deepEqual(reg.json, { ok: true });
+  const rows = await pool.query("SELECT id FROM students WHERE email = $1", [email]);
+  assert.equal(rows.rowCount, 1);
+  const studentId: number = rows.rows[0].id;
   await pool.query(`UPDATE students SET email_verified = true, email_verified_at = now() WHERE id = $1`, [studentId]);
   const login = await post("/api/auth/login", { body: { email, password } });
   assert.equal(login.status, 200);

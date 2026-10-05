@@ -38,6 +38,7 @@ process.env.STUDENT_JWT_SECRET = "test-student-secret";
 process.env.ADMIN_JWT_SECRET = "test-admin-secret";
 delete process.env.REDIS_URL;
 delete process.env.BREVO_API_KEY; // OTP send is a dev-mode no-op
+delete process.env.APPLE_CLIENT_ID; // This suite explicitly tests an unconfigured Apple provider.
 process.env.IDENTITY_PROVENANCE_PEPPER = "test-regression-identity-provenance-pepper".padEnd(64, "0");
 
 type EmailTrust = "provider_attested" | "provider_asserted" | "none";
@@ -441,7 +442,7 @@ test("facebook asserted email + no existing account -> new UNVERIFIED account (O
 // ─────────────────────────────────────────────────────────────────────────────
 // 8. Apple stays fail-closed
 // ─────────────────────────────────────────────────────────────────────────────
-test("apple still returns 501 and performs no linking", async () => {
+test("unconfigured Apple fails closed without changing test-owned identities", async () => {
   const victim = await makeVictim({ emailVerified: true });
   const before = identityFields(victim);
   const { status, json } = await post("/api/auth/apple", { token: "t", email: victim.email });
@@ -449,8 +450,8 @@ test("apple still returns 501 and performs no linking", async () => {
   assert.equal(json.accessToken, undefined);
   assert.equal(json.requiredEnv, undefined, "config details are never disclosed to clients");
   assert.deepEqual(identityFields(await readRow(victim.id)), before);
-  const stray = await pool.query(`SELECT id FROM students WHERE apple_id IS NOT NULL`);
-  assert.equal(stray.rowCount, 0, "no apple_id is ever written");
+  const own = await pool.query("SELECT apple_id FROM students WHERE id = $1", [victim.id]);
+  assert.equal(own.rows[0].apple_id, before.apple_id);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
