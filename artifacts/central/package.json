@@ -4,6 +4,11 @@
   "private": true,
   "main": "expo-router/entry",
   "expo": {
+    "autolinking": {
+      "ios": {
+        "buildFromSource": ["expo-file-system"]
+      }
+    },
     "install": {
       "exclude": [
         "@sentry/react-native",
