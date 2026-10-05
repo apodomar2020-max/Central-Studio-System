@@ -90,11 +90,25 @@ export function getAdmissionRedis(): IORedis | null {
     maxRetriesPerRequest: 1,
     connectTimeout: 2000,
     commandTimeout: 750,
-    retryStrategy: (attempt) => (attempt > 3 ? null : Math.min(attempt * 200, 1000)),
+    // Bound individual requests, not the lifetime of the shared connection.
+    // Keep recovering after outages; cap delay at one second for prompt recovery.
+    retryStrategy: (attempt) => Math.min(attempt * 200, 1000),
     lazyConnect: false,
   });
-  client.on("error", (err) => {
-    logger.warn({ err: err.message }, "Auth-abuse-protection Redis connection error");
+  let outageReported = false;
+  const reportOutage = () => {
+    if (outageReported) return;
+    outageReported = true;
+    // Transport error messages can contain endpoint/credential information.
+    logger.warn("Auth-abuse-protection Redis unavailable; recovery continues");
+  };
+  client.on("error", reportOutage);
+  client.on("close", reportOutage);
+  client.on("reconnecting", reportOutage);
+  client.on("end", reportOutage);
+  client.on("ready", () => {
+    if (outageReported) logger.info("Auth-abuse-protection Redis recovered");
+    outageReported = false;
   });
   return client;
 }
@@ -188,8 +202,8 @@ export async function consume(key: string, windowSeconds: number): Promise<Consu
     const result = (await redis.eval(CONSUME_SCRIPT, 1, key, String(windowSeconds))) as [number, number];
     const [count, ttl] = result;
     return { count, ttlSeconds: ttl > 0 ? ttl : windowSeconds, degraded: false };
-  } catch (err) {
-    logger.warn({ err: (err as Error).message }, "Auth-abuse-protection Redis consume failed — using degraded fallback");
+  } catch {
+    // Connection lifecycle reports once per outage, not once per auth request.
     fallbackPruneIfNeeded();
     const { count, ttlSeconds } = fallbackConsume(key, Infinity, windowSeconds);
     return { count, ttlSeconds, degraded: true };
@@ -203,8 +217,8 @@ export async function resetCounter(key: string): Promise<void> {
   if (!redis) return;
   try {
     await redis.del(key);
-  } catch (err) {
-    logger.warn({ err: (err as Error).message }, "Auth-abuse-protection Redis reset failed (non-fatal)");
+  } catch {
+    logger.warn("Auth-abuse-protection Redis reset failed (non-fatal)");
   }
 }
 
