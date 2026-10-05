@@ -24,6 +24,7 @@
  */
 import assert from "node:assert/strict";
 import { after, before, beforeEach, test, mock } from "node:test";
+import IORedis from "ioredis";
 
 const DATABASE_URL = process.env.DISPOSABLE_STUDENT_SESSION_DATABASE_URL
   ?? "postgresql://abdelrahmanomar@127.0.0.1:5432/central_studio_disposable_student_session";
@@ -46,7 +47,8 @@ process.env.DATABASE_URL = DATABASE_URL;
 process.env.API_SECRET_KEY = "test-api-secret-key";
 process.env.STUDENT_JWT_SECRET = "test-student-secret";
 process.env.OTP_PEPPER = "test-session-revocation-otp-pepper".padEnd(64, "0");
-delete process.env.REDIS_URL;
+process.env.REDIS_URL = "redis://127.0.0.1:16386/14";
+process.env.AUTH_ABUSE_PEPPER = "test-only-session-admission-pepper";
 delete process.env.BREVO_API_KEY; // dev-mode no-op path for OTP/security emails
 process.env.IDENTITY_PROVENANCE_PEPPER = "test-regression-identity-provenance-pepper".padEnd(64, "0");
 process.env.TURNSTILE_SECRET_KEY = "test-session-revocation-turnstile-secret";
@@ -84,6 +86,7 @@ let app: import("express").Express;
 let server: import("node:http").Server;
 let pool: typeof import("@workspace/db").pool;
 let port: number;
+let admissionRedis: IORedis;
 
 function apiUrl(path: string): string { return `http://127.0.0.1:${port}${path}`; }
 
@@ -115,6 +118,8 @@ async function put(path: string, body: unknown, token?: string): Promise<ApiResu
 }
 
 before(async () => {
+  admissionRedis = new IORedis(process.env.REDIS_URL!);
+  await admissionRedis.flushdb();
   mock.module("../lib/socialProviders", {
     namedExports: {
       ProviderNotConfiguredError: MockProviderNotConfiguredError,
@@ -147,9 +152,12 @@ before(async () => {
   port = (server.address() as import("node:net").AddressInfo).port;
 });
 
-beforeEach(() => { nextIdentity = null; });
+beforeEach(async () => { nextIdentity = null; await admissionRedis.flushdb(); });
 
 after(async () => {
+  await (await import("../lib/authRecovery")).closeRecoveryQueue();
+  (await import("../lib/authAbuseProtection")).__resetClientForTests();
+  await admissionRedis.quit();
   mock.reset();
   await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
   await pool.end();
@@ -260,7 +268,7 @@ test("B: full password-reset lifecycle — pre-reset token revoked, new login wo
     `INSERT INTO email_otps (student_id, email, code, purpose, expires_at) VALUES ($1, $2, $3, 'reset', now() + interval '10 minutes')`,
     [studentId, email, digest],
   );
-  const reset = await post("/api/auth/reset-password", { email, code, newPassword: "BrandNewPass456" });
+  const reset = await post("/api/auth/reset-password", { email, code, newPassword: "BrandNewPass456!" });
   assert.equal(reset.status, 200);
   assert.equal(reset.json.ok, true);
   // Reset does not issue a replacement token — unchanged product contract.
@@ -273,7 +281,7 @@ test("B: full password-reset lifecycle — pre-reset token revoked, new login wo
   assert.equal(after.json.code, "SESSION_REVOKED");
 
   // 6. New password login succeeds.
-  const login = await post("/api/auth/login", { email, password: "BrandNewPass456" });
+  const login = await post("/api/auth/login", { email, password: "BrandNewPass456!" });
   assert.equal(login.status, 200);
 
   // 7. Newly-issued token carries current version and works.

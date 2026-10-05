@@ -20,6 +20,7 @@
  * not claim or test stronger real-time cancellation than that.
  */
 import assert from "node:assert/strict";
+import { useAuthAdmissionFixture, processQueuedRecoveryForTests } from "../lib/authAdmissionTestFixture";
 import { after, before, beforeEach, test, mock } from "node:test";
 
 const DATABASE_URL = process.env.DISPOSABLE_STUDENT_LIFECYCLE_DATABASE_URL
@@ -44,7 +45,7 @@ process.env.API_SECRET_KEY = "test-api-secret-key";
 process.env.STUDENT_JWT_SECRET = "test-student-secret";
 process.env.ADMIN_JWT_SECRET = "test-admin-secret";
 process.env.OTP_PEPPER = "test-lifecycle-otp-pepper".padEnd(64, "0");
-delete process.env.REDIS_URL;
+useAuthAdmissionFixture();
 process.env.TURNSTILE_SECRET_KEY = "test-account-lifecycle-turnstile-secret";
 const TURNSTILE_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
 const originalFetch = globalThis.fetch;
@@ -336,6 +337,7 @@ test("G1: forgot-password/reset-password completes for a deactivated account, is
   const forgot = await post("/api/auth/forgot-password", { email, botToken: VALID_BOT_TOKEN });
   assert.equal(forgot.status, 200);
   assert.equal(forgot.json.accessToken, undefined, "forgot-password must never issue a token");
+  await processQueuedRecoveryForTests();
 
   const otpRow = await pool.query(
     `SELECT id FROM email_otps WHERE student_id = $1 AND purpose = 'reset' ORDER BY id DESC LIMIT 1`,

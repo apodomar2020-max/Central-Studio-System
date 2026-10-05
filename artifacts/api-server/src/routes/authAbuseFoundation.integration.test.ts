@@ -166,6 +166,7 @@ beforeEach(async () => {
 });
 
 after(async () => {
+  await (await import("../lib/authRecovery")).closeRecoveryQueue();
   mock.reset();
   await primary.close();
   await ioredisClient.quit();
@@ -475,6 +476,15 @@ test("11: password reset security preserved — a bogus code is rejected, a corr
 
   const forgot = await post("/api/auth/forgot-password", { email: s.email, botToken: VALID_BOT_TOKEN });
   assert.equal(forgot.status, 200);
+
+  // Delivery is durable/async: exercise the same worker processor before
+  // asserting reset state instead of assuming provider work precedes HTTP 200.
+  const { Queue } = await import("bullmq");
+  const recovery = await import("../lib/authRecovery");
+  const recoveryQueue = new Queue(recovery.AUTH_RECOVERY_QUEUE, { connection: ioredisClient });
+  try {
+    for (const job of await recoveryQueue.getJobs(["wait"])) await recovery.processRecovery(job as any);
+  } finally { await recoveryQueue.close(); }
 
   const bogus = await post("/api/auth/reset-password", { email: s.email, code: "000000", newPassword: "NewPass123!" });
   assert.equal(bogus.status, 400);

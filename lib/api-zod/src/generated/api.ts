@@ -8,6 +8,62 @@
 import * as zod from "zod";
 
 /**
+ * Existing and newly created accounts receive the same response. Admission precedes bcrypt and account creation, consumes admitted attempts, and fails closed without Redis.
+ * @summary Native registration with authoritative shared admission; no Turnstile
+ */
+export const nativeRegisterBodyNameMin = 2;
+
+export const nativeRegisterBodyPasswordMin = 8;
+
+export const nativeRegisterBodyPasswordRegExp = new RegExp(
+  "^(?=.*[A-Za-z])(?=.*[0-9]).+$",
+);
+
+export const NativeRegisterBody = zod.object({
+  name: zod.string().min(nativeRegisterBodyNameMin),
+  email: zod.string().email(),
+  password: zod
+    .string()
+    .min(nativeRegisterBodyPasswordMin)
+    .regex(nativeRegisterBodyPasswordRegExp),
+  phone: zod.string().optional(),
+  accountType: zod.enum(["student", "parent"]).optional(),
+  dateOfBirth: zod.string().optional(),
+});
+
+export const NativeRegisterResponse = zod.object({
+  ok: zod.boolean(),
+});
+
+/**
+ * Limited or full student JWT required. Any supplied email or student ID is ignored. DB OTP limits remain mandatory; all actual provider attempts use shared admission without fallback.
+ * @summary Send verification OTP to the authenticated account; no Turnstile
+ */
+export const NativeSendEmailOtpHeader = zod.object({
+  Authorization: zod
+    .string()
+    .describe("Bearer student access token (limited or full)"),
+});
+
+export const NativeSendEmailOtpResponse = zod.object({
+  ok: zod.boolean(),
+  expiresIn: zod.number(),
+});
+
+/**
+ * Always returns generic success for valid input, including unknown accounts, rate limits, and delivery failures. Queued delivery removes provider latency from the public response. Resend shares the same admission and DB OTP budgets.
+ * @summary Request or resend password recovery OTP; no Turnstile
+ */
+export const NativeForgotPasswordBody = zod.object({
+  email: zod.string().email(),
+});
+
+export const NativeForgotPasswordResponse = zod.object({
+  ok: zod.boolean(),
+  message: zod.string(),
+});
+
+/**
  * @summary Operational queue for existing users.delete administrators
  */
 export const ListPendingCustomerDeletionsResponse = zod.object({

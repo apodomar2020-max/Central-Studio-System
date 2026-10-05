@@ -115,6 +115,11 @@ import type {
   ListStudentsResponse,
   MyAttendanceResponse,
   MyCreditsResponse,
+  NativeForgotPassword200,
+  NativeForgotPasswordBody,
+  NativeRegister200,
+  NativeRegisterBody,
+  NativeSendEmailOtp200,
   Notification,
   PackageOrder,
   PackageRefundComplete,
@@ -198,6 +203,263 @@ type AwaitedInput<T> = PromiseLike<T> | T;
 type Awaited<O> = O extends AwaitedInput<infer T> ? T : never;
 
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
+
+export const getNativeRegisterUrl = () => {
+  return `/api/auth/native/register`;
+};
+
+/**
+ * Existing and newly created accounts receive the same response. Admission precedes bcrypt and account creation, consumes admitted attempts, and fails closed without Redis.
+ * @summary Native registration with authoritative shared admission; no Turnstile
+ */
+export const nativeRegister = async (
+  nativeRegisterBody: NativeRegisterBody,
+  options?: RequestInit,
+): Promise<NativeRegister200> => {
+  return customFetch<NativeRegister200>(getNativeRegisterUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(nativeRegisterBody),
+  });
+};
+
+export const getNativeRegisterMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof nativeRegister>>,
+    TError,
+    { data: BodyType<NativeRegisterBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof nativeRegister>>,
+  TError,
+  { data: BodyType<NativeRegisterBody> },
+  TContext
+> => {
+  const mutationKey = ["nativeRegister"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof nativeRegister>>,
+    { data: BodyType<NativeRegisterBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return nativeRegister(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type NativeRegisterMutationResult = NonNullable<
+  Awaited<ReturnType<typeof nativeRegister>>
+>;
+export type NativeRegisterMutationBody = BodyType<NativeRegisterBody>;
+export type NativeRegisterMutationError = ErrorType<void>;
+
+/**
+ * @summary Native registration with authoritative shared admission; no Turnstile
+ */
+export const useNativeRegister = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof nativeRegister>>,
+    TError,
+    { data: BodyType<NativeRegisterBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof nativeRegister>>,
+  TError,
+  { data: BodyType<NativeRegisterBody> },
+  TContext
+> => {
+  return useMutation(getNativeRegisterMutationOptions(options));
+};
+
+export const getNativeSendEmailOtpUrl = () => {
+  return `/api/auth/native/send-email-otp`;
+};
+
+/**
+ * Limited or full student JWT required. Any supplied email or student ID is ignored. DB OTP limits remain mandatory; all actual provider attempts use shared admission without fallback.
+ * @summary Send verification OTP to the authenticated account; no Turnstile
+ */
+export const nativeSendEmailOtp = async (
+  options?: RequestInit,
+): Promise<NativeSendEmailOtp200> => {
+  return customFetch<NativeSendEmailOtp200>(getNativeSendEmailOtpUrl(), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getNativeSendEmailOtpMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof nativeSendEmailOtp>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof nativeSendEmailOtp>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["nativeSendEmailOtp"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof nativeSendEmailOtp>>,
+    void
+  > = () => {
+    return nativeSendEmailOtp(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type NativeSendEmailOtpMutationResult = NonNullable<
+  Awaited<ReturnType<typeof nativeSendEmailOtp>>
+>;
+
+export type NativeSendEmailOtpMutationError = ErrorType<void>;
+
+/**
+ * @summary Send verification OTP to the authenticated account; no Turnstile
+ */
+export const useNativeSendEmailOtp = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof nativeSendEmailOtp>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof nativeSendEmailOtp>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getNativeSendEmailOtpMutationOptions(options));
+};
+
+export const getNativeForgotPasswordUrl = () => {
+  return `/api/auth/native/forgot-password`;
+};
+
+/**
+ * Always returns generic success for valid input, including unknown accounts, rate limits, and delivery failures. Queued delivery removes provider latency from the public response. Resend shares the same admission and DB OTP budgets.
+ * @summary Request or resend password recovery OTP; no Turnstile
+ */
+export const nativeForgotPassword = async (
+  nativeForgotPasswordBody: NativeForgotPasswordBody,
+  options?: RequestInit,
+): Promise<NativeForgotPassword200> => {
+  return customFetch<NativeForgotPassword200>(getNativeForgotPasswordUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(nativeForgotPasswordBody),
+  });
+};
+
+export const getNativeForgotPasswordMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof nativeForgotPassword>>,
+    TError,
+    { data: BodyType<NativeForgotPasswordBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof nativeForgotPassword>>,
+  TError,
+  { data: BodyType<NativeForgotPasswordBody> },
+  TContext
+> => {
+  const mutationKey = ["nativeForgotPassword"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof nativeForgotPassword>>,
+    { data: BodyType<NativeForgotPasswordBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return nativeForgotPassword(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type NativeForgotPasswordMutationResult = NonNullable<
+  Awaited<ReturnType<typeof nativeForgotPassword>>
+>;
+export type NativeForgotPasswordMutationBody =
+  BodyType<NativeForgotPasswordBody>;
+export type NativeForgotPasswordMutationError = ErrorType<void>;
+
+/**
+ * @summary Request or resend password recovery OTP; no Turnstile
+ */
+export const useNativeForgotPassword = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof nativeForgotPassword>>,
+    TError,
+    { data: BodyType<NativeForgotPasswordBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof nativeForgotPassword>>,
+  TError,
+  { data: BodyType<NativeForgotPasswordBody> },
+  TContext
+> => {
+  return useMutation(getNativeForgotPasswordMutationOptions(options));
+};
 
 export const getListPendingCustomerDeletionsUrl = () => {
   return `/api/students/customer-deletion-requests`;

@@ -7,6 +7,7 @@
  * references student id 34 or any hardcoded production id.
  */
 import assert from "node:assert/strict";
+import { useAuthAdmissionFixture } from "../lib/authAdmissionTestFixture";
 import { after, before, test } from "node:test";
 
 const DATABASE_URL = process.env.DISPOSABLE_STUDENT_OVERVIEW_DATABASE_URL
@@ -31,7 +32,7 @@ process.env.API_SECRET_KEY = "test-api-secret-key";
 process.env.STUDENT_JWT_SECRET = "test-student-secret";
 process.env.ADMIN_JWT_SECRET = "test-admin-secret";
 process.env.OTP_PEPPER = "test-overview-otp-pepper".padEnd(64, "0");
-delete process.env.REDIS_URL;
+useAuthAdmissionFixture();
 delete process.env.BREVO_API_KEY;
 process.env.IDENTITY_PROVENANCE_PEPPER = "test-regression-identity-provenance-pepper".padEnd(64, "0");
 

@@ -34,7 +34,7 @@
  *     own token is revoked along with everyone else's (there is no way to
  *     spare it, since revocation in this phase has no per-device grain).
  */
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request, type Response } from "express";
 import bcrypt from "bcryptjs";
 import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -49,8 +49,6 @@ import { ACCOUNT_DEACTIVATED_BODY, isActiveAccountStatus } from "../lib/studentA
 import { requireStudentAuth, requireVerifiedStudent } from "../middlewares/studentAuth";
 import {
   invalidateOtpCodes,
-  issueOtp,
-  OtpRateLimitError,
   PasswordSchema,
   sendSecurityNotificationEmail,
   signStudentToken,
@@ -64,6 +62,8 @@ import { accountRateLimiter, ipRateLimiter, resetAccountLimiter } from "../middl
 import { requireBotToken } from "../middlewares/botProtection";
 import { signPasswordResetGrant, verifyPasswordResetGrant } from "../lib/passwordResetGrant";
 import { isPostgresConstraintViolation } from "../lib/postgresConstraint";
+import { admissionContext, nativeRegistrationAdmission, type AdmissionContext } from "../lib/nativeAuthAdmission";
+import { enqueueRecovery } from "../lib/authRecovery";
 
 const router: IRouter = Router();
 
@@ -128,9 +128,9 @@ function logPasswordSecurityEvent(studentId: number, event: "password_reset" | "
   logger.info({ studentId, event }, "Student password security event");
 }
 
-async function notifyPasswordSecurityEvent(email: string, event: "password_reset" | "password_changed"): Promise<void> {
+async function notifyPasswordSecurityEvent(email: string, event: "password_reset" | "password_changed", context: AdmissionContext): Promise<void> {
   try {
-    await sendSecurityNotificationEmail(email, event);
+    await sendSecurityNotificationEmail(email, event, context);
   } catch (err) {
     logger.warn({ err, event }, "Password security notification email failed");
   }
@@ -176,12 +176,7 @@ const ProfileBody = z.object({
 // A constant-shape bcrypt hash runs on EVERY request (even when the result
 // is discarded for the existing-email branch) so response timing does not
 // itself become a side channel.
-router.post(
-  "/auth/register",
-  registerIpLimiter,
-  requireBotToken("register"),
-  registerAccountLimiter,
-  async (req, res): Promise<void> => {
+async function handleRegister(req: Request, res: Response): Promise<void> {
     const parsed = RegisterBody.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
@@ -297,8 +292,9 @@ router.post(
     // No accessToken, no student object — see the module comment above for
     // why. The client obtains its token via a follow-up POST /auth/login.
     res.status(200).json(GENERIC_ACCEPTED);
-  },
-);
+}
+router.post("/auth/register", registerIpLimiter, requireBotToken("register"), registerAccountLimiter, nativeRegistrationAdmission, handleRegister);
+router.post("/auth/native/register", nativeRegistrationAdmission, handleRegister);
 
 // POST /api/auth/login
 //
@@ -604,7 +600,7 @@ const ForgotPasswordBody = z.object({
   email: z.string().email("Invalid email address"),
 });
 
-router.post("/auth/forgot-password", forgotPasswordIpLimiter, requireBotToken("forgot_password"), forgotPasswordAccountLimiter, async (req, res): Promise<void> => {
+async function handleForgotPassword(req: Request, res: Response): Promise<void> {
   const parsed = ForgotPasswordBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
@@ -614,34 +610,16 @@ router.post("/auth/forgot-password", forgotPasswordIpLimiter, requireBotToken("f
   const { email } = parsed.data;
   const normalizedEmail = normalizeEmail(email);
 
-  const [student] = await db
-    .select({ id: studentsTable.id, email: studentsTable.email })
-    .from(studentsTable)
-    .where(eq(studentsTable.email, normalizedEmail));
-
-  // Always respond success to avoid leaking whether an email exists. The
-  // old per-(email,ip) in-memory debounce Map was removed in favor of the
-  // Redis-backed forgotPasswordIpLimiter/forgotPasswordAccountLimiter
-  // middleware above — one system, not two overlapping ones.
-  if (!student) {
-    res.json(GENERIC_RESET_RESPONSE);
-    return;
-  }
-
   try {
-    await issueOtp(normalizedEmail, { studentId: student.id, purpose: "reset" });
-    logger.info({ studentId: student.id }, "Password reset OTP generated");
-  } catch (err) {
-    if (err instanceof OtpRateLimitError) {
-      logger.warn({ studentId: student.id }, "Password reset OTP request rate-limited");
-    } else {
-      await invalidateOtpCodes(normalizedEmail, "reset");
-      logger.error({ err, studentId: student.id }, "Password reset OTP delivery failed");
-    }
+    await enqueueRecovery(normalizedEmail, admissionContext(req));
+  } catch {
+    logger.warn({ event: "recovery_admission_unavailable" }, "Password recovery request unavailable");
   }
 
   res.json(GENERIC_RESET_RESPONSE);
-});
+}
+router.post("/auth/forgot-password", forgotPasswordIpLimiter, requireBotToken("forgot_password"), forgotPasswordAccountLimiter, handleForgotPassword);
+router.post("/auth/native/forgot-password", handleForgotPassword);
 
 // ─── POST /api/auth/verify-reset-otp ─────────────────────────────────────────
 const VerifyResetOtpBody = z.object({
@@ -671,10 +649,6 @@ router.post("/auth/verify-reset-otp", resetPasswordIpLimiter, resetPasswordAccou
 
   const result = await verifyOtpCode(normalizedEmail, parsed.data.code, "reset");
   if (result.status !== "ok") {
-    if (result.status === "locked") {
-      res.status(429).json({ error: "Too many incorrect attempts. Please request a new code." });
-      return;
-    }
     passwordResetFailure(res);
     return;
   }
@@ -728,10 +702,6 @@ router.post("/auth/reset-password", resetPasswordIpLimiter, resetPasswordAccount
   } else {
     const result = await verifyOtpCode(normalizedEmail, code!, "reset");
     if (result.status !== "ok") {
-      if (result.status === "locked") {
-        res.status(429).json({ error: "Too many incorrect attempts. Please request a new code." });
-        return;
-      }
       passwordResetFailure(res);
       return;
     }
@@ -780,7 +750,7 @@ router.post("/auth/reset-password", resetPasswordIpLimiter, resetPasswordAccount
 
   await invalidateOtpCodes(normalizedEmail, "reset");
   logPasswordSecurityEvent(student.id, "password_reset");
-  void notifyPasswordSecurityEvent(student.email, "password_reset");
+  void notifyPasswordSecurityEvent(student.email, "password_reset", { ...admissionContext(req), studentId: student.id });
 
   res.json({ ok: true });
 });
@@ -841,7 +811,7 @@ router.post("/auth/change-password", requireStudentAuth, async (req, res): Promi
     .returning({ tokenVersion: studentsTable.tokenVersion });
 
   logPasswordSecurityEvent(student.id, "password_changed");
-  void notifyPasswordSecurityEvent(student.email, "password_changed");
+  void notifyPasswordSecurityEvent(student.email, "password_changed", { ...admissionContext(req), studentId: student.id });
 
   // The device that just changed the password stays logged in: it receives a
   // fresh token carrying the NEW version. Every other outstanding token for

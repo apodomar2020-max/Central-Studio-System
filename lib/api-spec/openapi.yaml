@@ -24,6 +24,95 @@ tags:
   - name: settings
 
 paths:
+  /auth/native/register:
+    post:
+      operationId: nativeRegister
+      tags: [auth]
+      summary: Native registration with authoritative shared admission; no Turnstile
+      description: Existing and newly created accounts receive the same response. Admission precedes bcrypt and account creation, consumes admitted attempts, and fails closed without Redis.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, password]
+              properties:
+                name: { type: string, minLength: 2 }
+                email: { type: string, format: email }
+                password: { type: string, minLength: 8, pattern: '^(?=.*[A-Za-z])(?=.*[0-9]).+$' }
+                phone: { type: string }
+                accountType: { type: string, enum: [student, parent] }
+                dateOfBirth: { type: string }
+      responses:
+        '200':
+          description: Generic accepted registration
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok: { type: boolean, const: true }
+        '400': { description: Invalid registration input }
+        '429': { description: Shared admission limit reached }
+        '503': { description: Admission unavailable; no expensive operation performed }
+  /auth/native/send-email-otp:
+    post:
+      operationId: nativeSendEmailOtp
+      tags: [auth]
+      summary: Send verification OTP to the authenticated account; no Turnstile
+      description: Limited or full student JWT required. Any supplied email or student ID is ignored. DB OTP limits remain mandatory; all actual provider attempts use shared admission without fallback.
+      parameters:
+        - in: header
+          name: Authorization
+          required: true
+          schema: { type: string }
+          description: Bearer student access token (limited or full)
+      responses:
+        '200':
+          description: Verification code sent
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, expiresIn]
+                properties:
+                  ok: { type: boolean, const: true }
+                  expiresIn: { type: integer }
+        '400': { description: Already verified }
+        '401': { description: 'Missing, expired, or invalid student JWT' }
+        '403': { description: Account unavailable }
+        '404': { description: Authenticated account unavailable }
+        '429': { description: OTP request or issuance limit reached }
+        '503': { description: Provider or shared admission unavailable }
+  /auth/native/forgot-password:
+    post:
+      operationId: nativeForgotPassword
+      tags: [auth]
+      summary: Request or resend password recovery OTP; no Turnstile
+      description: Always returns generic success for valid input, including unknown accounts, rate limits, and delivery failures. Queued delivery removes provider latency from the public response. Resend shares the same admission and DB OTP budgets.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+      responses:
+        '200':
+          description: Generic recovery response; does not guarantee delivery
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, message]
+                properties:
+                  ok: { type: boolean, const: true }
+                  message: { type: string }
+        '400': { description: Invalid email input }
   /students/customer-deletion-requests:
     get:
       operationId: listPendingCustomerDeletions

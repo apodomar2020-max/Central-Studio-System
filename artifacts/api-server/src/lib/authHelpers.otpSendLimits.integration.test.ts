@@ -44,6 +44,14 @@ process.env.API_SECRET_KEY ??= "test-otp-send-limits-api-secret-key";
 // Deterministic test-only pepper for HMAC-ing OTPs at rest (Security-06B).
 // Not a real secret — this database and every row in it are disposable.
 process.env.OTP_PEPPER ??= "test-otp-send-limits-pepper-".padEnd(64, "0");
+process.env.TURNSTILE_SECRET_KEY = "test-only-otp-send-limits-secret";
+const originalFetch = globalThis.fetch;
+globalThis.fetch = (async (input, init) => {
+  if (String(input) === "https://challenges.cloudflare.com/turnstile/v0/siteverify") {
+    return Response.json({ success: new URLSearchParams(String(init?.body)).get("response") === "test-valid" });
+  }
+  return originalFetch(input, init);
+}) as typeof fetch;
 
 let pool: typeof import("@workspace/db").pool;
 
@@ -86,6 +94,8 @@ before(async () => {
 });
 
 after(async () => {
+  globalThis.fetch = originalFetch;
+  await (await import("./authRecovery")).closeRecoveryQueue();
   await pool.query(`DELETE FROM email_otps WHERE email LIKE $1`, [`otpsend-%-${runSuffix}@example.test`]);
   if (createdStudentIds.length > 0) {
     await pool.query(`DELETE FROM students WHERE id = ANY($1::int[])`, [createdStudentIds]);
@@ -437,7 +447,7 @@ test("POST /auth/forgot-password stays generic-200 once the shared hourly budget
   const res = await fetch(apiUrl("/auth/forgot-password"), {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${process.env.API_SECRET_KEY}` },
-    body: JSON.stringify({ email: student.email }),
+    body: JSON.stringify({ email: student.email, botToken: "test-valid" }),
   });
   assert.equal(res.status, 200);
   const body = await res.json() as { ok: boolean; message?: string; retryAfter?: number };
@@ -454,7 +464,7 @@ test("POST /auth/send-otp still returns 429 + retryAfter once the shared hourly 
   const res = await fetch(apiUrl("/auth/send-otp"), {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-    body: JSON.stringify({ email: student.email }),
+    body: JSON.stringify({ email: student.email, botToken: "test-valid" }),
   });
   assert.equal(res.status, 429);
   const body = await res.json() as { error: string; retryAfter: number; retryAfterSeconds: number };

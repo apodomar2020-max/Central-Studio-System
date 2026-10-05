@@ -34,6 +34,7 @@ import { resolveCodeCommit } from "./lib/codeCommit";
 import { runPackageCreditExpirationBatch } from "./lib/packageCreditExpiration";
 import { reconcileCustomerDeletions } from "./lib/customerAccountDeletion";
 import { reconcilePushReceipts } from "./lib/pushReceipts";
+import { AUTH_RECOVERY_QUEUE, processRecovery, type RecoveryJob } from "./lib/authRecovery";
 
 const deployedVersion = await resolveCodeCommit();
 
@@ -62,6 +63,7 @@ const whatsappWorker = new Worker<WhatsAppCampaignSendJob>(
 );
 const accountMaintenanceWorker = new Worker(QUEUE_NAMES.accountMaintenance, async () => reconcileCustomerDeletions(), { connection, concurrency: 1 });
 const pushReceiptsWorker = new Worker(QUEUE_NAMES.pushReceipts, async () => reconcilePushReceipts(), { connection, concurrency: 1 });
+const authRecoveryWorker = new Worker<RecoveryJob>(AUTH_RECOVERY_QUEUE, processRecovery, { connection, concurrency: 1, maxStalledCount: 0 });
 
 const reportsWorker = new Worker<ReportJob>(
   QUEUE_NAMES.reports,
@@ -148,7 +150,7 @@ const packageCreditExpirationWorker = new Worker<PackageCreditExpirationJob>(
   { connection, concurrency: queueConcurrency("PACKAGE_CREDIT_EXPIRATION_QUEUE_CONCURRENCY") },
 );
 
-for (const worker of [whatsappWorker, reportsWorker, notificationAutomationWorker, balletCancellationFinalizationWorker, balletAutoAbsenceWorker, packageCreditExpirationWorker, accountMaintenanceWorker, pushReceiptsWorker]) {
+for (const worker of [whatsappWorker, reportsWorker, notificationAutomationWorker, balletCancellationFinalizationWorker, balletAutoAbsenceWorker, packageCreditExpirationWorker, accountMaintenanceWorker, pushReceiptsWorker, authRecoveryWorker]) {
   worker.on("failed", (job, err) => {
     captureError(err, { component: "queue-worker", queue: worker.name, jobId: job?.id });
   });
@@ -290,7 +292,7 @@ logger.info("Queue worker started");
 async function shutdown() {
   logger.info("Queue worker shutting down");
   const connectionQuit = connection ? connection.quit() : Promise.resolve();
-  await Promise.all([whatsappWorker.close(), reportsWorker.close(), notificationAutomationWorker.close(), balletCancellationFinalizationWorker.close(), balletAutoAbsenceWorker.close(), packageCreditExpirationWorker.close(), accountMaintenanceWorker.close(), pushReceiptsWorker.close(), connectionQuit]);
+  await Promise.all([whatsappWorker.close(), reportsWorker.close(), notificationAutomationWorker.close(), balletCancellationFinalizationWorker.close(), balletAutoAbsenceWorker.close(), packageCreditExpirationWorker.close(), accountMaintenanceWorker.close(), pushReceiptsWorker.close(), authRecoveryWorker.close(), connectionQuit]);
   process.exit(0);
 }
 

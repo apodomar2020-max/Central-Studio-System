@@ -290,7 +290,7 @@ test("18. OTP_PEPPER is required in production (fail-closed at module load)", as
   try {
     output = execFileSync(tsxBin, [script], {
       encoding: "utf8",
-      env: { ...process.env, NODE_ENV: "production", OTP_PEPPER: "", STUDENT_JWT_SECRET: "x", DATABASE_URL },
+      env: { ...process.env, NODE_ENV: "production", OTP_PEPPER: "", STUDENT_JWT_SECRET: "x", AUTH_ABUSE_PEPPER: "test-only-admission-pepper", DATABASE_URL },
     });
   } catch (err) {
     const e = err as { stdout?: string };

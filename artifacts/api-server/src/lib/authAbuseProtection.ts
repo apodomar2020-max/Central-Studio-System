@@ -79,7 +79,7 @@ export function accountFingerprint(normalizedIdentifier: string): string {
 
 let client: IORedis | null | undefined; // undefined = not yet attempted
 
-function getClient(): IORedis | null {
+export function getAdmissionRedis(): IORedis | null {
   if (client !== undefined) return client;
   const url = process.env["REDIS_URL"]?.trim();
   if (!url) {
@@ -98,6 +98,8 @@ function getClient(): IORedis | null {
   });
   return client;
 }
+
+const getClient = getAdmissionRedis;
 
 /** Test-only: force a fresh connection attempt on next getClient() call. */
 export function __resetClientForTests(): void {

@@ -24,6 +24,7 @@ import { logger } from "../lib/logger";
 import { requireStudentAuth } from "../middlewares/studentAuth";
 import { idRateLimiter, resetIdLimiter } from "../middlewares/authRateLimit";
 import { requireBotToken } from "../middlewares/botProtection";
+import { admissionContext } from "../lib/nativeAuthAdmission";
 import {
   invalidateOtpCodes,
   issueOtp,
@@ -121,7 +122,7 @@ async function handleSendOtp(req: import("express").Request, res: import("expres
   }
 
   try {
-    const { expiresIn } = await issueOtp(email, { studentId: student.id, purpose: "verify" });
+    const { expiresIn } = await issueOtp(email, { ...admissionContext(req), studentId: student.id, purpose: "verify" });
     res.json({ ok: true, expiresIn });
   } catch (err) {
     if (err instanceof OtpRateLimitError) {
@@ -173,12 +174,7 @@ router.post("/auth/verify-otp", requireStudentAuth, otpVerifyLimiter, async (req
 // ─── Legacy studentId-keyed endpoints (backward compatibility) ───────────────
 const SendEmailOtpBody = z.object({ studentId: z.coerce.number().int().positive() });
 
-router.post("/auth/send-email-otp", requireStudentAuth, requireBotToken("otp_send"), otpSendLimiter, async (req, res): Promise<void> => {
-  const parsed = SendEmailOtpBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
-    return;
-  }
+async function handleSendEmailOtp(req: import("express").Request, res: import("express").Response): Promise<void> {
   const studentId = req.studentId!;
   if (respondMissingEmailProvider(res)) return;
 
@@ -197,7 +193,7 @@ router.post("/auth/send-email-otp", requireStudentAuth, requireBotToken("otp_sen
   }
 
   try {
-    const { expiresIn } = await issueOtp(student.email, { studentId: student.id, purpose: "verify" });
+    const { expiresIn } = await issueOtp(student.email, { ...admissionContext(req), studentId: student.id, purpose: "verify" });
     res.json({ ok: true, expiresIn });
   } catch (err) {
     if (err instanceof OtpRateLimitError) {
@@ -208,7 +204,16 @@ router.post("/auth/send-email-otp", requireStudentAuth, requireBotToken("otp_sen
     if (respondEmailDeliveryFailure(res, err, { studentId: student.id })) return;
     throw err;
   }
+}
+router.post("/auth/send-email-otp", requireStudentAuth, requireBotToken("otp_send"), otpSendLimiter, async (req, res): Promise<void> => {
+  const parsed = SendEmailOtpBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+    return;
+  }
+  await handleSendEmailOtp(req, res);
 });
+router.post("/auth/native/send-email-otp", requireStudentAuth, otpSendLimiter, handleSendEmailOtp);
 
 const VerifyEmailOtpBody = z.object({
   studentId: z.coerce.number().int().positive(),
