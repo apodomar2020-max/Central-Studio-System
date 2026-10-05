@@ -4260,6 +4260,46 @@ export interface EditorialRevision {
   createdByAdminId: number | null;
 }
 
+export type NativeRegisterBodyAccountType =
+  (typeof NativeRegisterBodyAccountType)[keyof typeof NativeRegisterBodyAccountType];
+
+export const NativeRegisterBodyAccountType = {
+  student: "student",
+  parent: "parent",
+} as const;
+
+export type NativeRegisterBody = {
+  /** @minLength 2 */
+  name: string;
+  email: string;
+  /**
+   * @minLength 8
+   * @pattern ^(?=.*[A-Za-z])(?=.*[0-9]).+$
+   */
+  password: string;
+  phone?: string;
+  accountType?: NativeRegisterBodyAccountType;
+  dateOfBirth?: string;
+};
+
+export type NativeRegister200 = {
+  ok: true;
+};
+
+export type NativeSendEmailOtp200 = {
+  ok: true;
+  expiresIn: number;
+};
+
+export type NativeForgotPasswordBody = {
+  email: string;
+};
+
+export type NativeForgotPassword200 = {
+  ok: true;
+  message: string;
+};
+
 export type ListPendingCustomerDeletions200RequestsItem = {
   [key: string]: unknown;
 };

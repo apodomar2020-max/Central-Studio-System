@@ -13,6 +13,7 @@ import { db, emailOtpsTable, studentsTable } from "@workspace/db";
 import { STUDENT_JWT_SECRET, type StudentTokenPayload } from "../middlewares/auth";
 import { logger } from "./logger";
 import { computeOtpDigest, verifyOtpDigest } from "./otpDigest";
+import { AUTH_ADMISSION_CONFIG, AuthAdmissionError, reserveEmailAttempt, type AdmissionContext } from "./nativeAuthAdmission";
 
 // ─── JWT ──────────────────────────────────────────────────────────────────────
 
@@ -215,7 +216,7 @@ function securityEmailContent(event: "password_reset" | "password_changed"): Omi
   };
 }
 
-async function sendEmail(payload: EmailPayload): Promise<void> {
+async function sendEmail(payload: EmailPayload, verification = false, context: AdmissionContext = {}): Promise<void> {
   const config = getEmailConfig();
   if (!config) {
     if (process.env["NODE_ENV"] !== "production") {
@@ -225,7 +226,15 @@ async function sendEmail(payload: EmailPayload): Promise<void> {
     throw new EmailProviderConfigurationError("Email provider not configured. Set BREVO_API_KEY and EMAIL_FROM.");
   }
 
+  try {
+    await reserveEmailAttempt(payload.to, verification, context);
+  } catch (error) {
+    if (error instanceof AuthAdmissionError) throw new EmailDeliveryError("Email delivery is temporarily unavailable.");
+    throw error;
+  }
+  // Reserve once before the only provider call; never refund or retry.
   const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+    signal: AbortSignal.timeout(AUTH_ADMISSION_CONFIG.providerTimeoutMs),
     method: "POST",
     headers: {
       "api-key": config.apiKey,
@@ -240,7 +249,7 @@ async function sendEmail(payload: EmailPayload): Promise<void> {
       htmlContent: payload.html,
       ...(config.replyTo ? { replyTo: { email: config.replyTo } } : {}),
     }),
-  });
+  }).catch(() => { throw new EmailDeliveryError("Email provider request failed or timed out."); });
 
   if (!response.ok) {
     // Do not log the response body: Brevo error payloads can echo request
@@ -276,17 +285,18 @@ export function __setOtpEmailTestListener(fn: typeof otpEmailTestListener): void
   otpEmailTestListener = fn;
 }
 
-export async function sendOtpEmail(to: string, code: string, purpose: OtpPurpose): Promise<void> {
+export async function sendOtpEmail(to: string, code: string, purpose: OtpPurpose, context: AdmissionContext = {}): Promise<void> {
   otpEmailTestListener?.(to, code, purpose);
-  await sendEmail({ to, ...otpEmailContent(code, purpose) });
+  await sendEmail({ to, ...otpEmailContent(code, purpose) }, purpose === "verify", context);
   logger.info({ purpose }, "OTP email sent");
 }
 
 export async function sendSecurityNotificationEmail(
   to: string,
   event: "password_reset" | "password_changed",
+  context: AdmissionContext = {},
 ): Promise<void> {
-  await sendEmail({ to, ...securityEmailContent(event) });
+  await sendEmail({ to, ...securityEmailContent(event) }, false, context);
   logger.info({ event }, "Password security notification email sent");
 }
 
@@ -344,7 +354,7 @@ export async function invalidateOtpCodes(email: string, purpose: OtpPurpose): Pr
  */
 export async function issueOtp(
   email: string,
-  opts: { studentId?: number | null; purpose?: OtpPurpose } = {},
+  opts: AdmissionContext & { purpose?: OtpPurpose } = {},
 ): Promise<{ expiresIn: number }> {
   const normalizedEmail = email.toLowerCase().trim();
   const purpose: OtpPurpose = opts.purpose ?? "verify";
@@ -445,7 +455,7 @@ export async function issueOtp(
   });
 
   try {
-    await sendOtpEmail(normalizedEmail, code, purpose);
+    await sendOtpEmail(normalizedEmail, code, purpose, opts);
   } catch (error) {
     // Failed deliveries should not consume the rolling issuance allowance.
     // Delete only the row created by this call; older invalidated rows remain

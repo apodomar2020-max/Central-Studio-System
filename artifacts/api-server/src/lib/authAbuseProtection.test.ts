@@ -41,6 +41,22 @@ after(async () => {
 // Key builders — deterministic, namespaced, no raw PII
 // ═══════════════════════════════════════════════════════════════════════
 
+test("connection lifetime retries remain capped but never become terminal; request bounds are retained", async () => {
+  const client = lib.getAdmissionRedis()!;
+  assert.equal(client.options.maxRetriesPerRequest, 1);
+  assert.equal(client.options.commandTimeout, 750);
+  assert.equal(client.options.connectTimeout, 2000);
+  const retry = client.options.retryStrategy!;
+  for (const attempt of [1, 2, 3, 4, 5, 100, 1_000_000]) {
+    assert.equal(retry(attempt), Math.min(attempt * 200, 1000));
+  }
+  const events = ["error", "close", "reconnecting", "end", "ready"];
+  const listeners = events.map((event) => client.listenerCount(event));
+  for (let i = 0; i < 20; i++) assert.equal(lib.getAdmissionRedis(), client);
+  assert.deepEqual(events.map((event) => client.listenerCount(event)), listeners);
+  assert.equal(await lib.isRedisHealthy(), true);
+});
+
 test("15: normalized-email variants (case/whitespace) produce the same account key — once normalized by the caller", () => {
   // accountLimitKey/accountFingerprint operate on whatever identifier
   // string they are given — normalization is the CALLER's responsibility

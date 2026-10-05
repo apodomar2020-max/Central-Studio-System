@@ -8,6 +8,7 @@
  * Same real-Postgres / real-in-process-app harness as its sibling.
  */
 import assert from "node:assert/strict";
+import { useAuthAdmissionFixture } from "../lib/authAdmissionTestFixture";
 import { after, before, test } from "node:test";
 
 const DATABASE_URL = process.env.DISPOSABLE_SECURITY04B_MATRIX_DATABASE_URL
@@ -31,7 +32,7 @@ process.env.DATABASE_URL = DATABASE_URL;
 process.env.API_SECRET_KEY = "legacy-fake-placeholder-not-a-real-key-1111111111111111111111111111";
 process.env.STUDENT_JWT_SECRET = "test-student-secret-matrix";
 process.env.ADMIN_JWT_SECRET = "test-admin-secret-matrix";
-delete process.env.REDIS_URL;
+useAuthAdmissionFixture();
 delete process.env.BREVO_API_KEY;
 process.env.IDENTITY_PROVENANCE_PEPPER = "test-regression-identity-provenance-pepper".padEnd(64, "0");
 

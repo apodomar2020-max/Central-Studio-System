@@ -21,6 +21,7 @@
  * Harness mirrors auth.sessionRevocation.integration.test.ts.
  */
 import assert from "node:assert/strict";
+import { useAuthAdmissionFixture } from "../lib/authAdmissionTestFixture";
 import { after, before, test } from "node:test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -51,7 +52,7 @@ process.env.DATABASE_URL = DATABASE_URL;
 process.env.API_SECRET_KEY = "legacy-fake-placeholder-not-a-real-key-0000000000000000000000000000";
 process.env.STUDENT_JWT_SECRET = "test-student-secret-s04b";
 process.env.ADMIN_JWT_SECRET = "test-admin-secret-s04b";
-delete process.env.REDIS_URL;
+useAuthAdmissionFixture();
 delete process.env.BREVO_API_KEY;
 process.env.IDENTITY_PROVENANCE_PEPPER = "test-regression-identity-provenance-pepper".padEnd(64, "0");
 

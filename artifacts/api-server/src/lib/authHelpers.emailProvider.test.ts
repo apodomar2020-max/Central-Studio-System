@@ -1,5 +1,21 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { before, beforeEach, after } from "node:test";
+import IORedis from "ioredis";
+
+const redisUrl = process.env.DISPOSABLE_EMAIL_PROVIDER_REDIS_URL ?? "redis://127.0.0.1:16386/13";
+const redisLocation = new URL(redisUrl);
+if (!["127.0.0.1", "localhost"].includes(redisLocation.hostname) || redisLocation.pathname !== "/13") throw new Error("Disposable local Redis DB 13 required");
+let redis: IORedis;
+before(() => { redis = new IORedis(redisUrl); });
+beforeEach(async () => {
+  process.env.REDIS_URL = redisUrl;
+  await redis.flushdb();
+  (await import("./authAbuseProtection")).__resetClientForTests();
+});
+after(async () => {
+  (await import("./authAbuseProtection")).__resetClientForTests();
+  await redis.quit();
+});
 
 /**
  * Focused regression coverage for the Resend → Brevo transactional-email
