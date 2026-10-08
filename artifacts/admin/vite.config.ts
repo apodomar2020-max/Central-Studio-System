@@ -50,7 +50,9 @@ export default defineConfig({
       "@": path.resolve(import.meta.dirname, "src"),
       "@assets": path.resolve(import.meta.dirname, "..", "..", "attached_assets"),
     },
-    dedupe: ["react", "react-dom"],
+    // Workspace packages can resolve different peer-dependency copies. Keep
+    // generated API hooks on the same QueryClient context as the Admin shell.
+    dedupe: ["react", "react-dom", "@tanstack/react-query"],
   },
   root: path.resolve(import.meta.dirname),
   build: {
