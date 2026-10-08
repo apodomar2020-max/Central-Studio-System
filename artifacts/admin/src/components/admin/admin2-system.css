@@ -183,6 +183,20 @@
 [data-admin2-overlay] [data-admin2-dialog-footer] { gap: 10px; padding-top: 4px; }
 [data-admin2-overlay] > button[aria-label],
 [data-admin2-overlay] > button:has(.sr-only) { width: 38px; height: 38px; border-radius: 12px; }
+/* Overlay close controls stay centered and stationary in every interaction state. */
+[data-admin2-overlay] > [data-admin2-overlay-close],
+[data-admin2-overlay] > [data-admin2-overlay-close]:hover:not(:disabled),
+[data-admin2-overlay] > [data-admin2-overlay-close]:active:not(:disabled) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transform: none;
+}
+[data-admin2-overlay] > [data-admin2-overlay-close] > svg {
+  flex-shrink: 0;
+  margin: 0;
+}
 [data-admin2-popover] {
   border-color: var(--admin2-border-strong) !important;
   border-radius: var(--admin2-radius-control) !important;

@@ -5,7 +5,6 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
   useListBookings,
-  useCreateBooking,
   useUpdateBooking,
   useListClasses,
   getListBookingsQueryKey,
@@ -43,7 +42,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { CalendarDays, Check, Clock3, CreditCard, Edit, MoreHorizontal, Plus, Search, UserRound, X } from "lucide-react";
+import { CalendarDays, Check, Clock3, CreditCard, Edit, MoreHorizontal, Search, UserRound, X } from "lucide-react";
 import { Link } from "wouter";
 import "./admin2-operations.css";
 
@@ -284,7 +283,6 @@ const paymentStatusPillClass = (status: string) => {
 
 export default function Bookings() {
   const { can, token } = useAdminAuth();
-  const canCreate = can("bookings", "create");
   const canEdit = can("bookings", "edit");
   const canCancel = can("bookings", "cancel");
   // Wave 3.1 — mirrors package-orders.tsx's canManageRefunds gate exactly
@@ -357,7 +355,6 @@ export default function Bookings() {
   const pageSize = bookingsResponse?.pageSize ?? PAGE_SIZE;
   const startItem = total === 0 ? 0 : (currentPage - 1) * pageSize + 1;
   const endItem = total === 0 ? 0 : Math.min(currentPage * pageSize, total);
-  const createBooking = useCreateBooking();
   const updateBooking = useUpdateBooking();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
@@ -411,12 +408,6 @@ export default function Bookings() {
     defaultValues: { studentName: "", studentEmail: "", bookingStatus: "pending", paymentStatus: "pending_payment" },
   });
 
-  const openCreate = () => {
-    setEditing(null);
-    form.reset({ studentName: "", studentEmail: "", bookingStatus: "pending", paymentStatus: "pending_payment" });
-    setOpen(true);
-  };
-
   const openEdit = (b: Booking) => {
     setEditing(b);
     form.reset({
@@ -434,13 +425,10 @@ export default function Bookings() {
   };
 
   const onSubmit = (values: FormValues) => {
+    if (!editing || !canEdit) return;
     const parsed = formSchema.parse(values);
     const invalidate = () => { queryClient.invalidateQueries({ queryKey: getListBookingsQueryKey() }); setOpen(false); };
-    if (editing) {
-      updateBooking.mutate({ id: editing.id, data: parsed }, { onSuccess: invalidate });
-    } else {
-      createBooking.mutate({ data: parsed }, { onSuccess: invalidate });
-    }
+    updateBooking.mutate({ id: editing.id, data: parsed }, { onSuccess: invalidate });
   };
 
   const invalidateBookings = () => {
@@ -537,7 +525,6 @@ export default function Bookings() {
           </div>
         </div>
         {studentEmailFilter && <div className="admin2-bookings-deep-filter"><Badge variant="secondary">{studentEmailFilter}</Badge><Button type="button" variant="ghost" size="compact" onClick={() => setStudentEmailFilter(null)}>Clear</Button></div>}
-        {canCreate && <Button type="button" onClick={openCreate} data-testid="button-add-booking" className="admin2-bookings-add"><Plus />Add Booking</Button>}
       </div>
 
       <div className="admin2-queue-surface">
@@ -837,7 +824,7 @@ export default function Bookings() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="admin2-ops-dialog max-w-xl">
           <DialogHeader>
-            <DialogTitle>{editing ? "Edit Booking" : "New Booking"}</DialogTitle>
+            <DialogTitle>Edit Booking</DialogTitle>
           </DialogHeader>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
@@ -918,8 +905,8 @@ export default function Bookings() {
               )} />
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-                <Button type="submit" data-testid="button-submit-booking" disabled={createBooking.isPending || updateBooking.isPending}>
-                  {editing ? "Save Changes" : "Create Booking"}
+                <Button type="submit" data-testid="button-submit-booking" disabled={!editing || !canEdit || updateBooking.isPending}>
+                  Save Changes
                 </Button>
               </DialogFooter>
             </form>
