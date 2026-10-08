@@ -3,16 +3,37 @@
  * AdminAuthContext; this file only controls the responsive presentation.
  */
 import { useState } from "react";
-import { Loader2 } from "lucide-react";
+import {
+  ArrowRight,
+  BarChart3,
+  CalendarDays,
+  Eye,
+  EyeOff,
+  Loader2,
+  LockKeyhole,
+  Moon,
+  ShieldCheck,
+  Sun,
+  UserRound,
+  UserRoundCheck,
+  UsersRound,
+} from "lucide-react";
 
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
+import { useAdminTheme } from "@/contexts/AdminThemeContext";
 import "./login.css";
 
-const LOGIN_BACKGROUND_VIDEO =
-  "https://res.cloudinary.com/wwwgoc5d/video/upload/v1784993871/Logo_animation_theater_light_glow_202607251827_gwr_video_mvp_sbp8pd.mp4";
+const featureItems = [
+  { label: "Classes", icon: CalendarDays },
+  { label: "Students", icon: UsersRound },
+  { label: "Instructors", icon: UserRoundCheck },
+  { label: "Reports", icon: BarChart3 },
+] as const;
 
 export default function LoginPage() {
   const { login } = useAdminAuth();
+  const { theme, toggleTheme } = useAdminTheme();
+  const isDark = theme === "dark";
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -36,45 +57,90 @@ export default function LoginPage() {
   const canSubmit = Boolean(username.trim() && password && !loading);
 
   return (
-    <main className="admin-login-page">
-      <video className="admin-login-video" aria-hidden="true" autoPlay muted loop playsInline preload="auto">
-        <source src={LOGIN_BACKGROUND_VIDEO} type="video/mp4" />
-      </video>
-      <div className="admin-login-video-shade" aria-hidden="true" />
+    <main className="admin-login-page" data-login-theme={isDark ? "dark" : "light"}>
+      <section className="admin-login-intro" aria-label="Central Studio administration">
+        <img
+          className="admin-login-brand"
+          src="/logo-central-white.png"
+          alt="Central Studio — Dance, Learn, Create"
+          draggable={false}
+        />
+        <div className="admin-login-accent" aria-hidden="true" />
+        <h1 className="admin-login-statement">
+          <span>Studio</span>
+          <span>Management</span>
+          <span className="admin-login-statement-accent">Made Simple.</span>
+        </h1>
+        <p className="admin-login-supporting-copy">
+          Classes, schedules, students, instructors and more — all in one place.
+        </p>
+
+        <ul className="admin-login-features" aria-label="Administration areas">
+          {featureItems.map(({ label, icon: Icon }) => (
+            <li key={label}>
+              <span aria-hidden="true"><Icon /></span>
+              <small>{label}</small>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <figure className="admin-login-photo" aria-hidden="true">
+        <img src="/central-studio-group.jpg" alt="" draggable={false} />
+        <span />
+      </figure>
 
       <section className="admin-login-card" aria-labelledby="admin-login-title">
+        <button
+          type="button"
+          className="admin-login-theme-toggle"
+          onClick={toggleTheme}
+          aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+          title={isDark ? "Switch to light mode" : "Switch to dark mode"}
+        >
+          {isDark ? <Sun aria-hidden="true" /> : <Moon aria-hidden="true" />}
+          <span>{isDark ? "Light" : "Dark"}</span>
+        </button>
         <div className="admin-login-content">
-          <img className="admin-login-logo" src="/logo.png" alt="Central Studio" draggable={false} />
-          <h1 id="admin-login-title">Sign In</h1>
-          <p className="admin-login-description">Enter Your Credentials To Continue.</p>
+          <img
+            className="admin-login-card-logo"
+            src={isDark ? "/logo-central-white.png" : "/logo-central-studio.png"}
+            alt="Central Studio — Dance, Learn, Create"
+            draggable={false}
+          />
+          <h2 id="admin-login-title">Welcome Back</h2>
+          <p className="admin-login-description">Sign in to your Central Studio admin account</p>
 
           <form className="admin-login-form" onSubmit={handleSubmit} noValidate>
-            <label className="admin-login-field" htmlFor="username">
-              <span className="sr-only">Username</span>
-              <img className="admin-login-field-icon admin-login-user-icon" src="/login-icons/user.svg" alt="" aria-hidden="true" />
+            <div className="admin-login-form-control">
+              <label htmlFor="username">Username</label>
+              <div className="admin-login-field">
+              <UserRound className="admin-login-field-icon" aria-hidden="true" />
               <input
                 id="username"
                 type="text"
                 value={username}
                 onChange={(event) => setUsername(event.target.value)}
                 disabled={loading}
-                placeholder="Username"
+                placeholder="Enter your username"
                 autoComplete="username"
                 autoFocus
                 aria-label="Username"
               />
-            </label>
+              </div>
+            </div>
 
-            <label className="admin-login-field" htmlFor="password">
-              <span className="sr-only">Password</span>
-              <img className="admin-login-field-icon admin-login-lock-icon" src="/login-icons/lock.svg" alt="" aria-hidden="true" />
+            <div className="admin-login-form-control">
+              <label htmlFor="password">Password</label>
+              <div className="admin-login-field">
+              <LockKeyhole className="admin-login-field-icon" aria-hidden="true" />
               <input
                 id="password"
                 type={showPassword ? "text" : "password"}
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 disabled={loading}
-                placeholder="Password"
+                placeholder="Enter your password"
                 autoComplete="current-password"
                 aria-label="Password"
                 aria-describedby={error ? "admin-login-error" : undefined}
@@ -87,9 +153,10 @@ export default function LoginPage() {
                 aria-label={showPassword ? "Hide password" : "Show password"}
                 aria-pressed={showPassword}
               >
-                <img src={showPassword ? "/login-icons/see.svg" : "/login-icons/unseen.svg"} alt="" aria-hidden="true" />
+                {showPassword ? <EyeOff aria-hidden="true" /> : <Eye aria-hidden="true" />}
               </button>
-            </label>
+              </div>
+            </div>
 
             <div className="admin-login-feedback" aria-live="polite">
               {error ? <p id="admin-login-error" role="alert">{error}</p> : null}
@@ -101,15 +168,16 @@ export default function LoginPage() {
               disabled={!canSubmit}
               aria-busy={loading}
             >
-              {loading ? <span><Loader2 aria-hidden="true" /> Signing In…</span> : "Sign In"}
+              <span className="admin-login-submit-copy">
+                {loading ? <><Loader2 aria-hidden="true" /> Signing In…</> : "Sign In"}
+              </span>
+              <ArrowRight className="admin-login-submit-arrow" aria-hidden="true" />
             </button>
+            <p className="admin-login-security-note">
+              <ShieldCheck aria-hidden="true" /> Authorized staff only. Keep your credentials private.
+            </p>
           </form>
         </div>
-
-        <footer className="admin-login-footer" aria-label="Security notice">
-          <img src="/login-icons/accessibility.svg" alt="" aria-hidden="true" />
-          <span>Secure Admin Access - Authorized Personnel Only</span>
-        </footer>
       </section>
     </main>
   );

@@ -5,34 +5,39 @@ import test from "node:test";
 const page = readFileSync(new URL("./login.tsx", import.meta.url), "utf8");
 const styles = readFileSync(new URL("./login.css", import.meta.url), "utf8");
 
-test("login uses the supplied looping video and all supplied icons", () => {
-  assert.match(page, /Logo_animation_theater_light_glow_202607251827_gwr_video_mvp_sbp8pd\.mp4/);
-  assert.match(page, /autoPlay muted loop playsInline/);
-  for (const icon of ["user", "lock", "see", "unseen", "accessibility"]) {
-    assert.match(page, new RegExp(`/login-icons/${icon}\\.svg`));
+test("login uses the Central Studio brand, supplied group photo, and operational feature list", () => {
+  assert.match(page, /"\/logo-central-studio\.png"/);
+  assert.match(page, /src="\/central-studio-group\.jpg"/);
+  assert.match(page, /Studio[\s\S]*Management[\s\S]*Made Simple\./);
+  for (const label of ["Classes", "Students", "Instructors", "Reports"]) {
+    assert.match(page, new RegExp(`label: "${label}"`));
   }
+  assert.doesNotMatch(page, /<video|cloudinary\.com/);
 });
 
-test("password visibility swaps the supplied unseen and see assets", () => {
+test("password visibility remains an accessible button backed by Lucide icons", () => {
   assert.match(page, /type=\{showPassword \? "text" : "password"\}/);
-  assert.match(page, /showPassword \? "\/login-icons\/see\.svg" : "\/login-icons\/unseen\.svg"/);
+  assert.match(page, /aria-label=\{showPassword \? "Hide password" : "Show password"\}/);
+  assert.match(page, /showPassword \? <EyeOff[^>]*> : <Eye[^>]*>/);
 });
 
-test("the page remains fixed to the viewport while the card adapts at narrow and short sizes", () => {
-  assert.match(styles, /\.admin-login-page[\s\S]{0,180}height: 100vh;[\s\S]{0,60}height: 100dvh;[\s\S]{0,60}overflow: hidden/);
-  assert.match(styles, /width: min\(42\.36vw, 732px\)/);
-  assert.match(styles, /@media \(max-width: 1050px\)/);
-  assert.match(styles, /@media \(max-height: 1050px\)/);
-  assert.match(styles, /@media \(max-height: 860px\)/);
-  assert.match(styles, /@media \(max-width: 640px\)/);
-  assert.match(styles, /@media \(max-height: 680px\)/);
+test("login shares the persisted Admin theme and keeps a full-page photograph on mobile", () => {
+  assert.match(page, /useAdminTheme/);
+  assert.match(page, /onClick=\{toggleTheme\}/);
+  assert.match(styles, /min-height: 100dvh/);
+  assert.match(styles, /\.admin-login-photo \{[^}]*inset: 0/);
+  assert.match(styles, /data-login-theme="light"/);
+  assert.match(styles, /@media \(max-width: 480px\)/);
+  assert.doesNotMatch(styles, /\.admin-login-photo[^}]*display: none/);
 });
 
-test("the submit action and security notice participate in card flow instead of overlapping", () => {
-  assert.match(styles, /\.admin-login-card[\s\S]{0,160}display: flex;[\s\S]{0,60}flex-direction: column;[\s\S]{0,60}justify-content: center/);
-  assert.match(styles, /\.admin-login-footer[\s\S]{0,300}border-top: 1px solid rgba\(255, 255, 255, 0\.12\)/);
-  assert.doesNotMatch(styles, /\.admin-login-footer\s*\{[^}]*position:\s*absolute/);
-  assert.doesNotMatch(styles, /\.admin-login-submit\s*\{[^}]*position:\s*absolute/);
+test("the card exposes visible focus, disabled, loading, and error treatments", () => {
+  assert.match(styles, /\.admin-login-field:focus-within/);
+  assert.match(styles, /\.admin-login-password-toggle:focus-visible/);
+  assert.match(styles, /\.admin-login-submit:focus-visible/);
+  assert.match(styles, /\.admin-login-submit:disabled/);
+  assert.match(styles, /\.admin-login-submit\[aria-busy="true"\]/);
+  assert.match(styles, /\.admin-login-feedback[^}]*color: var\(--login-error\)/);
 });
 
 test("sign-in logic still submits through AdminAuthContext", () => {
@@ -41,5 +46,9 @@ test("sign-in logic still submits through AdminAuthContext", () => {
   assert.match(page, /type="submit"/);
   assert.match(page, /className="admin-login-submit"/);
   assert.match(page, /disabled=\{!canSubmit\}/);
+  assert.match(page, /aria-busy=\{loading\}/);
+  assert.match(page, /autoComplete="username"/);
+  assert.match(page, /autoComplete="current-password"/);
+  assert.match(page, /role="alert"/);
   assert.doesNotMatch(page, /admin-login-submit\$\{username/);
 });
