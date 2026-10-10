@@ -28,6 +28,8 @@ export const packageOrdersTable = pgTable("package_orders", {
   packageMaxAgeSnapshot: smallint("package_max_age_snapshot"),
   purchaseEligibilityConfigurationState: text("purchase_eligibility_configuration_state"),
   allowedDanceTypeIdsSnapshot: integer("allowed_dance_type_ids_snapshot").array(),
+  // NULL means legacy provenance is unknown; never backfill from today's catalogue.
+  danceTypeRestrictionStateSnapshot: text("dance_type_restriction_state_snapshot"),
   packageId: integer("package_id"),
   packageName: text("package_name").notNull(),
   totalCredits: integer("total_credits").notNull(),
@@ -69,6 +71,19 @@ export const packageOrdersTable = pgTable("package_orders", {
   check("package_orders_price_snapshot_basis_check", sql`
     ${table.priceSnapshotBasis} is null
     or ${table.priceSnapshotBasis} in ('recorded_purchase_price', 'estimated_catalog_price', 'unknown')
+  `),
+  check("package_orders_dance_restriction_snapshot_check", sql`
+    ${table.danceTypeRestrictionStateSnapshot} is null
+    or (
+      ${table.danceTypeRestrictionStateSnapshot} = 'restricted'
+      and ${table.allowedDanceTypeIdsSnapshot} is not null
+      and cardinality(${table.allowedDanceTypeIdsSnapshot}) > 0
+    )
+    or (
+      ${table.danceTypeRestrictionStateSnapshot} = 'unrestricted'
+      and ${table.allowedDanceTypeIdsSnapshot} is not null
+      and cardinality(${table.allowedDanceTypeIdsSnapshot}) = 0
+    )
   `),
   index("package_orders_owner_participant_status_idx")
     .on(table.studentId, table.participantType, table.participantChildId, table.status),

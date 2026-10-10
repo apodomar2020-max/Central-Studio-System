@@ -39,7 +39,7 @@ before(async () => {
   ({ expirePackageOrderCredits } = await import("./packageCreditExpiration"));
   const run = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const student = await pool.query(
-    `INSERT INTO students (name, email, phone, account_type) VALUES ('Refund Student', $1, '0100000000', 'student') RETURNING id`,
+    `INSERT INTO students (name, email, phone, account_type) VALUES ('Refund Student', $1, NULL, 'student') RETURNING id`,
     [`refund-${run}@example.com`],
   );
   studentId = student.rows[0].id as number;

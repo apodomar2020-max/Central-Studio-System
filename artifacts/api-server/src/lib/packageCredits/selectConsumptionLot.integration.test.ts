@@ -27,7 +27,7 @@ before(async () => {
   ({ allocateAttendanceConsumption, nextCreditValueMinor } = await import("./selectConsumptionLot"));
 
   const student = await pool.query(
-    `INSERT INTO students (name, email, phone, account_type) VALUES ('Allocation Student', $1, '0100000000', 'student') RETURNING id`,
+    `INSERT INTO students (name, email, phone, account_type) VALUES ('Allocation Student', $1, NULL, 'student') RETURNING id`,
     [`allocation-${Date.now()}@example.com`],
   );
   studentId = student.rows[0].id as number;
@@ -44,8 +44,9 @@ after(async () => { await pool.end(); });
 async function makeOrder(label: string, credits: number): Promise<number> {
   const result = await pool.query(
     `INSERT INTO package_orders
-       (student_name, student_email, student_id, package_name, total_credits, remaining_credits, status, participant_type)
-     VALUES ('Allocation Student', $1, $2, $3, $4, $4, 'active', 'self') RETURNING id`,
+       (student_name, student_email, student_id, package_name, total_credits, remaining_credits, status, participant_type,
+        allowed_dance_type_ids_snapshot, dance_type_restriction_state_snapshot)
+     VALUES ('Allocation Student', $1, $2, $3, $4, $4, 'active', 'self', ARRAY[]::integer[], 'unrestricted') RETURNING id`,
     [`allocation-${label}-${Date.now()}@example.com`, studentId, label, credits],
   );
   return result.rows[0].id as number;

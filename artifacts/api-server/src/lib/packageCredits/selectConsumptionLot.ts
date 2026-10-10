@@ -1,12 +1,15 @@
 import { and, asc, eq, gt, sql } from "drizzle-orm";
 import {
   attendanceTable,
+  classesTable,
   creditTransactionsTable,
   db,
   packageCreditAllocationsTable,
   packageCreditLotsTable,
+  packageOrdersTable,
   schedulesTable,
 } from "@workspace/db";
+import { evaluatePackageRestrictionSnapshot } from "../bookings/packageRestrictionSnapshot";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -79,7 +82,7 @@ export async function allocateAttendanceConsumption(
   }
 
   const [attendance] = await tx
-    .select({ scheduleId: attendanceTable.scheduleId })
+    .select({ scheduleId: attendanceTable.scheduleId, classId: attendanceTable.classId })
     .from(attendanceTable)
     .where(eq(attendanceTable.id, params.attendanceId))
     .limit(1);
@@ -88,10 +91,22 @@ export async function allocateAttendanceConsumption(
   const [schedule] = attendance.scheduleId == null
     ? []
     : await tx
-        .select({ branchId: schedulesTable.branchId, roomId: schedulesTable.roomId })
+        .select({ branchId: schedulesTable.branchId, roomId: schedulesTable.roomId, classId: schedulesTable.classId })
         .from(schedulesTable)
         .where(eq(schedulesTable.id, attendance.scheduleId))
         .limit(1);
+
+  // Defence in depth: every NEW consumption allocation must carry verified
+  // historical restrictions, even if a future caller omits the booking guard.
+  // Idempotent reads above and reversal/restoration paths remain unaffected.
+  const [order] = await tx.select().from(packageOrdersTable)
+    .where(eq(packageOrdersTable.id, params.packageOrderId)).for("update").limit(1);
+  const classId = schedule?.classId ?? attendance.classId;
+  const [klass] = classId == null ? [] : await tx.select({ danceTypeId: classesTable.danceTypeId })
+    .from(classesTable).where(eq(classesTable.id, classId)).limit(1);
+  if (!order) throw new ConsumptionAllocationError("The package restriction snapshot is unavailable.");
+  const restriction = evaluatePackageRestrictionSnapshot(order, klass?.danceTypeId ?? null);
+  if (!restriction.ok) throw new ConsumptionAllocationError(restriction.message);
 
   const now = params.now ?? new Date();
   const nowIso = now.toISOString();

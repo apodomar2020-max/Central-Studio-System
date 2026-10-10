@@ -2,10 +2,10 @@ import { and, asc, eq } from "drizzle-orm";
 import {
   creditTransactionsTable,
   packageOrdersTable,
-  pricePackageDanceTypesTable,
 } from "@workspace/db";
 import type { ParticipantType } from "@workspace/api-zod";
 import { getCairoBusinessDate } from "../eligibility/dateOnly";
+import { evaluatePackageRestrictionSnapshot } from "./packageRestrictionSnapshot";
 
 type Transaction = Parameters<Parameters<typeof import("@workspace/db").db.transaction>[0]>[0];
 
@@ -59,28 +59,8 @@ export async function resolveParticipantPackageCredit(
   if (order.expiresAt != null && getCairoBusinessDate(new Date(order.expiresAt)) < input.occurrenceDate) {
     return { ok: false, code: "PACKAGE_EXPIRED", message: "The selected package expires before this class occurrence." };
   }
-  if (order.packageId == null) {
-    return {
-      ok: false,
-      code: "PACKAGE_CREDIT_INTEGRITY_MISMATCH",
-      message: "The selected package credit is temporarily unavailable.",
-    };
-  }
-
-  const danceRows = await tx
-    .select({ danceTypeId: pricePackageDanceTypesTable.danceTypeId })
-    .from(pricePackageDanceTypesTable)
-    .where(eq(pricePackageDanceTypesTable.packageId, order.packageId));
-  if (
-    danceRows.length > 0
-    && (input.danceTypeId == null || !danceRows.some((row) => row.danceTypeId === input.danceTypeId))
-  ) {
-    return {
-      ok: false,
-      code: "PACKAGE_DANCE_TYPE_MISMATCH",
-      message: "The selected package cannot be used for this dance type.",
-    };
-  }
+  const restriction = evaluatePackageRestrictionSnapshot(order, input.danceTypeId);
+  if (!restriction.ok) return restriction;
 
   const [activation] = await tx
     .select({

@@ -38,6 +38,7 @@ import { sendPushNotification } from "./pushNotifications";
 import { logger } from "./logger";
 import { resolveBookingParticipant } from "./participants/resolveBookingParticipant";
 import { resolveParticipantPackageCredit } from "./bookings/resolveParticipantPackageCredit";
+import { evaluatePackageRestrictionSnapshot } from "./bookings/packageRestrictionSnapshot";
 import type { ParticipantType } from "@workspace/api-zod";
 import { calculateAgeOnDate, parseIsoDate } from "./eligibility/dateOnly";
 import { getCairoBusinessDate } from "./eligibility/dateOnly";
@@ -354,14 +355,18 @@ export async function performBookingCheckIn(
   // scheduled end — see lib/occurrence.ts).
   let scheduleStartTime: string | null = null;
   let scheduleEndTime: string | null = null;
+  let eligibilityClassId = booking.classId;
   if (booking.scheduleId != null) {
     const [sched] = await tx
-      .select({ startTime: schedulesTable.startTime, endTime: schedulesTable.endTime })
+      .select({ startTime: schedulesTable.startTime, endTime: schedulesTable.endTime, classId: schedulesTable.classId })
       .from(schedulesTable)
       .where(eq(schedulesTable.id, booking.scheduleId))
       .limit(1);
     scheduleStartTime = sched?.startTime ?? null;
     scheduleEndTime = sched?.endTime ?? null;
+    // A schedule-backed booking must be checked against the actual scheduled
+    // class, never a conflicting legacy/client-supplied class ID.
+    eligibilityClassId = sched?.classId ?? null;
   }
   const windowState = checkInWindowState(
     { startTime: scheduleStartTime, endTime: scheduleEndTime },
@@ -459,19 +464,32 @@ export async function performBookingCheckIn(
       }
       attendanceCreditDeducted = false;
       const [order] = await tx
-        .select({ remainingCredits: packageOrdersTable.remainingCredits })
+        .select()
         .from(packageOrdersTable)
         .where(eq(packageOrdersTable.id, booking.packageOrderId))
+        .for("update")
         .limit(1);
+      if (!order || order.studentId !== student.id
+        || order.participantType !== participant.participantType
+        || order.participantChildId !== participant.participantChildId) {
+        throw makeCheckInError(409, "booking_credit_integrity_mismatch", "The booking package ownership could not be verified.");
+      }
+      const [klass] = eligibilityClassId == null ? [] : await tx
+        .select({ danceTypeId: classesTable.danceTypeId }).from(classesTable)
+        .where(eq(classesTable.id, eligibilityClassId)).limit(1);
+      // Already-paid legacy bookings may have a zero balance. Verify their
+      // restrictions without consuming again or rejecting a valid spent credit.
+      const restriction = evaluatePackageRestrictionSnapshot(order, klass?.danceTypeId ?? null);
+      if (!restriction.ok) throw makeCheckInError(409, restriction.code, restriction.message);
       remainingCreditsAfterCheckIn = order?.remainingCredits ?? null;
     } else {
       // New H5 booking — deduct 1 credit at attendance time
       let danceTypeId: number | null = null;
-      if (booking.classId != null) {
+      if (eligibilityClassId != null) {
         const [cls] = await tx
           .select({ danceTypeId: classesTable.danceTypeId })
           .from(classesTable)
-          .where(eq(classesTable.id, booking.classId))
+          .where(eq(classesTable.id, eligibilityClassId))
           .limit(1);
         danceTypeId = cls?.danceTypeId ?? null;
       }

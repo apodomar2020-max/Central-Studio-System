@@ -2,7 +2,7 @@ import { blockStudentJwt } from "../middlewares/auth";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 import { Router, type IRouter } from "express";
 import { eq, inArray } from "drizzle-orm";
-import { db, danceTypesTable, pricePackageDanceTypesTable, pricePackagesTable } from "@workspace/db";
+import { db, danceTypesTable, packageOrdersTable, pricePackageDanceTypesTable, pricePackagesTable } from "@workspace/db";
 import { diffFields, logActivity } from "../lib/activityLog";
 import {
   CreatePricePackageBody,
@@ -334,7 +334,23 @@ router.delete("/price-packages/:id", blockStudentJwt, requireAdminAuth, requireA
     res.status(400).json({ error: params.error.message });
     return;
   }
-  const [row] = await db.delete(pricePackagesTable).where(eq(pricePackagesTable.id, params.data.id)).returning();
+  // Purchases hold this same parent row until their order is committed. Lock
+  // before checking references so delete cannot race an in-flight purchase.
+  const result = await db.transaction(async (tx) => {
+    const [existing] = await tx.select().from(pricePackagesTable)
+      .where(eq(pricePackagesTable.id, params.data.id)).for("update").limit(1);
+    if (!existing) return { kind: "not_found" as const };
+    const [order] = await tx.select({ id: packageOrdersTable.id }).from(packageOrdersTable)
+      .where(eq(packageOrdersTable.packageId, existing.id)).limit(1);
+    if (order) return { kind: "referenced" as const };
+    const [row] = await tx.delete(pricePackagesTable).where(eq(pricePackagesTable.id, existing.id)).returning();
+    return { kind: "deleted" as const, row };
+  }, { isolationLevel: "read committed" });
+  if (result.kind === "referenced") {
+    res.status(409).json({ error: "This package has historical orders and cannot be deleted. Deactivate it to remove it from future sales.", code: "PACKAGE_HAS_ORDERS" });
+    return;
+  }
+  const row = result.kind === "deleted" ? result.row : null;
   if (!row) {
     res.status(404).json({ error: "Price package not found" });
     return;

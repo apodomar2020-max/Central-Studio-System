@@ -350,6 +350,19 @@ router.post(
   const pushState: { pending: { studentId: number; title: string; body: string; data: Record<string, unknown>; notificationId: number } | null } = { pending: null };
 
   const result = await db.transaction(async (tx) => {
+    // Serialize purchase snapshot capture with catalogue updates/deletion.
+    // Re-read every sale term under the lock, not the earlier preflight row.
+    const [packageDefinition] = await tx.select().from(pricePackagesTable)
+      .where(eq(pricePackagesTable.id, parsed.data.packageId)).for("share").limit(1);
+    if (!packageDefinition || !packageDefinition.isActive) {
+      return { kind: "catalogue_error" as const, code: "PACKAGE_UNAVAILABLE", error: "Active package not found." };
+    }
+    const totalCredits = packageDefinition.sessions ?? 1;
+    if ((legacyPackageName !== undefined && legacyPackageName !== packageDefinition.name)
+      || (legacyTotalCredits !== undefined && legacyTotalCredits !== totalCredits)
+      || (legacyRemainingCredits !== undefined && legacyRemainingCredits !== totalCredits)) {
+      return { kind: "catalogue_error" as const, code: "PACKAGE_CHANGED", error: "Package details changed. Please reload the package." };
+    }
     const effectiveParticipantType = parsed.data.participantType
       ?? (student.accountType === "student" ? "self" : undefined);
     if (!effectiveParticipantType) {
@@ -417,6 +430,9 @@ router.post(
       .select({ danceTypeId: pricePackageDanceTypesTable.danceTypeId })
       .from(pricePackageDanceTypesTable)
       .where(eq(pricePackageDanceTypesTable.packageId, packageDefinition.id));
+    if (allowedDanceTypeRows.length === 0 && packageDefinition.allowedDanceTypes.length > 0) {
+      return { kind: "catalogue_error" as const, code: "PACKAGE_CREDIT_INTEGRITY_MISMATCH", error: "This package's dance restrictions require configuration before purchase." };
+    }
 
     const [inserted] = await tx
       .insert(packageOrdersTable)
@@ -439,6 +455,7 @@ router.post(
         purchaseEligibilityConfigurationState:
           purchaseEligibility.value.purchaseEligibilityConfigurationState,
         allowedDanceTypeIdsSnapshot: allowedDanceTypeRows.map((row) => row.danceTypeId),
+        danceTypeRestrictionStateSnapshot: allowedDanceTypeRows.length > 0 ? "restricted" : "unrestricted",
         packageId: packageDefinition.id,
         packageName: packageDefinition.name,
         totalCredits,
@@ -583,6 +600,10 @@ router.post(
     void sendPushNotification(push).catch((error) => {
       logger.error({ err: error, notificationId: push.notificationId }, "Failed to dispatch package-order creation push");
     });
+  }
+  if ("kind" in result && result.kind === "catalogue_error") {
+    res.status(result.code === "PACKAGE_UNAVAILABLE" ? 404 : 409).json({ error: result.error, code: result.code });
+    return;
   }
   if ("kind" in result && result.kind === "promotion_not_eligible") {
     res.status(409).json({
