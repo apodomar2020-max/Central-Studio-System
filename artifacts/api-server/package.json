@@ -16,6 +16,7 @@
     "test:financial": "../../lib/db/node_modules/.bin/tsx --test src/lib/financialAggregates.test.ts",
     "test:news-migration": "../../lib/db/node_modules/.bin/tsx --test src/lib/newsMigrationManifest.test.ts src/lib/newsMigrationMapping.test.ts src/lib/newsMigrationPlanner.test.ts src/cli/newsMigrationCli.test.ts src/cli/newsMigrationProductionCli.test.ts",
     "test:news-migration:integration": "../../lib/db/node_modules/.bin/tsx --test src/lib/newsMigration.integration.test.ts",
+    "test:unified-cms": "../../lib/db/node_modules/.bin/tsx --test --test-concurrency=1 src/lib/unifiedCmsMigrations.test.ts src/lib/publicEditorialNews.golden.test.ts src/lib/publicEditorialNews.native.test.ts src/routes/websitePerformances.news.test.ts",
     "news:migrate:dry-run": "../../lib/db/node_modules/.bin/tsx src/cli/newsMigrationCli.entry.ts --mode dry-run",
     "news:migrate:execute": "../../lib/db/node_modules/.bin/tsx src/cli/newsMigrationCli.entry.ts --mode execute",
     "news:migrate:verify": "../../lib/db/node_modules/.bin/tsx src/cli/newsMigrationCli.entry.ts --mode verify",

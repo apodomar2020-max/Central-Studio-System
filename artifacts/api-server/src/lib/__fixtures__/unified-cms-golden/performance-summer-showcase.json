@@ -1,0 +1,76 @@
+{
+  "slug": "summer-showcase",
+  "category": "performance",
+  "categoryLabel": "Stage Repertoire",
+  "title": "Summer Conservatory Showcase & Finale",
+  "subtitle": "An intimate studio performance presenting the culmination of our 4-week summer intensive featuring guest international faculty repertoire.",
+  "heroImageUrl": "https://images.unsplash.com/photo-1508807526345-15e9b5f4eaff?auto=format&fit=crop&q=80&w=1200",
+  "eventDateDisplay": "August 08, 2027",
+  "venue": "Central Studio Grand Hall",
+  "times": [
+    "1:00 PM & 5:00 PM"
+  ],
+  "orchestra": null,
+  "runtime": "1 Hour 15 Minutes",
+  "ticketLink": null,
+  "ticketPriceRange": null,
+  "detailBadgeLabel": "SUMMER INTENSIVE PARTICIPANTS",
+  "badgeVariant": "cyan",
+  "season": "INTENSIVE FINALE PERFORMANCE",
+  "authorName": "Conservatory Faculty",
+  "authorRole": "Summer Intensive Directors",
+  "authorAvatarUrl": "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=300",
+  "galleryImages": [],
+  "tags": [
+    "Summer Intensive",
+    "Showcase",
+    "Studio Performance",
+    "Guest Faculty"
+  ],
+  "content": {
+    "leadParagraph": "The Summer Conservatory Showcase marks the energetic finale of our summer intensive program. Families and patrons are invited into our flagship studio hall to witness rapid technical acceleration and artistic growth.",
+    "sections": [
+      {
+        "heading": "Celebration of Growth",
+        "paragraphs": [
+          "Featuring pieces created by guest choreographers over four intensive weeks of training, this intimate showcase highlights the stamina, versatility, and passion of rising young artists."
+        ]
+      }
+    ]
+  },
+  "keyHighlights": [
+    "Presentation of works staged during 4-week summer intensive",
+    "Demonstrations of character dance, partnerwork, and contemporary improv",
+    "Diploma presentation ceremony for completing conservatory students"
+  ],
+  "castAndFaculty": [],
+  "relatedItems": [
+    {
+      "type": "news",
+      "slug": "news-2",
+      "title": "Announcing 2026/2027 Season Conservatory Audition Dates & Criteria",
+      "subtitle": "Registration is now open for prospective students seeking entry into Primary, Junior, Senior, and Pre-Professional intensive training divisions.",
+      "categoryLabel": "Auditions & Masterclasses",
+      "image": "https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?auto=format&fit=crop&q=80&w=800",
+      "date": "July 05, 2026"
+    },
+    {
+      "type": "performance",
+      "slug": "nutcracker-repertoire",
+      "title": "The Nutcracker Repertoire at Central Opera House",
+      "subtitle": "A beloved annual hallmark tradition involving all student levels from Primary Angels to Senior Sugar Plum Fairy solos, performed with a live 40-piece symphony orchestra.",
+      "categoryLabel": "Stage Repertoire",
+      "image": "https://images.unsplash.com/photo-1516475429286-465d815a0df7?auto=format&fit=crop&q=80&w=1200",
+      "date": "December 18 – 22, 2026"
+    },
+    {
+      "type": "news",
+      "slug": "news-3",
+      "title": "Guest Masterclass Series: Principal Dancer Elena Rostova Joins Faculty",
+      "subtitle": "World-renowned ballerina Elena Rostova conducts an exclusive 3-day pointe variation and partnerwork workshop at our Grand Stage Studio.",
+      "categoryLabel": "Studio Events",
+      "image": "https://images.unsplash.com/photo-1516475429286-465d815a0df7?auto=format&fit=crop&q=80&w=800",
+      "date": "June 22, 2026"
+    }
+  ]
+}

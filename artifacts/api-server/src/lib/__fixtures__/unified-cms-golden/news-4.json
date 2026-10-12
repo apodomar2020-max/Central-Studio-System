@@ -1,0 +1,105 @@
+{
+  "slug": "news-4",
+  "category": "press",
+  "categoryLabel": "Press & Media",
+  "title": "Dance International Magazine Features Central Studio Sprung Floor Technology",
+  "subtitle": "An in-depth look at how climate-controlled studios and acoustic resonance floors prevent injury and prolong professional dancer careers.",
+  "heroImageUrl": "https://images.unsplash.com/photo-1508807526345-15e9b5f4eaff?auto=format&fit=crop&q=80&w=1200",
+  "publishedDate": "June 10, 2026",
+  "readTime": "6 min read",
+  "authorName": "Dance International Press",
+  "authorRole": "Feature Article",
+  "authorAvatarUrl": null,
+  "galleryImages": [],
+  "tags": [
+    "Dance Science",
+    "Injury Prevention",
+    "Press",
+    "Studio Tech"
+  ],
+  "content": {
+    "leadParagraph": "In its June 2026 edition, Dance International Magazine published an extensive spotlight on Central Studio’s state-of-the-art facility engineering, highlighting how custom pneumatic sprung flooring and micro-climate airflow reduce joint fatigue by up to 42%.",
+    "sections": [
+      {
+        "heading": "Redefining Safety in Ballet Infrastructure",
+        "paragraphs": [
+          "High-impact jumps and repetitive pointe work exert forces up to four times a dancer’s body weight onto studio floors. Central Studio’s 7-layer hardwood sprung floor system absorbs kinetic shock while returning natural rebound resilience."
+        ]
+      }
+    ]
+  },
+  "relatedItems": [
+    {
+      "type": "news",
+      "slug": "news-1",
+      "title": "Central Studio Dancers Sweep Top Honors at Youth America Grand Prix (YAGP) Finals",
+      "subtitle": "Three senior conservatory students received full classical ballet scholarships to Paris Opera Ballet School and Royal Ballet Academy following outstanding solo performances.",
+      "categoryLabel": "Competition & Awards",
+      "image": "https://images.unsplash.com/photo-1547153760-18fc86324498?auto=format&fit=crop&q=80&w=1200",
+      "date": "July 18, 2026"
+    },
+    {
+      "type": "news",
+      "slug": "news-5",
+      "title": "Annual Winter Nutcracker Production Ticket Sales Open to Public",
+      "subtitle": "Reserve priority seating for our hallmark December production at Central Opera House featuring over 80 conservatory dancers and live orchestral score.",
+      "categoryLabel": "Studio Events",
+      "image": "https://images.unsplash.com/photo-1460723237483-7a6dc9d0b212?auto=format&fit=crop&q=80&w=800",
+      "date": "May 28, 2026"
+    },
+    {
+      "type": "news",
+      "slug": "news-2",
+      "title": "Announcing 2026/2027 Season Conservatory Audition Dates & Criteria",
+      "subtitle": "Registration is now open for prospective students seeking entry into Primary, Junior, Senior, and Pre-Professional intensive training divisions.",
+      "categoryLabel": "Auditions & Masterclasses",
+      "image": "https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?auto=format&fit=crop&q=80&w=800",
+      "date": "July 05, 2026"
+    }
+  ],
+  "publishedAt": "2026-06-10 00:00:00+00",
+  "featureImageAlt": "A line of ballet dancers in white tutus performing on a dimly lit stage.",
+  "body": {
+    "blocks": [
+      {
+        "type": "paragraph",
+        "text": "In its June 2026 edition, Dance International Magazine published an extensive spotlight on Central Studio’s state-of-the-art facility engineering, highlighting how custom pneumatic sprung flooring and micro-climate airflow reduce joint fatigue by up to 42%."
+      },
+      {
+        "type": "heading",
+        "level": 2,
+        "text": "Redefining Safety in Ballet Infrastructure"
+      },
+      {
+        "type": "paragraph",
+        "text": "High-impact jumps and repetitive pointe work exert forces up to four times a dancer’s body weight onto studio floors. Central Studio’s 7-layer hardwood sprung floor system absorbs kinetic shock while returning natural rebound resilience."
+      }
+    ]
+  },
+  "gallery": {
+    "items": []
+  },
+  "author": {
+    "name": "Dance International Press",
+    "role": "Feature Article",
+    "avatarUrl": null
+  },
+  "topics": [
+    {
+      "name": "Dance Science",
+      "slug": "dance-science"
+    },
+    {
+      "name": "Injury Prevention",
+      "slug": "injury-prevention"
+    },
+    {
+      "name": "Press",
+      "slug": "press"
+    },
+    {
+      "name": "Studio Tech",
+      "slug": "studio-tech"
+    }
+  ]
+}

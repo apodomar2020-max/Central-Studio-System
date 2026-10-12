@@ -1,0 +1,110 @@
+{
+  "slug": "news-3",
+  "category": "events",
+  "categoryLabel": "Studio Events",
+  "title": "Guest Masterclass Series: Principal Dancer Elena Rostova Joins Faculty",
+  "subtitle": "World-renowned ballerina Elena Rostova conducts an exclusive 3-day pointe variation and partnerwork workshop at our Grand Stage Studio.",
+  "heroImageUrl": "https://images.unsplash.com/photo-1516475429286-465d815a0df7?auto=format&fit=crop&q=80&w=1200",
+  "publishedDate": "June 22, 2026",
+  "readTime": "5 min read",
+  "authorName": "Editorial Team",
+  "authorRole": "Central Studio Journal",
+  "authorAvatarUrl": null,
+  "galleryImages": [],
+  "tags": [
+    "Faculty",
+    "Masterclass",
+    "Partnerwork",
+    "Pointe Work"
+  ],
+  "content": {
+    "leadParagraph": "Central Studio is thrilled to welcome former Mariinsky and Royal Ballet Guest Principal Elena Rostova for an intensive 3-day masterclass workshop dedicated to advanced classical repertoire, delicate pointe control, and partnerwork dynamics.",
+    "sections": [
+      {
+        "heading": "An Unrivaled Educational Opportunity",
+        "paragraphs": [
+          "Elena Rostova, celebrated globally for her iconic portrayals of Odette/Odile and Giselle, brings four decades of onstage experience to our conservatory students.",
+          "During the intensive session, students in Levels 03, 04, and Pre-Professional divisions will dissect classical variations from Swan Lake, Don Quixote, and La Bayadère."
+        ]
+      }
+    ]
+  },
+  "relatedItems": [
+    {
+      "type": "performance",
+      "slug": "spring-showcase",
+      "title": "Spring Choreographic Showcase & Gala",
+      "subtitle": "Highlighting classical variations from Swan Lake, Don Quixote, and Sleeping Beauty alongside brand-new contemporary works commissioned by resident choreographers.",
+      "categoryLabel": "Stage Repertoire",
+      "image": "https://images.unsplash.com/photo-1547153760-18fc86324498?auto=format&fit=crop&q=80&w=1200",
+      "date": "April 24 – 26, 2027"
+    },
+    {
+      "type": "news",
+      "slug": "news-1",
+      "title": "Central Studio Dancers Sweep Top Honors at Youth America Grand Prix (YAGP) Finals",
+      "subtitle": "Three senior conservatory students received full classical ballet scholarships to Paris Opera Ballet School and Royal Ballet Academy following outstanding solo performances.",
+      "categoryLabel": "Competition & Awards",
+      "image": "https://images.unsplash.com/photo-1547153760-18fc86324498?auto=format&fit=crop&q=80&w=1200",
+      "date": "July 18, 2026"
+    },
+    {
+      "type": "news",
+      "slug": "news-2",
+      "title": "Announcing 2026/2027 Season Conservatory Audition Dates & Criteria",
+      "subtitle": "Registration is now open for prospective students seeking entry into Primary, Junior, Senior, and Pre-Professional intensive training divisions.",
+      "categoryLabel": "Auditions & Masterclasses",
+      "image": "https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?auto=format&fit=crop&q=80&w=800",
+      "date": "July 05, 2026"
+    }
+  ],
+  "publishedAt": "2026-06-22 00:00:00+00",
+  "featureImageAlt": "A painted lady butterfly resting on clusters of small orange and yellow flowers.",
+  "body": {
+    "blocks": [
+      {
+        "type": "paragraph",
+        "text": "Central Studio is thrilled to welcome former Mariinsky and Royal Ballet Guest Principal Elena Rostova for an intensive 3-day masterclass workshop dedicated to advanced classical repertoire, delicate pointe control, and partnerwork dynamics."
+      },
+      {
+        "type": "heading",
+        "level": 2,
+        "text": "An Unrivaled Educational Opportunity"
+      },
+      {
+        "type": "paragraph",
+        "text": "Elena Rostova, celebrated globally for her iconic portrayals of Odette/Odile and Giselle, brings four decades of onstage experience to our conservatory students."
+      },
+      {
+        "type": "paragraph",
+        "text": "During the intensive session, students in Levels 03, 04, and Pre-Professional divisions will dissect classical variations from Swan Lake, Don Quixote, and La Bayadère."
+      }
+    ]
+  },
+  "gallery": {
+    "items": []
+  },
+  "author": {
+    "name": "Editorial Team",
+    "role": "Central Studio Journal",
+    "avatarUrl": null
+  },
+  "topics": [
+    {
+      "name": "Faculty",
+      "slug": "faculty"
+    },
+    {
+      "name": "Masterclass",
+      "slug": "masterclass"
+    },
+    {
+      "name": "Partnerwork",
+      "slug": "partnerwork"
+    },
+    {
+      "name": "Pointe Work",
+      "slug": "pointe-work"
+    }
+  ]
+}

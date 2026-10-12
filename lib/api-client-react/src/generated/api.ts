@@ -71,6 +71,7 @@ import type {
   EditorialAuthor,
   EditorialLanguage,
   EditorialLanguageWithUsage,
+  EditorialPerformanceRef,
   EditorialPlacementEntry,
   EditorialPost,
   EditorialPostDetail,
@@ -142,6 +143,7 @@ import type {
   RecordStudentDeletionManualResolutionRequest,
   ReplaceEditorialPlacementBody,
   ReplaceEditorialPlacementParams,
+  ReplaceEditorialPostPerformanceRefsBody,
   ReplaceEditorialPostRecommendationsBody,
   ReplaceEditorialPostTopicsBody,
   RequestMyAccountDeletionBody,
@@ -193,6 +195,7 @@ import type {
   WebsiteBackgroundSetting,
   WebsiteNewsPost,
   WebsitePerformance,
+  WebsitePerformanceNewsOption,
 } from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
@@ -8362,6 +8365,88 @@ export const useCreateWebsitePerformance = <
   return useMutation(getCreateWebsitePerformanceMutationOptions(options));
 };
 
+export const getListWebsitePerformanceNewsOptionsUrl = () => {
+  return `/api/admin/website/performance-news-options`;
+};
+
+/**
+ * @summary Public News selectable as a Performance's related News — requires website.performance:view (not website.posts). Read from the same public Editorial projection the Website renders, newest first.
+ */
+export const listWebsitePerformanceNewsOptions = async (
+  options?: RequestInit,
+): Promise<WebsitePerformanceNewsOption[]> => {
+  return customFetch<WebsitePerformanceNewsOption[]>(
+    getListWebsitePerformanceNewsOptionsUrl(),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListWebsitePerformanceNewsOptionsQueryKey = () => {
+  return [`/api/admin/website/performance-news-options`] as const;
+};
+
+export const getListWebsitePerformanceNewsOptionsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listWebsitePerformanceNewsOptions>>,
+  TError = ErrorType<ErrorResponse>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listWebsitePerformanceNewsOptions>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListWebsitePerformanceNewsOptionsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listWebsitePerformanceNewsOptions>>
+  > = ({ signal }) =>
+    listWebsitePerformanceNewsOptions({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listWebsitePerformanceNewsOptions>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListWebsitePerformanceNewsOptionsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listWebsitePerformanceNewsOptions>>
+>;
+export type ListWebsitePerformanceNewsOptionsQueryError =
+  ErrorType<ErrorResponse>;
+
+/**
+ * @summary Public News selectable as a Performance's related News — requires website.performance:view (not website.posts). Read from the same public Editorial projection the Website renders, newest first.
+ */
+
+export function useListWebsitePerformanceNewsOptions<
+  TData = Awaited<ReturnType<typeof listWebsitePerformanceNewsOptions>>,
+  TError = ErrorType<ErrorResponse>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listWebsitePerformanceNewsOptions>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions =
+    getListWebsitePerformanceNewsOptionsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
 export const getGetAdminWebsitePerformanceUrl = (slug: string) => {
   return `/api/admin/website/performances/${slug}`;
 };
@@ -13357,6 +13442,196 @@ export const useReplaceEditorialPostRecommendations = <
 > => {
   return useMutation(
     getReplaceEditorialPostRecommendationsMutationOptions(options),
+  );
+};
+
+export const getListEditorialPostPerformanceRefsUrl = (id: number) => {
+  return `/api/admin/editorial/posts/${id}/performance-refs`;
+};
+
+/**
+ * @summary A News post's related Performances, in editor order — requires website.posts:view
+ */
+export const listEditorialPostPerformanceRefs = async (
+  id: number,
+  options?: RequestInit,
+): Promise<EditorialPerformanceRef[]> => {
+  return customFetch<EditorialPerformanceRef[]>(
+    getListEditorialPostPerformanceRefsUrl(id),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListEditorialPostPerformanceRefsQueryKey = (id: number) => {
+  return [`/api/admin/editorial/posts/${id}/performance-refs`] as const;
+};
+
+export const getListEditorialPostPerformanceRefsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listEditorialPostPerformanceRefs>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listEditorialPostPerformanceRefs>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListEditorialPostPerformanceRefsQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listEditorialPostPerformanceRefs>>
+  > = ({ signal }) =>
+    listEditorialPostPerformanceRefs(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listEditorialPostPerformanceRefs>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListEditorialPostPerformanceRefsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listEditorialPostPerformanceRefs>>
+>;
+export type ListEditorialPostPerformanceRefsQueryError =
+  ErrorType<ErrorResponse>;
+
+/**
+ * @summary A News post's related Performances, in editor order — requires website.posts:view
+ */
+
+export function useListEditorialPostPerformanceRefs<
+  TData = Awaited<ReturnType<typeof listEditorialPostPerformanceRefs>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listEditorialPostPerformanceRefs>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListEditorialPostPerformanceRefsQueryOptions(
+    id,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getReplaceEditorialPostPerformanceRefsUrl = (id: number) => {
+  return `/api/admin/editorial/posts/${id}/performance-refs`;
+};
+
+/**
+ * @summary Replace a News post's related Performances — requires website.posts:edit. Replace semantics (the body is the complete new list), idempotent. Every Performance must exist and be active; no duplicates; news-channel posts only. Publicly these render AFTER the post's News recommendations.
+ */
+export const replaceEditorialPostPerformanceRefs = async (
+  id: number,
+  replaceEditorialPostPerformanceRefsBody: ReplaceEditorialPostPerformanceRefsBody,
+  options?: RequestInit,
+): Promise<EditorialPerformanceRef[]> => {
+  return customFetch<EditorialPerformanceRef[]>(
+    getReplaceEditorialPostPerformanceRefsUrl(id),
+    {
+      ...options,
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(replaceEditorialPostPerformanceRefsBody),
+    },
+  );
+};
+
+export const getReplaceEditorialPostPerformanceRefsMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof replaceEditorialPostPerformanceRefs>>,
+    TError,
+    { id: number; data: BodyType<ReplaceEditorialPostPerformanceRefsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof replaceEditorialPostPerformanceRefs>>,
+  TError,
+  { id: number; data: BodyType<ReplaceEditorialPostPerformanceRefsBody> },
+  TContext
+> => {
+  const mutationKey = ["replaceEditorialPostPerformanceRefs"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof replaceEditorialPostPerformanceRefs>>,
+    { id: number; data: BodyType<ReplaceEditorialPostPerformanceRefsBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return replaceEditorialPostPerformanceRefs(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ReplaceEditorialPostPerformanceRefsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof replaceEditorialPostPerformanceRefs>>
+>;
+export type ReplaceEditorialPostPerformanceRefsMutationBody =
+  BodyType<ReplaceEditorialPostPerformanceRefsBody>;
+export type ReplaceEditorialPostPerformanceRefsMutationError =
+  ErrorType<ErrorResponse>;
+
+/**
+ * @summary Replace a News post's related Performances — requires website.posts:edit. Replace semantics (the body is the complete new list), idempotent. Every Performance must exist and be active; no duplicates; news-channel posts only. Publicly these render AFTER the post's News recommendations.
+ */
+export const useReplaceEditorialPostPerformanceRefs = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof replaceEditorialPostPerformanceRefs>>,
+    TError,
+    { id: number; data: BodyType<ReplaceEditorialPostPerformanceRefsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof replaceEditorialPostPerformanceRefs>>,
+  TError,
+  { id: number; data: BodyType<ReplaceEditorialPostPerformanceRefsBody> },
+  TContext
+> => {
+  return useMutation(
+    getReplaceEditorialPostPerformanceRefsMutationOptions(options),
   );
 };
 

@@ -5,12 +5,14 @@ import {
   editorialAuthorsTable,
   editorialLanguagesTable,
   editorialPlacementsTable,
+  editorialPostPerformanceRefsTable,
   editorialPostRelationsTable,
   editorialPostRevisionsTable,
   editorialPostTopicsTable,
   editorialPostTranslationsTable,
   editorialPostsTable,
   editorialTopicsTable,
+  websitePerformancesTable,
   type EditorialChannel,
 } from "@workspace/db";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
@@ -24,6 +26,7 @@ import { loadLanguageByCodeOrThrow } from "../lib/editorialLanguagesService";
 import {
   EditorialRuleError,
   archiveTranslation,
+  assertPerformanceRefsValid,
   assertPlacementValid,
   assertRecommendationsValid,
   assertTopicsAssignable,
@@ -38,6 +41,7 @@ import {
   publishTranslation,
   recordSharedRevisionIfAnyPublished,
   replacePlacement,
+  replacePostPerformanceRefs,
   replacePostRecommendations,
   replacePostTopics,
   restoreTranslationRevision,
@@ -81,6 +85,11 @@ import {
   ReplaceEditorialPostRecommendationsParams,
   ReplaceEditorialPostRecommendationsBody,
   ReplaceEditorialPostRecommendationsResponse,
+  ListEditorialPostPerformanceRefsParams,
+  ListEditorialPostPerformanceRefsResponse,
+  ReplaceEditorialPostPerformanceRefsParams,
+  ReplaceEditorialPostPerformanceRefsBody,
+  ReplaceEditorialPostPerformanceRefsResponse,
   ListEditorialPostRevisionsParams,
   ListEditorialPostRevisionsQueryParams,
   ListEditorialPostRevisionsResponse,
@@ -267,6 +276,21 @@ async function loadRecommendations(postId: number) {
       targetLanguageCode: label?.languageCode ?? null,
     };
   });
+}
+
+async function loadPerformanceRefs(postId: number) {
+  return db
+    .select({
+      performanceId: editorialPostPerformanceRefsTable.performanceId,
+      position: editorialPostPerformanceRefsTable.position,
+      performanceSlug: websitePerformancesTable.slug,
+      performanceTitle: websitePerformancesTable.title,
+      performanceIsActive: websitePerformancesTable.isActive,
+    })
+    .from(editorialPostPerformanceRefsTable)
+    .innerJoin(websitePerformancesTable, eq(websitePerformancesTable.id, editorialPostPerformanceRefsTable.performanceId))
+    .where(eq(editorialPostPerformanceRefsTable.postId, postId))
+    .orderBy(asc(editorialPostPerformanceRefsTable.position), asc(editorialPostPerformanceRefsTable.id));
 }
 
 async function loadTopics(postId: number) {
@@ -462,6 +486,7 @@ router.post(
           channel: body.channel as EditorialChannel,
           authorId: body.authorId ?? null,
           featureImageUrl: body.featureImageUrl ?? null,
+          ...(body.newsCategory !== undefined ? { newsCategory: body.newsCategory } : {}),
           translation: translationInput,
         },
         { actor: adminActivityActor(req), actorAdminId: req.adminUser?.id ?? null },
@@ -551,6 +576,7 @@ router.patch(
         {
           ...(body.authorId !== undefined ? { authorId: body.authorId } : {}),
           ...(body.featureImageUrl !== undefined ? { featureImageUrl: body.featureImageUrl } : {}),
+          ...(body.newsCategory !== undefined ? { newsCategory: body.newsCategory } : {}),
         },
         { actor: adminActivityActor(req), actorAdminId: req.adminUser?.id ?? null },
       );
@@ -954,6 +980,80 @@ router.put(
       res.json(ReplaceEditorialPostRecommendationsResponse.parse(await loadRecommendations(post.id)));
     } catch (err) {
       handleRouteError(err, res, "PUT /admin/editorial/posts/:id/recommendations", "Failed to update recommendations");
+    }
+  },
+);
+
+// ─── Performance refs (News → Performance) ──────────────────────────────────
+//
+// A SEPARATE replace endpoint rather than an extension of /recommendations:
+// the existing Admin saves recommendations with a news-only body under
+// replace semantics, so folding Performances into that body would let an
+// unchanged editor silently erase them, and widening the response items
+// would break the generated types. Publicly these render AFTER the News
+// recommendations (see publicEditorialNews.ts).
+
+router.get(
+  "/admin/editorial/posts/:id/performance-refs",
+  requireAdminAuth,
+  requireAdminPermission("website.posts", "view"),
+  async (req, res): Promise<void> => {
+    const params = ListEditorialPostPerformanceRefsParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.issues[0]?.message ?? "Invalid id" });
+      return;
+    }
+    try {
+      await loadPostOrThrow(db, params.data.id);
+      res.json(ListEditorialPostPerformanceRefsResponse.parse(await loadPerformanceRefs(params.data.id)));
+    } catch (err) {
+      handleRouteError(err, res, "GET /admin/editorial/posts/:id/performance-refs", "Failed to load related Performances");
+    }
+  },
+);
+
+router.put(
+  "/admin/editorial/posts/:id/performance-refs",
+  requireAdminAuth,
+  requireAdminPermission("website.posts", "edit"),
+  async (req: AdminRequest, res): Promise<void> => {
+    const params = ReplaceEditorialPostPerformanceRefsParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.issues[0]?.message ?? "Invalid id" });
+      return;
+    }
+    const parsed = ReplaceEditorialPostPerformanceRefsBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid body" });
+      return;
+    }
+    const items = parsed.data.items;
+
+    try {
+      const post = await loadPostOrThrow(db, params.data.id);
+      await assertPerformanceRefsValid(db, post, items);
+
+      const actor = adminActivityActor(req);
+      const actorAdminId = req.adminUser?.id ?? null;
+      const before = (await loadPerformanceRefs(post.id)).map((entry) => entry.performanceId);
+
+      await db.transaction(async (tx) => {
+        const locked = await lockPostForUpdate(tx, post.id);
+        await recordSharedRevisionIfAnyPublished(tx, locked, "shared_field_change", actorAdminId);
+        await replacePostPerformanceRefs(tx, post.id, items);
+        await auditEditorial(tx, actor, {
+          action: "performance_refs_changed",
+          entityId: locked.id,
+          entityLabel: `${locked.channel} post #${locked.id}`,
+          before: { performanceRefs: before },
+          after: { performanceRefs: items.map((item) => item.performanceId) },
+          summary: `Updated related Performances on ${locked.channel} post #${locked.id}`,
+        });
+      });
+
+      res.json(ReplaceEditorialPostPerformanceRefsResponse.parse(await loadPerformanceRefs(post.id)));
+    } catch (err) {
+      handleRouteError(err, res, "PUT /admin/editorial/posts/:id/performance-refs", "Failed to update related Performances");
     }
   },
 );

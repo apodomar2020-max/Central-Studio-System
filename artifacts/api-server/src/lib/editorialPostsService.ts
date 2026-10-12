@@ -66,12 +66,14 @@ import {
   editorialAuthorsTable,
   editorialLanguagesTable,
   editorialPlacementsTable,
+  editorialPostPerformanceRefsTable,
   editorialPostRelationsTable,
   editorialPostRevisionsTable,
   editorialPostTopicsTable,
   editorialPostTranslationsTable,
   editorialPostsTable,
   editorialTopicsTable,
+  websitePerformancesTable,
   type EditorialAuthorSnapshot,
   type EditorialChannel,
   type EditorialLanguage,
@@ -679,6 +681,7 @@ export function buildSharedRevisionSnapshot(
     scope: "shared",
     authorId: post.authorId,
     featureImageUrl: post.featureImageUrl,
+    newsCategory: post.newsCategory,
     topics: topicIds,
   };
 }
@@ -890,6 +893,58 @@ export async function replacePostRecommendations(
       relationType: "recommended" as const,
       position: item.position ?? index,
     })),
+  );
+}
+
+// ─── Performance refs (News → Performance) ──────────────────────────────────
+
+export interface PerformanceRefInput {
+  performanceId: number;
+  position?: number;
+}
+
+/**
+ * News → Performance refs (migration 0132): news-channel posts only, no
+ * duplicates, and every Performance must exist AND be active — an inactive
+ * Performance would be silently invisible publicly, so accepting it would
+ * only hide an editor mistake. All failures are 400s with a clear message.
+ */
+export async function assertPerformanceRefsValid(
+  client: DbClient,
+  source: EditorialPost,
+  items: readonly PerformanceRefInput[],
+): Promise<void> {
+  if (source.channel !== "news") {
+    throw new EditorialRuleError(`Related Performances can only be set on a news post, not a ${source.channel} post.`);
+  }
+  const ids = items.map((item) => item.performanceId);
+  const unique = [...new Set(ids)];
+  if (unique.length !== ids.length) {
+    throw new EditorialRuleError("The same Performance was listed more than once.");
+  }
+  if (unique.length === 0) return;
+  const rows = await client
+    .select({ id: websitePerformancesTable.id, isActive: websitePerformancesTable.isActive })
+    .from(websitePerformancesTable)
+    .where(inArray(websitePerformancesTable.id, unique));
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  for (const id of unique) {
+    const row = byId.get(id);
+    if (!row) throw new EditorialRuleError(`Performance ${id} not found.`);
+    if (!row.isActive) throw new EditorialRuleError(`Performance ${id} is inactive and cannot be linked.`);
+  }
+}
+
+/** Replace semantics: the given list becomes the complete set, in order. */
+export async function replacePostPerformanceRefs(
+  tx: DbClient,
+  postId: number,
+  items: readonly PerformanceRefInput[],
+): Promise<void> {
+  await tx.delete(editorialPostPerformanceRefsTable).where(eq(editorialPostPerformanceRefsTable.postId, postId));
+  if (items.length === 0) return;
+  await tx.insert(editorialPostPerformanceRefsTable).values(
+    items.map((item, index) => ({ postId, performanceId: item.performanceId, position: item.position ?? index })),
   );
 }
 
@@ -1481,6 +1536,15 @@ export async function restoreTranslationRevision(
 export interface UpdatePostSharedInput {
   authorId?: number | null;
   featureImageUrl?: string | null;
+  /** Native News category key (migration 0131). The allowed set is validated by the API contract. */
+  newsCategory?: string | null;
+}
+
+/** A News category only means something on a News post. */
+function assertNewsCategoryAllowed(channel: EditorialChannel, newsCategory: string | null | undefined): void {
+  if (newsCategory != null && channel !== "news") {
+    throw new EditorialRuleError(`A news category can only be set on a news post, not a ${channel} post.`);
+  }
 }
 
 /**
@@ -1527,7 +1591,10 @@ export async function updatePostSharedFields(
     const authorChanged = input.authorId !== undefined && input.authorId !== post.authorId;
     const imageChanged =
       input.featureImageUrl !== undefined && input.featureImageUrl !== post.featureImageUrl;
-    if (!authorChanged && !imageChanged) return post;
+    const categoryChanged =
+      input.newsCategory !== undefined && input.newsCategory !== post.newsCategory;
+    if (!authorChanged && !imageChanged && !categoryChanged) return post;
+    if (categoryChanged) assertNewsCategoryAllowed(post.channel, input.newsCategory);
 
     // THE AUTHOR CHANNEL RULE, at the write path that changes author_id.
     let newAuthor: Awaited<ReturnType<typeof loadAssignableAuthorOrThrow>> | null = null;
@@ -1562,7 +1629,7 @@ export async function updatePostSharedFields(
       await recordSharedRevisionIfAnyPublished(
         tx,
         post,
-        authorChanged && !imageChanged ? "author_change" : "shared_field_change",
+        authorChanged && !imageChanged && !categoryChanged ? "author_change" : "shared_field_change",
         ctx.actorAdminId,
       );
     }
@@ -1570,6 +1637,7 @@ export async function updatePostSharedFields(
     const updates: Record<string, unknown> = { updatedByAdminId: ctx.actorAdminId };
     if (authorChanged) updates["authorId"] = input.authorId;
     if (imageChanged) updates["featureImageUrl"] = input.featureImageUrl;
+    if (categoryChanged) updates["newsCategory"] = input.newsCategory;
 
     const [updated] = await tx
       .update(editorialPostsTable)
@@ -1614,22 +1682,30 @@ export async function updatePostSharedFields(
       }
     }
 
-    // (d) audit, same transaction.
+    // (d) audit, same transaction. Single-field changes keep their
+    // specific action names; any combination is "shared_fields_changed".
+    const changedCount = [authorChanged, imageChanged, categoryChanged].filter(Boolean).length;
     await auditEditorial(tx, ctx.actor, {
-      action: authorChanged && imageChanged
+      action: changedCount > 1
         ? "shared_fields_changed"
         : authorChanged
           ? "author_changed"
-          : "feature_image_changed",
+          : imageChanged
+            ? "feature_image_changed"
+            : "news_category_changed",
       entityId: updated.id,
       entityLabel: `${updated.channel} post #${updated.id}`,
-      before: { authorId: post.authorId, featureImageUrl: post.featureImageUrl },
-      after: { authorId: updated.authorId, featureImageUrl: updated.featureImageUrl },
-      summary: authorChanged && imageChanged
+      before: { authorId: post.authorId, featureImageUrl: post.featureImageUrl, newsCategory: post.newsCategory },
+      after: { authorId: updated.authorId, featureImageUrl: updated.featureImageUrl, newsCategory: updated.newsCategory },
+      summary: authorChanged && imageChanged && !categoryChanged
         ? `Changed the author and feature image of ${updated.channel} post #${updated.id}`
-        : authorChanged
-          ? `Changed the author of ${updated.channel} post #${updated.id}`
-          : `Changed the feature image of ${updated.channel} post #${updated.id}`,
+        : changedCount > 1
+          ? `Changed the shared fields of ${updated.channel} post #${updated.id}`
+          : authorChanged
+            ? `Changed the author of ${updated.channel} post #${updated.id}`
+            : imageChanged
+              ? `Changed the feature image of ${updated.channel} post #${updated.id}`
+              : `Changed the news category of ${updated.channel} post #${updated.id}`,
     });
     return updated;
   });
@@ -1641,6 +1717,8 @@ export interface CreatePostInput {
   channel: EditorialChannel;
   authorId?: number | null;
   featureImageUrl?: string | null;
+  /** Optional native News category key (migration 0131); news channel only. */
+  newsCategory?: string | null;
   /** Optional first translation, created in the same transaction. */
   translation?: CreateTranslationInput;
 }
@@ -1678,6 +1756,7 @@ export async function createPostInTx(
     if (input.authorId != null) {
       await assertAuthorAssignableToChannel(tx, input.channel, input.authorId);
     }
+    assertNewsCategoryAllowed(input.channel, input.newsCategory);
 
     const [post] = await tx
       .insert(editorialPostsTable)
@@ -1685,6 +1764,7 @@ export async function createPostInTx(
         channel: input.channel,
         authorId: input.authorId ?? null,
         featureImageUrl: input.featureImageUrl ?? null,
+        newsCategory: input.newsCategory ?? null,
         updatedByAdminId: ctx.actorAdminId,
       })
       .returning();
@@ -1693,7 +1773,13 @@ export async function createPostInTx(
       action: "create",
       entityId: post.id,
       entityLabel: `${post.channel} post #${post.id}`,
-      after: { channel: post.channel, authorId: post.authorId, featureImageUrl: post.featureImageUrl },
+      // newsCategory is recorded only when the caller supplied one, so
+      // creates that never mention it (incl. the News migration tool)
+      // audit exactly as before.
+      after: {
+        channel: post.channel, authorId: post.authorId, featureImageUrl: post.featureImageUrl,
+        ...(input.newsCategory !== undefined ? { newsCategory: post.newsCategory } : {}),
+      },
       summary: `Created ${post.channel} post #${post.id}`,
     });
 

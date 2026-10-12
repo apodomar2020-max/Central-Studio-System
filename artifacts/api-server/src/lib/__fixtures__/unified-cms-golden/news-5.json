@@ -1,0 +1,95 @@
+{
+  "slug": "news-5",
+  "category": "events",
+  "categoryLabel": "Studio Events",
+  "title": "Annual Winter Nutcracker Production Ticket Sales Open to Public",
+  "subtitle": "Reserve priority seating for our hallmark December production at Central Opera House featuring over 80 conservatory dancers and live orchestral score.",
+  "heroImageUrl": "https://images.unsplash.com/photo-1460723237483-7a6dc9d0b212?auto=format&fit=crop&q=80&w=1200",
+  "publishedDate": "May 28, 2026",
+  "readTime": "2 min read",
+  "authorName": "Box Office Central",
+  "authorRole": "Production Team",
+  "authorAvatarUrl": null,
+  "galleryImages": [],
+  "tags": [
+    "Nutcracker",
+    "Stage Production"
+  ],
+  "content": {
+    "leadParagraph": "Tickets for Central Studio’s highly anticipated December 2026 production of Tchaikovsky’s The Nutcracker are now officially on sale. Featuring live orchestral accompaniment and over 80 student artists across six studio levels.",
+    "sections": [
+      {
+        "heading": "Showtimes & Box Office Information",
+        "paragraphs": [
+          "Performances run from December 18 to December 22, 2026 at the historic Central Opera House. Early bird ticket discounts are available for conservatory families and alumni through August 31."
+        ]
+      }
+    ]
+  },
+  "relatedItems": [
+    {
+      "type": "performance",
+      "slug": "nutcracker-repertoire",
+      "title": "The Nutcracker Repertoire at Central Opera House",
+      "subtitle": "A beloved annual hallmark tradition involving all student levels from Primary Angels to Senior Sugar Plum Fairy solos, performed with a live 40-piece symphony orchestra.",
+      "categoryLabel": "Stage Repertoire",
+      "image": "https://images.unsplash.com/photo-1516475429286-465d815a0df7?auto=format&fit=crop&q=80&w=1200",
+      "date": "December 18 – 22, 2026"
+    },
+    {
+      "type": "news",
+      "slug": "news-1",
+      "title": "Central Studio Dancers Sweep Top Honors at Youth America Grand Prix (YAGP) Finals",
+      "subtitle": "Three senior conservatory students received full classical ballet scholarships to Paris Opera Ballet School and Royal Ballet Academy following outstanding solo performances.",
+      "categoryLabel": "Competition & Awards",
+      "image": "https://images.unsplash.com/photo-1547153760-18fc86324498?auto=format&fit=crop&q=80&w=1200",
+      "date": "July 18, 2026"
+    },
+    {
+      "type": "performance",
+      "slug": "spring-showcase",
+      "title": "Spring Choreographic Showcase & Gala",
+      "subtitle": "Highlighting classical variations from Swan Lake, Don Quixote, and Sleeping Beauty alongside brand-new contemporary works commissioned by resident choreographers.",
+      "categoryLabel": "Stage Repertoire",
+      "image": "https://images.unsplash.com/photo-1547153760-18fc86324498?auto=format&fit=crop&q=80&w=1200",
+      "date": "April 24 – 26, 2027"
+    }
+  ],
+  "publishedAt": "2026-05-28 00:00:00+00",
+  "featureImageAlt": "A musician singing into a microphone while playing an electric guitar under red stage lighting.",
+  "body": {
+    "blocks": [
+      {
+        "type": "paragraph",
+        "text": "Tickets for Central Studio’s highly anticipated December 2026 production of Tchaikovsky’s The Nutcracker are now officially on sale. Featuring live orchestral accompaniment and over 80 student artists across six studio levels."
+      },
+      {
+        "type": "heading",
+        "level": 2,
+        "text": "Showtimes & Box Office Information"
+      },
+      {
+        "type": "paragraph",
+        "text": "Performances run from December 18 to December 22, 2026 at the historic Central Opera House. Early bird ticket discounts are available for conservatory families and alumni through August 31."
+      }
+    ]
+  },
+  "gallery": {
+    "items": []
+  },
+  "author": {
+    "name": "Box Office Central",
+    "role": "Production Team",
+    "avatarUrl": null
+  },
+  "topics": [
+    {
+      "name": "Nutcracker",
+      "slug": "nutcracker"
+    },
+    {
+      "name": "Stage Production",
+      "slug": "stage-production"
+    }
+  ]
+}

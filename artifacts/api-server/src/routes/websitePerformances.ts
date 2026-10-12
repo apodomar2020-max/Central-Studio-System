@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { and, asc, eq, inArray, ne } from "drizzle-orm";
-import { db, websitePerformancesTable, websiteNewsPostsTable } from "@workspace/db";
+import { db, editorialPostTranslationsTable, websitePerformancesTable, websiteNewsPostsTable } from "@workspace/db";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 import { diffFields, logActivity } from "../lib/activityLog";
 import { logger } from "../lib/logger";
@@ -25,7 +25,9 @@ import {
   UpdateWebsitePerformanceResponse,
   DeactivateWebsitePerformanceParams,
   DeactivateWebsitePerformanceResponse,
+  ListWebsitePerformanceNewsOptionsResponse,
 } from "@workspace/api-zod";
+import { getPublicNewsRelatedItemsBySlug, listPublicNewsPickerItems } from "../lib/publicEditorialNews";
 
 /**
  * Website CMS Wave 3 — Performance only. News/Backgrounds already migrated
@@ -97,10 +99,18 @@ function toPublicFeatured(row: PerformanceRow) {
  * canonical detail-oriented fields — title/subtitle/heroImageUrl/
  * eventDateDisplay — exactly matching what the Wave-2 static bridge used
  * to return via the full static Article object, never the card-specific
- * fields, to preserve current visual output exactly). 'news' refs resolve
- * from the News CMS table (active only) — this is the Wave-3 resolver
- * handoff's other direction, structurally identical to how News already
- * resolves its own News-type refs. An unresolvable ref of either type is
+ * fields, to preserve current visual output exactly).
+ *
+ * 'news' refs resolve through the PUBLIC Editorial News projection
+ * (Unified Website CMS slice 2): a News ref is shown only if that slug is
+ * public on /website/news right now (news channel, default active language,
+ * published). Before this slice they resolved from legacy
+ * website_news_posts.is_active, so a story archived or unpublished in
+ * Editorial kept appearing on Performance pages — an authority leak. The
+ * emitted fields come from the same overlay precedence the News pages use
+ * (legacy overlay for migrated posts), so existing saved refs to the six
+ * migrated slugs render exactly as before (golden-tested), and natively
+ * authored News can now be linked too. An unresolvable ref of either type is
  * silently dropped, never surfaced as a broken link. Order is preserved
  * exactly as stored.
  */
@@ -108,22 +118,16 @@ async function resolveRelatedItems(refs: RelatedRef[]) {
   const performanceSlugsNeeded = refs.filter((r) => r.type === "performance").map((r) => r.slug);
   const newsSlugsNeeded = refs.filter((r) => r.type === "news").map((r) => r.slug);
 
-  const [performanceRows, newsRows] = await Promise.all([
+  const [performanceRows, newsBySlug] = await Promise.all([
     performanceSlugsNeeded.length
       ? db
           .select()
           .from(websitePerformancesTable)
           .where(and(inArray(websitePerformancesTable.slug, performanceSlugsNeeded), eq(websitePerformancesTable.isActive, true)))
       : Promise.resolve([]),
-    newsSlugsNeeded.length
-      ? db
-          .select()
-          .from(websiteNewsPostsTable)
-          .where(and(inArray(websiteNewsPostsTable.slug, newsSlugsNeeded), eq(websiteNewsPostsTable.isActive, true)))
-      : Promise.resolve([]),
+    newsSlugsNeeded.length ? getPublicNewsRelatedItemsBySlug(newsSlugsNeeded) : Promise.resolve(new Map<string, never>()),
   ]);
   const performanceBySlug = new Map(performanceRows.map((r) => [r.slug, r]));
-  const newsBySlug = new Map(newsRows.map((r) => [r.slug, r]));
 
   const items: Array<{
     type: "news" | "performance";
@@ -149,15 +153,15 @@ async function resolveRelatedItems(refs: RelatedRef[]) {
       });
     } else {
       const match = newsBySlug.get(ref.slug);
-      if (!match) continue; // unknown/inactive news ref — silently dropped
+      if (!match) continue; // unknown/non-public news ref — silently dropped
       items.push({
         type: "news",
         slug: match.slug,
         title: match.title,
         subtitle: match.subtitle,
         categoryLabel: match.categoryLabel,
-        image: match.listingImageUrl ?? match.heroImageUrl,
-        date: match.publishedDate,
+        image: match.image,
+        date: match.date,
       });
     }
   }
@@ -299,6 +303,13 @@ async function validateBodyImageUrls(body: {
  * referenced slug actually exists (any state) — unlike Wave 2's News
  * validator, which could only validate 'news' refs (Performance had no CMS
  * table yet). This is the Performance side of the Wave-3 News follow-up.
+ *
+ * Unified Website CMS slice 2: a 'news' slug is accepted if it exists as an
+ * Editorial NEWS translation slug (any state, any language) OR in legacy
+ * website_news_posts (any state). The union is never narrower than before,
+ * so every saved ref and the legacy compatibility editor keep validating,
+ * while natively authored News becomes linkable. Whether it is SHOWN is a
+ * public-time decision (resolveRelatedItems).
  */
 async function validateRelatedRefs(refs: RelatedRef[], selfSlug?: string): Promise<{ error: string } | null> {
   const performanceSlugs = refs.filter((r) => r.type === "performance").map((r) => r.slug);
@@ -318,11 +329,17 @@ async function validateRelatedRefs(refs: RelatedRef[], selfSlug?: string): Promi
     }
   }
   if (newsSlugs.length > 0) {
-    const found = await db
-      .select({ slug: websiteNewsPostsTable.slug })
-      .from(websiteNewsPostsTable)
-      .where(inArray(websiteNewsPostsTable.slug, newsSlugs));
-    const foundSet = new Set(found.map((r) => r.slug));
+    const [legacyFound, editorialFound] = await Promise.all([
+      db
+        .select({ slug: websiteNewsPostsTable.slug })
+        .from(websiteNewsPostsTable)
+        .where(inArray(websiteNewsPostsTable.slug, newsSlugs)),
+      db
+        .select({ slug: editorialPostTranslationsTable.slug })
+        .from(editorialPostTranslationsTable)
+        .where(and(eq(editorialPostTranslationsTable.channel, "news"), inArray(editorialPostTranslationsTable.slug, newsSlugs))),
+    ]);
+    const foundSet = new Set([...legacyFound, ...editorialFound].map((r) => r.slug));
     const missing = newsSlugs.filter((s) => !foundSet.has(s));
     if (missing.length > 0) {
       return { error: `Related news post(s) not found: ${missing.join(", ")}` };
@@ -345,6 +362,30 @@ async function unfeatureOthers(tx: DbClient, keepId: number | null) {
 }
 
 // ─── Admin routes ────────────────────────────────────────────────────────────
+
+/**
+ * Selectable PUBLIC News for the Performance editor's related-News picker
+ * (Unified Website CMS slice 2). Read from the same public Editorial
+ * projection the Website renders, so the picker can only offer stories a
+ * reader can actually open. Gated by website.performance:view — NOT
+ * website.posts — so a Performance-only role can use it. Path deliberately
+ * outside /admin/website/performances/:slug so it can never be captured as
+ * a slug.
+ */
+router.get(
+  "/admin/website/performance-news-options",
+  requireAdminAuth,
+  requireAdminPermission("website.performance", "view"),
+  async (_req, res): Promise<void> => {
+    try {
+      res.json(ListWebsitePerformanceNewsOptionsResponse.parse(await listPublicNewsPickerItems()));
+    } catch (err) {
+      captureError(err, { route: "GET /admin/website/performance-news-options" });
+      logger.error({ err }, "Performance news options failed");
+      res.status(500).json({ error: "Failed to load News options" });
+    }
+  },
+);
 
 router.get(
   "/admin/website/performances",

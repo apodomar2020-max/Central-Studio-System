@@ -156,6 +156,8 @@ export type EditorialSharedRevisionSnapshot = {
   scope: "shared";
   authorId: number | null;
   featureImageUrl: string | null;
+  /** Native News category (migration 0131). Absent on shared revisions written before it. */
+  newsCategory?: string | null;
   topics: number[];
 };
 

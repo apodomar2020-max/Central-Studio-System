@@ -946,6 +946,20 @@
       "when": 1791590400000,
       "tag": "0134_package_restriction_provenance",
       "breakpoints": true
+    },
+    {
+      "idx": 136,
+      "version": "7",
+      "when": 1791676800000,
+      "tag": "0135_editorial_post_news_category",
+      "breakpoints": true
+    },
+    {
+      "idx": 137,
+      "version": "7",
+      "when": 1791676800001,
+      "tag": "0136_editorial_post_performance_refs",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,83 @@
+{
+  "slug": "spring-showcase",
+  "category": "performance",
+  "categoryLabel": "Stage Repertoire",
+  "title": "Spring Choreographic Showcase & Gala",
+  "subtitle": "Highlighting classical variations from Swan Lake, Don Quixote, and Sleeping Beauty alongside brand-new contemporary works commissioned by resident choreographers.",
+  "heroImageUrl": "https://images.unsplash.com/photo-1547153760-18fc86324498?auto=format&fit=crop&q=80&w=1200",
+  "eventDateDisplay": "April 24 – 26, 2027",
+  "venue": "Metropolitan Arts Center",
+  "times": [
+    "Friday Evening: 8:00 PM",
+    "Saturday Evening: 7:30 PM",
+    "Sunday Matinee: 2:30 PM"
+  ],
+  "orchestra": "Recorded Classical & Original Electronic Ambient Scores",
+  "runtime": "1 Hour 45 Minutes",
+  "ticketLink": "/contact",
+  "ticketPriceRange": "$25 – $85",
+  "detailBadgeLabel": "LEVELS 02 – PRE-PRO",
+  "badgeVariant": "purple",
+  "season": "CONTEMPORARY & CLASSICAL GALA",
+  "authorName": "Victoria Vance",
+  "authorRole": "Artistic Director",
+  "authorAvatarUrl": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=300",
+  "galleryImages": [
+    "https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?auto=format&fit=crop&q=80&w=800",
+    "https://images.unsplash.com/photo-1516475429286-465d815a0df7?auto=format&fit=crop&q=80&w=800"
+  ],
+  "tags": [
+    "Spring Gala",
+    "Swan Lake",
+    "Contemporary",
+    "Choreography",
+    "Metropolitan Arts"
+  ],
+  "content": {
+    "leadParagraph": "The Spring Choreographic Showcase bridges timeless classical heritage with cutting-edge 21st-century movement. Designed to challenge senior conservatory dancers in both pristine classical technique and fluid contemporary expression.",
+    "sections": [
+      {
+        "heading": "Program Architecture",
+        "paragraphs": [
+          "Act I presents beloved classical repertoire including the Black Swan Pas de Deux, Grand Pas de Deux from Don Quixote, and the Garland Waltz from Sleeping Beauty.",
+          "Act II premieres original neoclassical and contemporary works commissioned specifically for Central Studio dancers, exploring themes of resilience, architectural space, and acoustic rhythm."
+        ]
+      }
+    ]
+  },
+  "keyHighlights": [
+    "Petipa Act III classical excerpts from Swan Lake & Don Quixote",
+    "World premiere contemporary piece \"Resonance\" by Jean-Luc Moreau",
+    "Live piano accompaniment for classical variation solos"
+  ],
+  "castAndFaculty": [],
+  "relatedItems": [
+    {
+      "type": "performance",
+      "slug": "nutcracker-repertoire",
+      "title": "The Nutcracker Repertoire at Central Opera House",
+      "subtitle": "A beloved annual hallmark tradition involving all student levels from Primary Angels to Senior Sugar Plum Fairy solos, performed with a live 40-piece symphony orchestra.",
+      "categoryLabel": "Stage Repertoire",
+      "image": "https://images.unsplash.com/photo-1516475429286-465d815a0df7?auto=format&fit=crop&q=80&w=1200",
+      "date": "December 18 – 22, 2026"
+    },
+    {
+      "type": "news",
+      "slug": "news-3",
+      "title": "Guest Masterclass Series: Principal Dancer Elena Rostova Joins Faculty",
+      "subtitle": "World-renowned ballerina Elena Rostova conducts an exclusive 3-day pointe variation and partnerwork workshop at our Grand Stage Studio.",
+      "categoryLabel": "Studio Events",
+      "image": "https://images.unsplash.com/photo-1516475429286-465d815a0df7?auto=format&fit=crop&q=80&w=800",
+      "date": "June 22, 2026"
+    },
+    {
+      "type": "performance",
+      "slug": "yagp-2027",
+      "title": "Youth America Grand Prix (YAGP) Competition Track",
+      "subtitle": "Targeted coaching for qualifying Senior and Pre-Pro dancers competing for international conservatory scholarships and ballet company apprenticeships.",
+      "categoryLabel": "Stage Repertoire",
+      "image": "https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?auto=format&fit=crop&q=80&w=1200",
+      "date": "February & March 2027"
+    }
+  ]
+}

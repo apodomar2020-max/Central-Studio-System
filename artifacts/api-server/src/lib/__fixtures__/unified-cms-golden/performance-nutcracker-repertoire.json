@@ -1,0 +1,118 @@
+{
+  "slug": "nutcracker-repertoire",
+  "category": "performance",
+  "categoryLabel": "Stage Repertoire",
+  "title": "The Nutcracker Repertoire at Central Opera House",
+  "subtitle": "A beloved annual hallmark tradition involving all student levels from Primary Angels to Senior Sugar Plum Fairy solos, performed with a live 40-piece symphony orchestra.",
+  "heroImageUrl": "https://images.unsplash.com/photo-1516475429286-465d815a0df7?auto=format&fit=crop&q=80&w=1200",
+  "eventDateDisplay": "December 18 – 22, 2026",
+  "venue": "Central Opera House & Grand Stage",
+  "times": [
+    "Matinee: 2:00 PM",
+    "Evening: 7:30 PM"
+  ],
+  "orchestra": "Central Philharmonic Orchestra (40-Piece Live Score)",
+  "runtime": "2 Hours (Includes 20-minute Intermission)",
+  "ticketLink": "/contact",
+  "ticketPriceRange": "$35 – $120",
+  "detailBadgeLabel": "ALL LEVELS PARTICIPATE",
+  "badgeVariant": "cyan",
+  "season": "WINTER STAGE PRODUCTION",
+  "authorName": "Jean-Luc Moreau",
+  "authorRole": "Resident Choreographer & Stage Director",
+  "authorAvatarUrl": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=300",
+  "galleryImages": [
+    "https://images.unsplash.com/photo-1460723237483-7a6dc9d0b212?auto=format&fit=crop&q=80&w=800",
+    "https://images.unsplash.com/photo-1547153760-18fc86324498?auto=format&fit=crop&q=80&w=800",
+    "https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?auto=format&fit=crop&q=80&w=800",
+    "https://images.unsplash.com/photo-1508807526345-15e9b5f4eaff?auto=format&fit=crop&q=80&w=800"
+  ],
+  "tags": [
+    "Nutcracker",
+    "Live Orchestra",
+    "Stage Production",
+    "Winter Gala",
+    "Opera House"
+  ],
+  "content": {
+    "leadParagraph": "Central Studio’s annual production of The Nutcracker is the cornerstone of our stage performance curriculum. Uniting all divisions from our 7-year-old Primary Angels to our Pre-Professional corps de ballet, the production offers students immersive theatrical experience under professional stage conditions.",
+    "sections": [
+      {
+        "heading": "Synopsis & Production Overview",
+        "paragraphs": [
+          "Set on Christmas Eve in 19th-century Vienna, young Clara receives a enchanted wooden nutcracker from her mysterious godfather, Herr Drosselmeyer. As night falls, the parlor transforms into a grand battleground between the Mouse King and the valiant Nutcracker Prince.",
+          "In Act II, Clara journeys through the Enchanted Forest of Snow to the Land of Sweets, where the Sugar Plum Fairy celebrates Clara’s bravery with dances from around the world—Spanish Chocolate, Arabian Coffee, Chinese Tea, Russian Trepak, and the iconic Waltz of the Flowers."
+        ],
+        "quote": {
+          "text": "Performing with a live symphony orchestra at Central Opera House elevates student technique into pure magic. The discipline gained during Nutcracker rehearsals shapes their artistry forever.",
+          "author": "Jean-Luc Moreau",
+          "role": "Stage Director"
+        }
+      },
+      {
+        "heading": "Costume & Scenic Design Excellence",
+        "paragraphs": [
+          "Every costume in our Nutcracker repertoire is hand-crafted in our resident costume atelier using silk tulles, hand-sewn Swarovski crystals, and period velvet doublets.",
+          "The production features an expansive 30-foot growing Christmas tree, mechanical theatrical rigging, and state-of-the-art atmospheric lighting designed by Broadway lighting veteran Robert Sterling."
+        ]
+      }
+    ]
+  },
+  "keyHighlights": [
+    "Live 40-piece symphony orchestra conducting Tchaikovsky’s original score",
+    "Over 80 handmade period costumes styled in Paris",
+    "Custom scenic projections and magical snow fall effect",
+    "Principal guest artists dancing Cavalier and Sugar Plum solos"
+  ],
+  "castAndFaculty": [
+    {
+      "name": "Elena Rostova",
+      "role": "Guest Principal (Sugar Plum Fairy)",
+      "imageUrl": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=300"
+    },
+    {
+      "name": "Marcus Vance",
+      "role": "Cavalier Prince",
+      "imageUrl": "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=300"
+    },
+    {
+      "name": "Clara Dupont",
+      "role": "Clara Stahlbaum",
+      "imageUrl": "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&q=80&w=300"
+    },
+    {
+      "name": "Jean-Luc Moreau",
+      "role": "Stage Director & Herr Drosselmeyer",
+      "imageUrl": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=300"
+    }
+  ],
+  "relatedItems": [
+    {
+      "type": "performance",
+      "slug": "spring-showcase",
+      "title": "Spring Choreographic Showcase & Gala",
+      "subtitle": "Highlighting classical variations from Swan Lake, Don Quixote, and Sleeping Beauty alongside brand-new contemporary works commissioned by resident choreographers.",
+      "categoryLabel": "Stage Repertoire",
+      "image": "https://images.unsplash.com/photo-1547153760-18fc86324498?auto=format&fit=crop&q=80&w=1200",
+      "date": "April 24 – 26, 2027"
+    },
+    {
+      "type": "news",
+      "slug": "news-5",
+      "title": "Annual Winter Nutcracker Production Ticket Sales Open to Public",
+      "subtitle": "Reserve priority seating for our hallmark December production at Central Opera House featuring over 80 conservatory dancers and live orchestral score.",
+      "categoryLabel": "Studio Events",
+      "image": "https://images.unsplash.com/photo-1460723237483-7a6dc9d0b212?auto=format&fit=crop&q=80&w=800",
+      "date": "May 28, 2026"
+    },
+    {
+      "type": "news",
+      "slug": "news-1",
+      "title": "Central Studio Dancers Sweep Top Honors at Youth America Grand Prix (YAGP) Finals",
+      "subtitle": "Three senior conservatory students received full classical ballet scholarships to Paris Opera Ballet School and Royal Ballet Academy following outstanding solo performances.",
+      "categoryLabel": "Competition & Awards",
+      "image": "https://images.unsplash.com/photo-1547153760-18fc86324498?auto=format&fit=crop&q=80&w=1200",
+      "date": "July 18, 2026"
+    }
+  ]
+}

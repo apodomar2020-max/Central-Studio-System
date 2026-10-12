@@ -1,0 +1,74 @@
+[
+  {
+    "id": 1,
+    "channel": "news",
+    "public_name": "Victoria Vance",
+    "role": "Artistic Director & Master Teacher",
+    "biography": "Victoria Vance is credited by Central Studio as Artistic Director & Master Teacher for this editorial byline.",
+    "avatar_url": null,
+    "system_user_id": null,
+    "status": "active",
+    "created_at": "2026-09-28T07:19:41.40891+00:00",
+    "updated_at": "2026-09-28T09:47:50.145+00:00"
+  },
+  {
+    "id": 2,
+    "channel": "news",
+    "public_name": "Victoria Vance",
+    "role": "Artistic Director",
+    "biography": "Victoria Vance is credited by Central Studio as Artistic Director for this editorial byline.",
+    "avatar_url": null,
+    "system_user_id": null,
+    "status": "active",
+    "created_at": "2026-09-28T07:19:52.421229+00:00",
+    "updated_at": "2026-09-28T09:47:57.557+00:00"
+  },
+  {
+    "id": 3,
+    "channel": "news",
+    "public_name": "Central Studio Admissions",
+    "role": "Conservatory Administration",
+    "biography": "Central Studio Admissions is the editorial byline used for conservatory admissions and audition updates.",
+    "avatar_url": null,
+    "system_user_id": null,
+    "status": "active",
+    "created_at": "2026-09-28T07:20:05.885146+00:00",
+    "updated_at": "2026-09-28T09:48:09.019+00:00"
+  },
+  {
+    "id": 4,
+    "channel": "news",
+    "public_name": "Editorial Team",
+    "role": "Central Studio Journal",
+    "biography": "The Editorial Team is the Central Studio byline used for studio news, features, and editorial updates.",
+    "avatar_url": null,
+    "system_user_id": null,
+    "status": "active",
+    "created_at": "2026-09-28T07:20:18.085167+00:00",
+    "updated_at": "2026-09-28T09:32:26.042+00:00"
+  },
+  {
+    "id": 5,
+    "channel": "news",
+    "public_name": "Dance International Press",
+    "role": "Feature Article",
+    "biography": "This byline identifies the external press source credited on the legacy feature.",
+    "avatar_url": null,
+    "system_user_id": null,
+    "status": "active",
+    "created_at": "2026-09-28T07:20:32.250495+00:00",
+    "updated_at": "2026-09-28T09:48:24.263+00:00"
+  },
+  {
+    "id": 6,
+    "channel": "news",
+    "public_name": "Box Office Central",
+    "role": "Production Team",
+    "biography": "Box Office Central is the editorial byline used for ticketing and production announcements.",
+    "avatar_url": null,
+    "system_user_id": null,
+    "status": "active",
+    "created_at": "2026-09-28T07:20:47.213884+00:00",
+    "updated_at": "2026-09-28T09:48:31.461+00:00"
+  }
+]

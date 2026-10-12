@@ -1,0 +1,438 @@
+[
+  {
+    "id": 1,
+    "post_id": 1,
+    "language_id": 1,
+    "channel": "news",
+    "title": "Central Studio Dancers Sweep Top Honors at Youth America Grand Prix (YAGP) Finals",
+    "slug": "news-1",
+    "deck": "Three senior conservatory students received full classical ballet scholarships to Paris Opera Ballet School and Royal Ballet Academy following outstanding solo performances.",
+    "context_label": "Competition & Awards",
+    "feature_image_alt": "A dancer in a lunging pose with arms extended, lit in blue and gold stage lighting.",
+    "body": {
+      "blocks": [
+        {
+          "text": "In an unforgettable display of precision, technical stamina, and expressive depth, Central Studio Pre-Professional division dancers triumphed at the 2026 Youth America Grand Prix (YAGP) International Finals held at Lincoln Center in New York City.",
+          "type": "paragraph"
+        },
+        {
+          "text": "Historical Triumph on the International Stage",
+          "type": "heading",
+          "level": 2
+        },
+        {
+          "text": "Over 12,000 dancers worldwide competed in regional qualifiers throughout the year, with fewer than 300 reaching the prestigious final rounds. Central Studio sent four senior soloists, each delivering compelling classical variations and contemporary solos.",
+          "type": "paragraph"
+        },
+        {
+          "text": "Seventeen-year-old Clara Dupont secured the Grand Prix Award in the Senior Classical Division, performing her breathtaking variation from Raymonda Act III, followed by an emotionally resonant contemporary work choreographed by resident faculty member Jean-Luc Moreau.",
+          "type": "paragraph"
+        },
+        {
+          "text": "Seeing our dancers command the stage with such artistic poise and effortless physical control validates every hour spent in the studio. They didn't just dance steps—they communicated true soul.",
+          "type": "quote",
+          "attribution": "Victoria Vance",
+          "attributionRole": "Artistic Director, Central Studio"
+        },
+        {
+          "text": "Prestigious Scholarships & Company Offers",
+          "type": "heading",
+          "level": 2
+        },
+        {
+          "text": "Following the final awards ceremony, representatives from leading global institutions extended full merit scholarships and apprentice offers to Central Studio dancers:",
+          "type": "paragraph"
+        },
+        {
+          "type": "bulleted-list",
+          "items": [
+            "Clara Dupont: Full Year Scholarship to Paris Opera Ballet School & Direct Company Trainee invitation.",
+            "Julian Thorne: Full Scholarship to Royal Ballet Upper School, London.",
+            "Aria Chen: Junior Division Silver Medal & Summer Intensive Grant to San Francisco Ballet School.",
+            "Marcus Vance: Contemporary Soloist Special Jury Commendation."
+          ]
+        },
+        {
+          "alt": "A neon sign reading \"you are what you listen to\" with a musical note, mounted on a brick wall between bookshelves.",
+          "url": "https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?auto=format&fit=crop&q=80&w=1000",
+          "type": "image"
+        },
+        {
+          "text": "The Preparation Behind the Victory",
+          "type": "heading",
+          "level": 2
+        },
+        {
+          "text": "Preparation for YAGP began ten months prior under the meticulous guidance of Central Studio’s elite faculty. Dancers underwent rigorous daily pointe work, custom biomechanical strength conditioning, and video playback analysis to refine line alignment and musical cadence.",
+          "type": "paragraph"
+        },
+        {
+          "text": "Central Studio continues its commitment to training versatile, healthy, and expressive classical artists prepared for top-tier professional careers worldwide.",
+          "type": "paragraph"
+        }
+      ]
+    },
+    "body_version": 1,
+    "status": "published",
+    "published_at": "2026-07-18T00:00:00+00:00",
+    "reading_time_override_minutes": 4,
+    "seo_title": null,
+    "seo_description": null,
+    "og_image_url": null,
+    "author_snapshot": {
+      "name": "Victoria Vance",
+      "role": "Artistic Director & Master Teacher",
+      "avatarUrl": null,
+      "biography": "Victoria Vance is credited by Central Studio as Artistic Director & Master Teacher for this editorial byline."
+    },
+    "created_at": "2026-09-28T10:29:32.110242+00:00",
+    "updated_at": "2026-09-28T11:51:47.264+00:00",
+    "updated_by_admin_id": null,
+    "listing_image_url": "https://images.unsplash.com/photo-1547153760-18fc86324498?auto=format&fit=crop&q=80&w=1200",
+    "gallery": {
+      "items": [
+        {
+          "alt": "A neon sign reading \"you are what you listen to\" with a musical note, mounted on a brick wall between bookshelves.",
+          "url": "https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?auto=format&fit=crop&q=80&w=800"
+        },
+        {
+          "alt": "A painted lady butterfly resting on clusters of small orange and yellow flowers.",
+          "url": "https://images.unsplash.com/photo-1516475429286-465d815a0df7?auto=format&fit=crop&q=80&w=800"
+        },
+        {
+          "alt": "A line of ballet dancers in white tutus performing on a dimly lit stage.",
+          "url": "https://images.unsplash.com/photo-1508807526345-15e9b5f4eaff?auto=format&fit=crop&q=80&w=800"
+        }
+      ]
+    }
+  },
+  {
+    "id": 2,
+    "post_id": 2,
+    "language_id": 1,
+    "channel": "news",
+    "title": "Announcing 2026/2027 Season Conservatory Audition Dates & Criteria",
+    "slug": "news-2",
+    "deck": "Registration is now open for prospective students seeking entry into Primary, Junior, Senior, and Pre-Professional intensive training divisions.",
+    "context_label": "Auditions & Masterclasses",
+    "feature_image_alt": "A neon sign reading \"you are what you listen to\" with a musical note, mounted on a brick wall between bookshelves.",
+    "body": {
+      "blocks": [
+        {
+          "text": "Central Studio announces national audition dates for the upcoming 2026/2027 academic conservatory year. Applications are now live for dancers aged 7 through 20 seeking placement in our acclaimed classical ballet and contemporary tracks.",
+          "type": "paragraph"
+        },
+        {
+          "text": "Audition Schedule & Locations",
+          "type": "heading",
+          "level": 2
+        },
+        {
+          "text": "Auditions will be conducted both in-person at Central Studio Main Campus and virtually via video submission for international applicants unable to travel.",
+          "type": "paragraph"
+        },
+        {
+          "text": "Candidates will participate in a structured 90-minute ballet class including barre work, center combinations, allegro, pointe (for qualified levels), and a brief physical flexibility assessment.",
+          "type": "paragraph"
+        },
+        {
+          "type": "bulleted-list",
+          "items": [
+            "In-Person Main Campus Audition 1: Saturday, August 15, 2026 (Ages 7–12: 10:00 AM | Ages 13–20: 1:00 PM)",
+            "In-Person Main Campus Audition 2: Sunday, September 06, 2026 (Ages 7–12: 10:00 AM | Ages 13–20: 1:00 PM)",
+            "Video Submission Deadline: Midnight EST, September 10, 2026"
+          ]
+        },
+        {
+          "text": "Evaluation Criteria",
+          "type": "heading",
+          "level": 2
+        },
+        {
+          "text": "Our faculty evaluates applicants holistically. Key parameters evaluated include musicality, physical turn-out and posture, coordination, dedication, and artistic presence rather than prior technical perfection alone.",
+          "type": "paragraph"
+        },
+        {
+          "text": "We look for potential, passion, and teachability. Our curriculum is designed to transform raw talent into world-class technique.",
+          "type": "quote",
+          "attribution": "Elena Rostova",
+          "attributionRole": "Guest Principal Instructor"
+        }
+      ]
+    },
+    "body_version": 1,
+    "status": "published",
+    "published_at": "2026-07-05T00:00:00+00:00",
+    "reading_time_override_minutes": 3,
+    "seo_title": null,
+    "seo_description": null,
+    "og_image_url": null,
+    "author_snapshot": {
+      "name": "Central Studio Admissions",
+      "role": "Conservatory Administration",
+      "avatarUrl": null,
+      "biography": "Central Studio Admissions is the editorial byline used for conservatory admissions and audition updates."
+    },
+    "created_at": "2026-09-28T10:29:32.453575+00:00",
+    "updated_at": "2026-09-28T10:29:32.564+00:00",
+    "updated_by_admin_id": null,
+    "listing_image_url": "https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?auto=format&fit=crop&q=80&w=800",
+    "gallery": {
+      "items": []
+    }
+  },
+  {
+    "id": 3,
+    "post_id": 3,
+    "language_id": 1,
+    "channel": "news",
+    "title": "Guest Masterclass Series: Principal Dancer Elena Rostova Joins Faculty",
+    "slug": "news-3",
+    "deck": "World-renowned ballerina Elena Rostova conducts an exclusive 3-day pointe variation and partnerwork workshop at our Grand Stage Studio.",
+    "context_label": "Studio Events",
+    "feature_image_alt": "A painted lady butterfly resting on clusters of small orange and yellow flowers.",
+    "body": {
+      "blocks": [
+        {
+          "text": "Central Studio is thrilled to welcome former Mariinsky and Royal Ballet Guest Principal Elena Rostova for an intensive 3-day masterclass workshop dedicated to advanced classical repertoire, delicate pointe control, and partnerwork dynamics.",
+          "type": "paragraph"
+        },
+        {
+          "text": "An Unrivaled Educational Opportunity",
+          "type": "heading",
+          "level": 2
+        },
+        {
+          "text": "Elena Rostova, celebrated globally for her iconic portrayals of Odette/Odile and Giselle, brings four decades of onstage experience to our conservatory students.",
+          "type": "paragraph"
+        },
+        {
+          "text": "During the intensive session, students in Levels 03, 04, and Pre-Professional divisions will dissect classical variations from Swan Lake, Don Quixote, and La Bayadère.",
+          "type": "paragraph"
+        }
+      ]
+    },
+    "body_version": 1,
+    "status": "published",
+    "published_at": "2026-06-22T00:00:00+00:00",
+    "reading_time_override_minutes": 5,
+    "seo_title": null,
+    "seo_description": null,
+    "og_image_url": null,
+    "author_snapshot": {
+      "name": "Editorial Team",
+      "role": "Central Studio Journal",
+      "avatarUrl": null,
+      "biography": "The Editorial Team is the Central Studio byline used for studio news, features, and editorial updates."
+    },
+    "created_at": "2026-09-28T10:29:32.640057+00:00",
+    "updated_at": "2026-09-28T10:29:32.747+00:00",
+    "updated_by_admin_id": null,
+    "listing_image_url": "https://images.unsplash.com/photo-1516475429286-465d815a0df7?auto=format&fit=crop&q=80&w=800",
+    "gallery": {
+      "items": []
+    }
+  },
+  {
+    "id": 4,
+    "post_id": 4,
+    "language_id": 1,
+    "channel": "news",
+    "title": "Dance International Magazine Features Central Studio Sprung Floor Technology",
+    "slug": "news-4",
+    "deck": "An in-depth look at how climate-controlled studios and acoustic resonance floors prevent injury and prolong professional dancer careers.",
+    "context_label": "Press & Media",
+    "feature_image_alt": "A line of ballet dancers in white tutus performing on a dimly lit stage.",
+    "body": {
+      "blocks": [
+        {
+          "text": "In its June 2026 edition, Dance International Magazine published an extensive spotlight on Central Studio’s state-of-the-art facility engineering, highlighting how custom pneumatic sprung flooring and micro-climate airflow reduce joint fatigue by up to 42%.",
+          "type": "paragraph"
+        },
+        {
+          "text": "Redefining Safety in Ballet Infrastructure",
+          "type": "heading",
+          "level": 2
+        },
+        {
+          "text": "High-impact jumps and repetitive pointe work exert forces up to four times a dancer’s body weight onto studio floors. Central Studio’s 7-layer hardwood sprung floor system absorbs kinetic shock while returning natural rebound resilience.",
+          "type": "paragraph"
+        }
+      ]
+    },
+    "body_version": 1,
+    "status": "published",
+    "published_at": "2026-06-10T00:00:00+00:00",
+    "reading_time_override_minutes": 6,
+    "seo_title": null,
+    "seo_description": null,
+    "og_image_url": null,
+    "author_snapshot": {
+      "name": "Dance International Press",
+      "role": "Feature Article",
+      "avatarUrl": null,
+      "biography": "This byline identifies the external press source credited on the legacy feature."
+    },
+    "created_at": "2026-09-28T10:29:32.823051+00:00",
+    "updated_at": "2026-09-28T10:29:32.933+00:00",
+    "updated_by_admin_id": null,
+    "listing_image_url": "https://images.unsplash.com/photo-1508807526345-15e9b5f4eaff?auto=format&fit=crop&q=80&w=800",
+    "gallery": {
+      "items": []
+    }
+  },
+  {
+    "id": 5,
+    "post_id": 5,
+    "language_id": 1,
+    "channel": "news",
+    "title": "Annual Winter Nutcracker Production Ticket Sales Open to Public",
+    "slug": "news-5",
+    "deck": "Reserve priority seating for our hallmark December production at Central Opera House featuring over 80 conservatory dancers and live orchestral score.",
+    "context_label": "Studio Events",
+    "feature_image_alt": "A musician singing into a microphone while playing an electric guitar under red stage lighting.",
+    "body": {
+      "blocks": [
+        {
+          "text": "Tickets for Central Studio’s highly anticipated December 2026 production of Tchaikovsky’s The Nutcracker are now officially on sale. Featuring live orchestral accompaniment and over 80 student artists across six studio levels.",
+          "type": "paragraph"
+        },
+        {
+          "text": "Showtimes & Box Office Information",
+          "type": "heading",
+          "level": 2
+        },
+        {
+          "text": "Performances run from December 18 to December 22, 2026 at the historic Central Opera House. Early bird ticket discounts are available for conservatory families and alumni through August 31.",
+          "type": "paragraph"
+        }
+      ]
+    },
+    "body_version": 1,
+    "status": "published",
+    "published_at": "2026-05-28T00:00:00+00:00",
+    "reading_time_override_minutes": 2,
+    "seo_title": null,
+    "seo_description": null,
+    "og_image_url": null,
+    "author_snapshot": {
+      "name": "Box Office Central",
+      "role": "Production Team",
+      "avatarUrl": null,
+      "biography": "Box Office Central is the editorial byline used for ticketing and production announcements."
+    },
+    "created_at": "2026-09-28T10:29:32.949199+00:00",
+    "updated_at": "2026-09-28T10:29:33.059+00:00",
+    "updated_by_admin_id": null,
+    "listing_image_url": "https://images.unsplash.com/photo-1460723237483-7a6dc9d0b212?auto=format&fit=crop&q=80&w=800",
+    "gallery": {
+      "items": []
+    }
+  },
+  {
+    "id": 6,
+    "post_id": 6,
+    "language_id": 1,
+    "channel": "news",
+    "title": "Pre-Pro Soloist Wins Gold Medal at Lausanne International Ballet Competition",
+    "slug": "news-6",
+    "deck": "Celebrating Marcus Vance for his gold-medal winning variation in contemporary and classical divisions in Lausanne, Switzerland.",
+    "context_label": "Competition & Awards",
+    "feature_image_alt": "A painted lady butterfly resting on clusters of small orange and yellow flowers.",
+    "body": {
+      "blocks": [
+        {
+          "text": "Eighteen-year-old Marcus Vance has been awarded the prestigious Gold Medal at the 2026 Prix de Lausanne in Switzerland, earning international accolades and praise from premier company directors across Europe and North America.",
+          "type": "paragraph"
+        },
+        {
+          "text": "A Masterclass in Virtuosity and Grace",
+          "type": "heading",
+          "level": 2
+        },
+        {
+          "text": "Performing the Prince Desire variation from Sleeping Beauty and an edgy modern solo choreographed specifically for his artistic temperament, Vance captured highest scores across all technical and artistic rubrics.",
+          "type": "paragraph"
+        }
+      ]
+    },
+    "body_version": 1,
+    "status": "published",
+    "published_at": "2026-05-14T00:00:00+00:00",
+    "reading_time_override_minutes": 4,
+    "seo_title": null,
+    "seo_description": null,
+    "og_image_url": null,
+    "author_snapshot": {
+      "name": "Victoria Vance",
+      "role": "Artistic Director",
+      "avatarUrl": null,
+      "biography": "Victoria Vance is credited by Central Studio as Artistic Director for this editorial byline."
+    },
+    "created_at": "2026-09-28T10:29:33.152327+00:00",
+    "updated_at": "2026-09-28T10:29:33.234+00:00",
+    "updated_by_admin_id": null,
+    "listing_image_url": "https://images.unsplash.com/photo-1516475429286-465d815a0df7?auto=format&fit=crop&q=80&w=800",
+    "gallery": {
+      "items": []
+    }
+  },
+  {
+    "id": 7,
+    "post_id": 7,
+    "language_id": 1,
+    "channel": "news",
+    "title": "شسي",
+    "slug": "شسي",
+    "deck": null,
+    "context_label": null,
+    "feature_image_alt": null,
+    "body": {
+      "blocks": []
+    },
+    "body_version": 1,
+    "status": "draft",
+    "published_at": null,
+    "reading_time_override_minutes": null,
+    "seo_title": null,
+    "seo_description": null,
+    "og_image_url": null,
+    "author_snapshot": null,
+    "created_at": "2026-10-01T07:19:49.265115+00:00",
+    "updated_at": "2026-10-01T07:19:49.265115+00:00",
+    "updated_by_admin_id": null,
+    "listing_image_url": null,
+    "gallery": {
+      "items": []
+    }
+  },
+  {
+    "id": 8,
+    "post_id": 8,
+    "language_id": 1,
+    "channel": "news",
+    "title": "ddfdsfdsfds",
+    "slug": "sdfdsfdsfdsfsf",
+    "deck": null,
+    "context_label": null,
+    "feature_image_alt": null,
+    "body": {
+      "blocks": []
+    },
+    "body_version": 1,
+    "status": "draft",
+    "published_at": null,
+    "reading_time_override_minutes": null,
+    "seo_title": null,
+    "seo_description": null,
+    "og_image_url": null,
+    "author_snapshot": null,
+    "created_at": "2026-10-04T05:37:37.802026+00:00",
+    "updated_at": "2026-10-04T05:37:37.802026+00:00",
+    "updated_by_admin_id": null,
+    "listing_image_url": null,
+    "gallery": {
+      "items": []
+    }
+  }
+]

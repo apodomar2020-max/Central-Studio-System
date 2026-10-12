@@ -1,0 +1,75 @@
+{
+  "slug": "yagp-2027",
+  "category": "performance",
+  "categoryLabel": "Stage Repertoire",
+  "title": "Youth America Grand Prix (YAGP) Competition Track",
+  "subtitle": "Targeted coaching for qualifying Senior and Pre-Pro dancers competing for international conservatory scholarships and ballet company apprenticeships.",
+  "heroImageUrl": "https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?auto=format&fit=crop&q=80&w=1200",
+  "eventDateDisplay": "February & March 2027",
+  "venue": "Regional Semifinals & NYC International Finals",
+  "times": [],
+  "orchestra": null,
+  "runtime": "Multi-Day Semi-Finals & Gala",
+  "ticketLink": null,
+  "ticketPriceRange": null,
+  "detailBadgeLabel": "SOLOIST COMPETITION",
+  "badgeVariant": "gold",
+  "season": "INTERNATIONAL COMPETITION TRACK",
+  "authorName": "Central Studio Coaching Staff",
+  "authorRole": "Competition Division",
+  "authorAvatarUrl": "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=300",
+  "galleryImages": [],
+  "tags": [
+    "YAGP",
+    "Competition",
+    "Soloists",
+    "Scholarships",
+    "Coaching"
+  ],
+  "content": {
+    "leadParagraph": "Central Studio’s YAGP Competition Track provides elite soloists with individualized technical refinement, costume customization, and psychological performance conditioning for international stage success.",
+    "sections": [
+      {
+        "heading": "Intensive Private Coaching Curriculum",
+        "paragraphs": [
+          "Dancers selected for YAGP receive weekly dedicated solo coaching outside standard group classes. Focus areas include artistic phrasing, pointe stability, pirouette accuracy, and stage projection."
+        ]
+      }
+    ]
+  },
+  "keyHighlights": [
+    "One-on-one private variation coaching with former principal dancers",
+    "Custom variation staging matched to individual dancer physical strengths",
+    "Mock jury dress rehearsals with guest international adjudicators"
+  ],
+  "castAndFaculty": [],
+  "relatedItems": [
+    {
+      "type": "news",
+      "slug": "news-1",
+      "title": "Central Studio Dancers Sweep Top Honors at Youth America Grand Prix (YAGP) Finals",
+      "subtitle": "Three senior conservatory students received full classical ballet scholarships to Paris Opera Ballet School and Royal Ballet Academy following outstanding solo performances.",
+      "categoryLabel": "Competition & Awards",
+      "image": "https://images.unsplash.com/photo-1547153760-18fc86324498?auto=format&fit=crop&q=80&w=1200",
+      "date": "July 18, 2026"
+    },
+    {
+      "type": "news",
+      "slug": "news-6",
+      "title": "Pre-Pro Soloist Wins Gold Medal at Lausanne International Ballet Competition",
+      "subtitle": "Celebrating Marcus Vance for his gold-medal winning variation in contemporary and classical divisions in Lausanne, Switzerland.",
+      "categoryLabel": "Competition & Awards",
+      "image": "https://images.unsplash.com/photo-1516475429286-465d815a0df7?auto=format&fit=crop&q=80&w=800",
+      "date": "May 14, 2026"
+    },
+    {
+      "type": "performance",
+      "slug": "spring-showcase",
+      "title": "Spring Choreographic Showcase & Gala",
+      "subtitle": "Highlighting classical variations from Swan Lake, Don Quixote, and Sleeping Beauty alongside brand-new contemporary works commissioned by resident choreographers.",
+      "categoryLabel": "Stage Repertoire",
+      "image": "https://images.unsplash.com/photo-1547153760-18fc86324498?auto=format&fit=crop&q=80&w=1200",
+      "date": "April 24 – 26, 2027"
+    }
+  ]
+}

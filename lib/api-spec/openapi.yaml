@@ -2252,6 +2252,30 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /admin/website/performance-news-options:
+    get:
+      operationId: listWebsitePerformanceNewsOptions
+      tags: [websitePerformances]
+      summary: >-
+        Public News selectable as a Performance's related News — requires
+        website.performance:view (not website.posts). Read from the same public Editorial
+        projection the Website renders, newest first.
+      responses:
+        "200":
+          description: Selectable public News
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WebsitePerformanceNewsOption"
+        "403":
+          description: Missing website.performance:view
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /admin/website/performances/{slug}:
     get:
       operationId: getAdminWebsitePerformance
@@ -3457,6 +3481,70 @@ paths:
                 items: { $ref: "#/components/schemas/EditorialRecommendation" }
         "400":
           description: Self-reference, duplicate, or cross-channel target
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "403":
+          description: Missing website.posts:edit
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: Unknown post
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /admin/editorial/posts/{id}/performance-refs:
+    get:
+      operationId: listEditorialPostPerformanceRefs
+      tags: [editorial]
+      summary: A News post's related Performances, in editor order — requires website.posts:view
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Performance refs
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EditorialPerformanceRef" }
+        "403":
+          description: Missing website.posts:view
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: Unknown post
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+    put:
+      operationId: replaceEditorialPostPerformanceRefs
+      tags: [editorial]
+      summary: >-
+        Replace a News post's related Performances — requires website.posts:edit. Replace
+        semantics (the body is the complete new list), idempotent. Every Performance must exist
+        and be active; no duplicates; news-channel posts only. Publicly these render AFTER the
+        post's News recommendations.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReplaceEditorialPostPerformanceRefsBody" }
+      responses:
+        "200":
+          description: Updated Performance refs
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EditorialPerformanceRef" }
+        "400":
+          description: Duplicate, unknown or inactive Performance, or a non-news post
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -5716,6 +5804,16 @@ components:
         createdAt: { type: string }
         updatedAt: { type: string }
 
+    WebsitePerformanceNewsOption:
+      type: object
+      description: A public News story a Performance can link to (slug is what relatedRefs stores).
+      required: [slug, title, categoryLabel, image]
+      properties:
+        slug: { type: string }
+        title: { type: string }
+        categoryLabel: { type: string }
+        image: { type: string }
+
     PublicWebsiteNewsListItem:
       type: object
       required:
@@ -7100,9 +7198,21 @@ components:
         # migration. Nothing in Wave 1 or 1.1 writes them.
         migrationSourceTable: { type: ["string", "null"] }
         migrationSourceId: { type: ["integer", "null"] }
+        # Native News category (migration 0131). Optional in the response
+        # shape for additive compatibility; always present from this API.
+        # NULL for migrated posts (their public category comes from the
+        # legacy overlay) and for native posts created without one.
+        newsCategory: { type: ["string", "null"], enum: [awards, auditions, events, press, null] }
         createdAt: { type: string }
         updatedAt: { type: string }
         updatedByAdminId: { type: ["integer", "null"] }
+
+    EditorialNewsCategory:
+      type: string
+      description: >-
+        Machine key a native News post is filtered by on the public Website. Enforced here (not
+        by a database CHECK), so adding a category is a contract change.
+      enum: [awards, auditions, events, press]
 
     UpdateEditorialPostSharedBody:
       type: object
@@ -7113,6 +7223,7 @@ components:
       properties:
         authorId: { type: ["integer", "null"] }
         featureImageUrl: { type: ["string", "null"] }
+        newsCategory: { type: ["string", "null"], enum: [awards, auditions, events, press, null] }
 
     # ─── Translation (one language, own lifecycle) ───────────────────────────
 
@@ -7307,6 +7418,8 @@ components:
         channel: { type: string, enum: [news, experience] }
         authorId: { type: ["integer", "null"] }
         featureImageUrl: { type: ["string", "null"] }
+        # Optional; only meaningful on the news channel (400 otherwise).
+        newsCategory: { type: ["string", "null"], enum: [awards, auditions, events, press, null] }
         translation: { $ref: "#/components/schemas/CreateEditorialTranslationBody" }
 
     ReplaceEditorialPostTopicsBody:
@@ -7331,6 +7444,34 @@ components:
         targetTitle: { type: string }
         targetSlug: { type: string }
         targetLanguageCode: { type: ["string", "null"] }
+
+    EditorialPerformanceRef:
+      type: object
+      description: >-
+        A News post's pointer to a Performance (related items). `performanceSlug` /
+        `performanceTitle` / `performanceIsActive` are read from the Performance purely so the
+        Admin list is readable; an inactive Performance stays stored but is not shown publicly.
+      required: [performanceId, position, performanceSlug, performanceTitle, performanceIsActive]
+      properties:
+        performanceId: { type: integer }
+        position: { type: integer }
+        performanceSlug: { type: string }
+        performanceTitle: { type: string }
+        performanceIsActive: { type: boolean }
+
+    ReplaceEditorialPostPerformanceRefsBody:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 20
+          items:
+            type: object
+            required: [performanceId]
+            properties:
+              performanceId: { type: integer }
+              position: { type: integer, minimum: 0 }
 
     ReplaceEditorialPostRecommendationsBody:
       type: object
@@ -7458,6 +7599,8 @@ components:
         scope: { type: string, enum: [shared] }
         authorId: { type: ["integer", "null"] }
         featureImageUrl: { type: ["string", "null"] }
+        # Present on shared revisions written after migration 0131; absent on older ones.
+        newsCategory: { type: ["string", "null"] }
         topics:
           type: array
           items: { type: integer }

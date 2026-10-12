@@ -1,0 +1,68 @@
+[
+  {
+    "slug": "news-1",
+    "category": "awards",
+    "categoryLabel": "Competition & Awards",
+    "title": "Central Studio Dancers Sweep Top Honors at Youth America Grand Prix (YAGP) Finals",
+    "excerpt": "Three senior conservatory students received full classical ballet scholarships to Paris Opera Ballet School and Royal Ballet Academy following outstanding solo performances.",
+    "image": "https://images.unsplash.com/photo-1547153760-18fc86324498?auto=format&fit=crop&q=80&w=1200",
+    "publishedDate": "July 18, 2026",
+    "readTime": "4 min read",
+    "isFeatured": true
+  },
+  {
+    "slug": "news-2",
+    "category": "auditions",
+    "categoryLabel": "Auditions & Masterclasses",
+    "title": "Announcing 2026/2027 Season Conservatory Audition Dates & Criteria",
+    "excerpt": "Registration is now open for prospective students seeking entry into Primary, Junior, Senior, and Pre-Professional intensive training divisions.",
+    "image": "https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?auto=format&fit=crop&q=80&w=800",
+    "publishedDate": "July 05, 2026",
+    "readTime": "3 min read",
+    "isFeatured": false
+  },
+  {
+    "slug": "news-3",
+    "category": "events",
+    "categoryLabel": "Studio Events",
+    "title": "Guest Masterclass Series: Principal Dancer Elena Rostova Joins Faculty",
+    "excerpt": "World-renowned ballerina Elena Rostova conducts an exclusive 3-day pointe variation and partnerwork workshop at our Grand Stage Studio.",
+    "image": "https://images.unsplash.com/photo-1516475429286-465d815a0df7?auto=format&fit=crop&q=80&w=800",
+    "publishedDate": "June 22, 2026",
+    "readTime": "5 min read",
+    "isFeatured": false
+  },
+  {
+    "slug": "news-4",
+    "category": "press",
+    "categoryLabel": "Press & Media",
+    "title": "Dance International Magazine Features Central Studio Sprung Floor Technology",
+    "excerpt": "An in-depth look at how climate-controlled studios and acoustic resonance floors prevent injury and prolong professional dancer careers.",
+    "image": "https://images.unsplash.com/photo-1508807526345-15e9b5f4eaff?auto=format&fit=crop&q=80&w=800",
+    "publishedDate": "June 10, 2026",
+    "readTime": "6 min read",
+    "isFeatured": false
+  },
+  {
+    "slug": "news-5",
+    "category": "events",
+    "categoryLabel": "Studio Events",
+    "title": "Annual Winter Nutcracker Production Ticket Sales Open to Public",
+    "excerpt": "Reserve priority seating for our hallmark December production at Central Opera House featuring over 80 conservatory dancers and live orchestral score.",
+    "image": "https://images.unsplash.com/photo-1460723237483-7a6dc9d0b212?auto=format&fit=crop&q=80&w=800",
+    "publishedDate": "May 28, 2026",
+    "readTime": "2 min read",
+    "isFeatured": false
+  },
+  {
+    "slug": "news-6",
+    "category": "awards",
+    "categoryLabel": "Competition & Awards",
+    "title": "Pre-Pro Soloist Wins Gold Medal at Lausanne International Ballet Competition",
+    "excerpt": "Celebrating Marcus Vance for his gold-medal winning variation in contemporary and classical divisions in Lausanne, Switzerland.",
+    "image": "https://images.unsplash.com/photo-1516475429286-465d815a0df7?auto=format&fit=crop&q=80&w=800",
+    "publishedDate": "May 14, 2026",
+    "readTime": "4 min read",
+    "isFeatured": false
+  }
+]

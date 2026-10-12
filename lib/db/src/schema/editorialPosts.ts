@@ -131,6 +131,20 @@ export type EditorialGallery = { items: EditorialGalleryItem[] };
 /** The stored value of an empty gallery, and migration 0129's column DEFAULT. */
 export const EMPTY_EDITORIAL_GALLERY: EditorialGallery = { items: [] };
 
+/**
+ * Allowed native News category keys (API-layer enum, migration 0135) and
+ * their default public labels — the labels the legacy rows carry in
+ * Production. A translation's context_label, when set, wins over these.
+ */
+export const EDITORIAL_NEWS_CATEGORIES = ["awards", "auditions", "events", "press"] as const;
+export type EditorialNewsCategory = (typeof EDITORIAL_NEWS_CATEGORIES)[number];
+export const EDITORIAL_NEWS_CATEGORY_LABELS: Record<EditorialNewsCategory, string> = {
+  awards: "Competition & Awards",
+  auditions: "Auditions & Masterclasses",
+  events: "Studio Events",
+  press: "Press & Media",
+};
+
 export type EditorialAuthorSnapshot = {
   name: string;
   role: string;
@@ -149,6 +163,16 @@ export const editorialPostsTable = pgTable("editorial_posts", {
   // Shared across every language; the localized alt text lives on each
   // translation row.
   featureImageUrl:      text("feature_image_url"),
+  /**
+   * Native News category key — migration 0135 (Unified Website CMS).
+   * The public Website filters News by this machine key (awards |
+   * auditions | events | press). NULL for every migrated post (their key
+   * still comes from the legacy overlay) and allowed NULL for old or
+   * API-created native posts; the public projection then applies a
+   * documented fallback. The allowed set is an API-layer enum
+   * (EDITORIAL_NEWS_CATEGORIES), deliberately not a DB CHECK.
+   */
+  newsCategory:         text("news_category"),
   migrationSourceTable: text("migration_source_table"),
   migrationSourceId:    integer("migration_source_id"),
   createdAt:            timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
@@ -156,6 +180,7 @@ export const editorialPostsTable = pgTable("editorial_posts", {
   updatedByAdminId:     integer("updated_by_admin_id").references(() => systemUsersTable.id, { onDelete: "set null" }),
 }, (table) => [
   check("editorial_posts_channel_valid", sql`${table.channel} IN ('news', 'experience')`),
+  check("editorial_posts_news_category_not_blank", sql`${table.newsCategory} IS NULL OR length(trim(${table.newsCategory})) > 0`),
   index("editorial_posts_channel_idx").on(table.channel),
   index("editorial_posts_author_idx").on(table.authorId),
   /**

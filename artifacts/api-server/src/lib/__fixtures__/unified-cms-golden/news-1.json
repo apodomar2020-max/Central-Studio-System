@@ -1,0 +1,199 @@
+{
+  "slug": "news-1",
+  "category": "awards",
+  "categoryLabel": "Competition & Awards",
+  "title": "Central Studio Dancers Sweep Top Honors at Youth America Grand Prix (YAGP) Finals",
+  "subtitle": "Three senior conservatory students received full classical ballet scholarships to Paris Opera Ballet School and Royal Ballet Academy following outstanding solo performances.",
+  "heroImageUrl": "https://images.unsplash.com/photo-1547153760-18fc86324498?auto=format&fit=crop&q=80&w=1200",
+  "publishedDate": "July 18, 2026",
+  "readTime": "4 min read",
+  "authorName": "Victoria Vance",
+  "authorRole": "Artistic Director & Master Teacher",
+  "authorAvatarUrl": null,
+  "galleryImages": [
+    "https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?auto=format&fit=crop&q=80&w=800",
+    "https://images.unsplash.com/photo-1516475429286-465d815a0df7?auto=format&fit=crop&q=80&w=800",
+    "https://images.unsplash.com/photo-1508807526345-15e9b5f4eaff?auto=format&fit=crop&q=80&w=800"
+  ],
+  "tags": [
+    "Classical Ballet",
+    "Conservatory",
+    "Gala",
+    "Scholarships",
+    "YAGP"
+  ],
+  "content": {
+    "leadParagraph": "In an unforgettable display of precision, technical stamina, and expressive depth, Central Studio Pre-Professional division dancers triumphed at the 2026 Youth America Grand Prix (YAGP) International Finals held at Lincoln Center in New York City.",
+    "sections": [
+      {
+        "heading": "Historical Triumph on the International Stage",
+        "paragraphs": [
+          "Over 12,000 dancers worldwide competed in regional qualifiers throughout the year, with fewer than 300 reaching the prestigious final rounds. Central Studio sent four senior soloists, each delivering compelling classical variations and contemporary solos.",
+          "Seventeen-year-old Clara Dupont secured the Grand Prix Award in the Senior Classical Division, performing her breathtaking variation from Raymonda Act III, followed by an emotionally resonant contemporary work choreographed by resident faculty member Jean-Luc Moreau."
+        ],
+        "quote": {
+          "text": "Seeing our dancers command the stage with such artistic poise and effortless physical control validates every hour spent in the studio. They didn't just dance steps—they communicated true soul.",
+          "author": "Victoria Vance",
+          "role": "Artistic Director, Central Studio"
+        }
+      },
+      {
+        "heading": "Prestigious Scholarships & Company Offers",
+        "paragraphs": [
+          "Following the final awards ceremony, representatives from leading global institutions extended full merit scholarships and apprentice offers to Central Studio dancers:"
+        ],
+        "bulletPoints": [
+          "Clara Dupont: Full Year Scholarship to Paris Opera Ballet School & Direct Company Trainee invitation.",
+          "Julian Thorne: Full Scholarship to Royal Ballet Upper School, London.",
+          "Aria Chen: Junior Division Silver Medal & Summer Intensive Grant to San Francisco Ballet School.",
+          "Marcus Vance: Contemporary Soloist Special Jury Commendation."
+        ],
+        "image": "https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?auto=format&fit=crop&q=80&w=1000"
+      },
+      {
+        "heading": "The Preparation Behind the Victory",
+        "paragraphs": [
+          "Preparation for YAGP began ten months prior under the meticulous guidance of Central Studio’s elite faculty. Dancers underwent rigorous daily pointe work, custom biomechanical strength conditioning, and video playback analysis to refine line alignment and musical cadence.",
+          "Central Studio continues its commitment to training versatile, healthy, and expressive classical artists prepared for top-tier professional careers worldwide."
+        ]
+      }
+    ]
+  },
+  "relatedItems": [
+    {
+      "type": "news",
+      "slug": "news-6",
+      "title": "Pre-Pro Soloist Wins Gold Medal at Lausanne International Ballet Competition",
+      "subtitle": "Celebrating Marcus Vance for his gold-medal winning variation in contemporary and classical divisions in Lausanne, Switzerland.",
+      "categoryLabel": "Competition & Awards",
+      "image": "https://images.unsplash.com/photo-1516475429286-465d815a0df7?auto=format&fit=crop&q=80&w=800",
+      "date": "May 14, 2026"
+    },
+    {
+      "type": "performance",
+      "slug": "nutcracker-repertoire",
+      "title": "The Nutcracker Repertoire at Central Opera House",
+      "subtitle": "A beloved annual hallmark tradition involving all student levels from Primary Angels to Senior Sugar Plum Fairy solos, performed with a live 40-piece symphony orchestra.",
+      "categoryLabel": "Stage Repertoire",
+      "image": "https://images.unsplash.com/photo-1516475429286-465d815a0df7?auto=format&fit=crop&q=80&w=1200",
+      "date": "December 18 – 22, 2026"
+    },
+    {
+      "type": "news",
+      "slug": "news-3",
+      "title": "Guest Masterclass Series: Principal Dancer Elena Rostova Joins Faculty",
+      "subtitle": "World-renowned ballerina Elena Rostova conducts an exclusive 3-day pointe variation and partnerwork workshop at our Grand Stage Studio.",
+      "categoryLabel": "Studio Events",
+      "image": "https://images.unsplash.com/photo-1516475429286-465d815a0df7?auto=format&fit=crop&q=80&w=800",
+      "date": "June 22, 2026"
+    }
+  ],
+  "publishedAt": "2026-07-18 00:00:00+00",
+  "featureImageAlt": "A dancer in a lunging pose with arms extended, lit in blue and gold stage lighting.",
+  "body": {
+    "blocks": [
+      {
+        "type": "paragraph",
+        "text": "In an unforgettable display of precision, technical stamina, and expressive depth, Central Studio Pre-Professional division dancers triumphed at the 2026 Youth America Grand Prix (YAGP) International Finals held at Lincoln Center in New York City."
+      },
+      {
+        "type": "heading",
+        "level": 2,
+        "text": "Historical Triumph on the International Stage"
+      },
+      {
+        "type": "paragraph",
+        "text": "Over 12,000 dancers worldwide competed in regional qualifiers throughout the year, with fewer than 300 reaching the prestigious final rounds. Central Studio sent four senior soloists, each delivering compelling classical variations and contemporary solos."
+      },
+      {
+        "type": "paragraph",
+        "text": "Seventeen-year-old Clara Dupont secured the Grand Prix Award in the Senior Classical Division, performing her breathtaking variation from Raymonda Act III, followed by an emotionally resonant contemporary work choreographed by resident faculty member Jean-Luc Moreau."
+      },
+      {
+        "type": "quote",
+        "text": "Seeing our dancers command the stage with such artistic poise and effortless physical control validates every hour spent in the studio. They didn't just dance steps—they communicated true soul.",
+        "attribution": "Victoria Vance",
+        "attributionRole": "Artistic Director, Central Studio"
+      },
+      {
+        "type": "heading",
+        "level": 2,
+        "text": "Prestigious Scholarships & Company Offers"
+      },
+      {
+        "type": "paragraph",
+        "text": "Following the final awards ceremony, representatives from leading global institutions extended full merit scholarships and apprentice offers to Central Studio dancers:"
+      },
+      {
+        "type": "bulleted-list",
+        "items": [
+          "Clara Dupont: Full Year Scholarship to Paris Opera Ballet School & Direct Company Trainee invitation.",
+          "Julian Thorne: Full Scholarship to Royal Ballet Upper School, London.",
+          "Aria Chen: Junior Division Silver Medal & Summer Intensive Grant to San Francisco Ballet School.",
+          "Marcus Vance: Contemporary Soloist Special Jury Commendation."
+        ]
+      },
+      {
+        "type": "image",
+        "url": "https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?auto=format&fit=crop&q=80&w=1000",
+        "alt": "A neon sign reading \"you are what you listen to\" with a musical note, mounted on a brick wall between bookshelves."
+      },
+      {
+        "type": "heading",
+        "level": 2,
+        "text": "The Preparation Behind the Victory"
+      },
+      {
+        "type": "paragraph",
+        "text": "Preparation for YAGP began ten months prior under the meticulous guidance of Central Studio’s elite faculty. Dancers underwent rigorous daily pointe work, custom biomechanical strength conditioning, and video playback analysis to refine line alignment and musical cadence."
+      },
+      {
+        "type": "paragraph",
+        "text": "Central Studio continues its commitment to training versatile, healthy, and expressive classical artists prepared for top-tier professional careers worldwide."
+      }
+    ]
+  },
+  "gallery": {
+    "items": [
+      {
+        "url": "https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?auto=format&fit=crop&q=80&w=800",
+        "alt": "A neon sign reading \"you are what you listen to\" with a musical note, mounted on a brick wall between bookshelves."
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1516475429286-465d815a0df7?auto=format&fit=crop&q=80&w=800",
+        "alt": "A painted lady butterfly resting on clusters of small orange and yellow flowers."
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1508807526345-15e9b5f4eaff?auto=format&fit=crop&q=80&w=800",
+        "alt": "A line of ballet dancers in white tutus performing on a dimly lit stage."
+      }
+    ]
+  },
+  "author": {
+    "name": "Victoria Vance",
+    "role": "Artistic Director & Master Teacher",
+    "avatarUrl": null
+  },
+  "topics": [
+    {
+      "name": "Classical Ballet",
+      "slug": "classical-ballet"
+    },
+    {
+      "name": "Conservatory",
+      "slug": "conservatory"
+    },
+    {
+      "name": "Gala",
+      "slug": "gala"
+    },
+    {
+      "name": "Scholarships",
+      "slug": "scholarships"
+    },
+    {
+      "name": "YAGP",
+      "slug": "yagp"
+    }
+  ]
+}

@@ -116,6 +116,7 @@ export * from "./editorialPosts";
 export * from "./editorialPostTranslations";
 export * from "./editorialPostTopics";
 export * from "./editorialPostRelations";
+export * from "./editorialPostPerformanceRefs";
 export * from "./editorialPlacements";
 export * from "./editorialPostRevisions";
 export * from "./editorialWebsiteLinks";

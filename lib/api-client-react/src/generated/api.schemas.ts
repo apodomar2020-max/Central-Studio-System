@@ -1999,6 +1999,16 @@ export interface WebsiteNewsPost {
   updatedAt: string;
 }
 
+/**
+ * A public News story a Performance can link to (slug is what relatedRefs stores).
+ */
+export interface WebsitePerformanceNewsOption {
+  slug: string;
+  title: string;
+  categoryLabel: string;
+  image: string;
+}
+
 export interface PublicWebsiteNewsListItem {
   slug: string;
   category: string;
@@ -3814,6 +3824,20 @@ export const EditorialPostChannel = {
 } as const;
 
 /**
+ * @nullable
+ */
+export type EditorialPostNewsCategory =
+  | (typeof EditorialPostNewsCategory)[keyof typeof EditorialPostNewsCategory]
+  | null;
+
+export const EditorialPostNewsCategory = {
+  awards: "awards",
+  auditions: "auditions",
+  events: "events",
+  press: "press",
+} as const;
+
+/**
  * The shared spine of a logical post. Carries NO title, slug, body, status or publishedAt — those are per-translation. `featureImageUrl` is shared by every language; its ALT TEXT is per-translation, because alt text is prose.
  */
 export interface EditorialPost {
@@ -3827,11 +3851,40 @@ export interface EditorialPost {
   migrationSourceTable: string | null;
   /** @nullable */
   migrationSourceId: number | null;
+  /** @nullable */
+  newsCategory?: EditorialPostNewsCategory;
   createdAt: string;
   updatedAt: string;
   /** @nullable */
   updatedByAdminId: number | null;
 }
+
+/**
+ * Machine key a native News post is filtered by on the public Website. Enforced here (not by a database CHECK), so adding a category is a contract change.
+ */
+export type EditorialNewsCategory =
+  (typeof EditorialNewsCategory)[keyof typeof EditorialNewsCategory];
+
+export const EditorialNewsCategory = {
+  awards: "awards",
+  auditions: "auditions",
+  events: "events",
+  press: "press",
+} as const;
+
+/**
+ * @nullable
+ */
+export type UpdateEditorialPostSharedBodyNewsCategory =
+  | (typeof UpdateEditorialPostSharedBodyNewsCategory)[keyof typeof UpdateEditorialPostSharedBodyNewsCategory]
+  | null;
+
+export const UpdateEditorialPostSharedBodyNewsCategory = {
+  awards: "awards",
+  auditions: "auditions",
+  events: "events",
+  press: "press",
+} as const;
 
 /**
  * Partial update of the SHARED fields only. Channel is immutable. Prose belongs to translations. A feature-image change deliberately does NOT clear any translation's localized alt text.
@@ -3841,6 +3894,8 @@ export interface UpdateEditorialPostSharedBody {
   authorId?: number | null;
   /** @nullable */
   featureImageUrl?: string | null;
+  /** @nullable */
+  newsCategory?: UpdateEditorialPostSharedBodyNewsCategory;
 }
 
 export type EditorialPostTranslationLanguageDirection =
@@ -4062,6 +4117,20 @@ export const CreateEditorialPostBodyChannel = {
 } as const;
 
 /**
+ * @nullable
+ */
+export type CreateEditorialPostBodyNewsCategory =
+  | (typeof CreateEditorialPostBodyNewsCategory)[keyof typeof CreateEditorialPostBodyNewsCategory]
+  | null;
+
+export const CreateEditorialPostBodyNewsCategory = {
+  awards: "awards",
+  auditions: "auditions",
+  events: "events",
+  press: "press",
+} as const;
+
+/**
  * Creates the shared post spine, and optionally its first translation in the same transaction. Any translation is always a DRAFT. The author must belong to the post's channel.
  */
 export interface CreateEditorialPostBody {
@@ -4070,12 +4139,36 @@ export interface CreateEditorialPostBody {
   authorId?: number | null;
   /** @nullable */
   featureImageUrl?: string | null;
+  /** @nullable */
+  newsCategory?: CreateEditorialPostBodyNewsCategory;
   translation?: CreateEditorialTranslationBody;
 }
 
 export interface ReplaceEditorialPostTopicsBody {
   /** @maxItems 50 */
   topicIds: number[];
+}
+
+/**
+ * A News post's pointer to a Performance (related items). `performanceSlug` / `performanceTitle` / `performanceIsActive` are read from the Performance purely so the Admin list is readable; an inactive Performance stays stored but is not shown publicly.
+ */
+export interface EditorialPerformanceRef {
+  performanceId: number;
+  position: number;
+  performanceSlug: string;
+  performanceTitle: string;
+  performanceIsActive: boolean;
+}
+
+export type ReplaceEditorialPostPerformanceRefsBodyItemsItem = {
+  performanceId: number;
+  /** @minimum 0 */
+  position?: number;
+};
+
+export interface ReplaceEditorialPostPerformanceRefsBody {
+  /** @maxItems 20 */
+  items: ReplaceEditorialPostPerformanceRefsBodyItemsItem[];
 }
 
 export type ReplaceEditorialPostRecommendationsBodyItemsItem = {
@@ -4228,6 +4321,8 @@ export interface EditorialSharedRevisionSnapshot {
   authorId: number | null;
   /** @nullable */
   featureImageUrl: string | null;
+  /** @nullable */
+  newsCategory?: string | null;
   topics: number[];
 }
 

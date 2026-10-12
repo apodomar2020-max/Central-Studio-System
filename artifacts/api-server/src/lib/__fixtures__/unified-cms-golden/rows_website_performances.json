@@ -1,0 +1,391 @@
+[
+  {
+    "id": 1,
+    "slug": "nutcracker-repertoire",
+    "sort_order": 1,
+    "category": "performance",
+    "category_label": "Stage Repertoire",
+    "title": "The Nutcracker Repertoire at Central Opera House",
+    "subtitle": "A beloved annual hallmark tradition involving all student levels from Primary Angels to Senior Sugar Plum Fairy solos, performed with a live 40-piece symphony orchestra.",
+    "hero_image_url": "https://images.unsplash.com/photo-1516475429286-465d815a0df7?auto=format&fit=crop&q=80&w=1200",
+    "event_date_display": "December 18 – 22, 2026",
+    "season": "WINTER STAGE PRODUCTION",
+    "featured_hero_image_url": "https://images.unsplash.com/photo-1516475429286-465d815a0df7?auto=format&fit=crop&q=80&w=1920",
+    "featured_hero_date_badge": "DEC 18 – 22, 2026",
+    "is_featured": true,
+    "card_title": "The Nutcracker Repertoire",
+    "card_description": "A beloved annual tradition involving all student levels from Primary Angels to Senior solos with a live symphony orchestra.",
+    "card_image_url": "https://images.unsplash.com/photo-1547153760-18fc86324498?auto=format&fit=crop&w=800&q=80",
+    "card_venue": "Central Opera House",
+    "card_dates_display": "December 18 – 22, 2026",
+    "card_time": "7:00 PM - 9:30 PM",
+    "date_day": "18",
+    "date_month": "DEC",
+    "card_badge_label": "ALL LEVELS",
+    "venue": "Central Opera House & Grand Stage",
+    "times": [
+      "Matinee: 2:00 PM",
+      "Evening: 7:30 PM"
+    ],
+    "orchestra": "Central Philharmonic Orchestra (40-Piece Live Score)",
+    "runtime": "2 Hours (Includes 20-minute Intermission)",
+    "ticket_link": "/contact",
+    "ticket_price_range": "$35 – $120",
+    "detail_badge_label": "ALL LEVELS PARTICIPATE",
+    "badge_variant": "cyan",
+    "author_name": "Jean-Luc Moreau",
+    "author_role": "Resident Choreographer & Stage Director",
+    "author_avatar_url": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=300",
+    "tags": [
+      "Nutcracker",
+      "Live Orchestra",
+      "Stage Production",
+      "Winter Gala",
+      "Opera House"
+    ],
+    "gallery_images": [
+      "https://images.unsplash.com/photo-1460723237483-7a6dc9d0b212?auto=format&fit=crop&q=80&w=800",
+      "https://images.unsplash.com/photo-1547153760-18fc86324498?auto=format&fit=crop&q=80&w=800",
+      "https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?auto=format&fit=crop&q=80&w=800",
+      "https://images.unsplash.com/photo-1508807526345-15e9b5f4eaff?auto=format&fit=crop&q=80&w=800"
+    ],
+    "content": {
+      "sections": [
+        {
+          "quote": {
+            "role": "Stage Director",
+            "text": "Performing with a live symphony orchestra at Central Opera House elevates student technique into pure magic. The discipline gained during Nutcracker rehearsals shapes their artistry forever.",
+            "author": "Jean-Luc Moreau"
+          },
+          "heading": "Synopsis & Production Overview",
+          "paragraphs": [
+            "Set on Christmas Eve in 19th-century Vienna, young Clara receives a enchanted wooden nutcracker from her mysterious godfather, Herr Drosselmeyer. As night falls, the parlor transforms into a grand battleground between the Mouse King and the valiant Nutcracker Prince.",
+            "In Act II, Clara journeys through the Enchanted Forest of Snow to the Land of Sweets, where the Sugar Plum Fairy celebrates Clara’s bravery with dances from around the world—Spanish Chocolate, Arabian Coffee, Chinese Tea, Russian Trepak, and the iconic Waltz of the Flowers."
+          ]
+        },
+        {
+          "heading": "Costume & Scenic Design Excellence",
+          "paragraphs": [
+            "Every costume in our Nutcracker repertoire is hand-crafted in our resident costume atelier using silk tulles, hand-sewn Swarovski crystals, and period velvet doublets.",
+            "The production features an expansive 30-foot growing Christmas tree, mechanical theatrical rigging, and state-of-the-art atmospheric lighting designed by Broadway lighting veteran Robert Sterling."
+          ]
+        }
+      ],
+      "leadParagraph": "Central Studio’s annual production of The Nutcracker is the cornerstone of our stage performance curriculum. Uniting all divisions from our 7-year-old Primary Angels to our Pre-Professional corps de ballet, the production offers students immersive theatrical experience under professional stage conditions."
+    },
+    "key_highlights": [
+      "Live 40-piece symphony orchestra conducting Tchaikovsky’s original score",
+      "Over 80 handmade period costumes styled in Paris",
+      "Custom scenic projections and magical snow fall effect",
+      "Principal guest artists dancing Cavalier and Sugar Plum solos"
+    ],
+    "schedule_overview": [
+      {
+        "time": "Dec 18 - 7:30 PM",
+        "event": "Opening Night Gala & Red Carpet Reception"
+      },
+      {
+        "time": "Dec 19 - 2:00 PM",
+        "event": "Family Matinee Performance"
+      },
+      {
+        "time": "Dec 19 - 7:30 PM",
+        "event": "Evening Performance"
+      },
+      {
+        "time": "Dec 20 - 2:00 PM",
+        "event": "Sunday Afternoon Special Matinee"
+      },
+      {
+        "time": "Dec 22 - 7:30 PM",
+        "event": "Closing Night Feature"
+      }
+    ],
+    "cast_and_faculty": [
+      {
+        "name": "Elena Rostova",
+        "role": "Guest Principal (Sugar Plum Fairy)",
+        "imageUrl": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=300"
+      },
+      {
+        "name": "Marcus Vance",
+        "role": "Cavalier Prince",
+        "imageUrl": "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=300"
+      },
+      {
+        "name": "Clara Dupont",
+        "role": "Clara Stahlbaum",
+        "imageUrl": "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&q=80&w=300"
+      },
+      {
+        "name": "Jean-Luc Moreau",
+        "role": "Stage Director & Herr Drosselmeyer",
+        "imageUrl": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=300"
+      }
+    ],
+    "related_refs": [
+      {
+        "slug": "spring-showcase",
+        "type": "performance"
+      },
+      {
+        "slug": "news-5",
+        "type": "news"
+      },
+      {
+        "slug": "news-1",
+        "type": "news"
+      }
+    ],
+    "is_active": true,
+    "updated_by_admin_id": null,
+    "created_at": "2026-08-19T21:53:31.511656+00:00",
+    "updated_at": "2026-08-19T21:53:31.511656+00:00"
+  },
+  {
+    "id": 2,
+    "slug": "spring-showcase",
+    "sort_order": 2,
+    "category": "performance",
+    "category_label": "Stage Repertoire",
+    "title": "Spring Choreographic Showcase & Gala",
+    "subtitle": "Highlighting classical variations from Swan Lake, Don Quixote, and Sleeping Beauty alongside brand-new contemporary works commissioned by resident choreographers.",
+    "hero_image_url": "https://images.unsplash.com/photo-1547153760-18fc86324498?auto=format&fit=crop&q=80&w=1200",
+    "event_date_display": "April 24 – 26, 2027",
+    "season": "CONTEMPORARY & CLASSICAL GALA",
+    "featured_hero_image_url": null,
+    "featured_hero_date_badge": null,
+    "is_featured": false,
+    "card_title": "Spring Choreographic Showcase",
+    "card_description": "Highlighting classical variations from Swan Lake and Don Quixote alongside brand-new contemporary works.",
+    "card_image_url": "https://images.unsplash.com/photo-1518834107812-67b0b7c58434?auto=format&fit=crop&w=800&q=80",
+    "card_venue": "Metropolitan Arts Center",
+    "card_dates_display": "April 24 – 26, 2027",
+    "card_time": "6:30 PM - 9:00 PM",
+    "date_day": "24",
+    "date_month": "APR",
+    "card_badge_label": "LEVELS 02 – PRE-PRO",
+    "venue": "Metropolitan Arts Center",
+    "times": [
+      "Friday Evening: 8:00 PM",
+      "Saturday Evening: 7:30 PM",
+      "Sunday Matinee: 2:30 PM"
+    ],
+    "orchestra": "Recorded Classical & Original Electronic Ambient Scores",
+    "runtime": "1 Hour 45 Minutes",
+    "ticket_link": "/contact",
+    "ticket_price_range": "$25 – $85",
+    "detail_badge_label": "LEVELS 02 – PRE-PRO",
+    "badge_variant": "purple",
+    "author_name": "Victoria Vance",
+    "author_role": "Artistic Director",
+    "author_avatar_url": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=300",
+    "tags": [
+      "Spring Gala",
+      "Swan Lake",
+      "Contemporary",
+      "Choreography",
+      "Metropolitan Arts"
+    ],
+    "gallery_images": [
+      "https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?auto=format&fit=crop&q=80&w=800",
+      "https://images.unsplash.com/photo-1516475429286-465d815a0df7?auto=format&fit=crop&q=80&w=800"
+    ],
+    "content": {
+      "sections": [
+        {
+          "heading": "Program Architecture",
+          "paragraphs": [
+            "Act I presents beloved classical repertoire including the Black Swan Pas de Deux, Grand Pas de Deux from Don Quixote, and the Garland Waltz from Sleeping Beauty.",
+            "Act II premieres original neoclassical and contemporary works commissioned specifically for Central Studio dancers, exploring themes of resilience, architectural space, and acoustic rhythm."
+          ]
+        }
+      ],
+      "leadParagraph": "The Spring Choreographic Showcase bridges timeless classical heritage with cutting-edge 21st-century movement. Designed to challenge senior conservatory dancers in both pristine classical technique and fluid contemporary expression."
+    },
+    "key_highlights": [
+      "Petipa Act III classical excerpts from Swan Lake & Don Quixote",
+      "World premiere contemporary piece \"Resonance\" by Jean-Luc Moreau",
+      "Live piano accompaniment for classical variation solos"
+    ],
+    "schedule_overview": [],
+    "cast_and_faculty": [],
+    "related_refs": [
+      {
+        "slug": "nutcracker-repertoire",
+        "type": "performance"
+      },
+      {
+        "slug": "news-3",
+        "type": "news"
+      },
+      {
+        "slug": "yagp-2027",
+        "type": "performance"
+      }
+    ],
+    "is_active": true,
+    "updated_by_admin_id": null,
+    "created_at": "2026-08-19T21:53:31.827234+00:00",
+    "updated_at": "2026-08-19T21:53:31.827234+00:00"
+  },
+  {
+    "id": 3,
+    "slug": "yagp-2027",
+    "sort_order": 3,
+    "category": "performance",
+    "category_label": "Stage Repertoire",
+    "title": "Youth America Grand Prix (YAGP) Competition Track",
+    "subtitle": "Targeted coaching for qualifying Senior and Pre-Pro dancers competing for international conservatory scholarships and ballet company apprenticeships.",
+    "hero_image_url": "https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?auto=format&fit=crop&q=80&w=1200",
+    "event_date_display": "February & March 2027",
+    "season": "INTERNATIONAL COMPETITION TRACK",
+    "featured_hero_image_url": null,
+    "featured_hero_date_badge": null,
+    "is_featured": false,
+    "card_title": "Youth America Grand Prix (YAGP)",
+    "card_description": "Targeted coaching for Senior and Pre-Pro dancers competing for international conservatory scholarships.",
+    "card_image_url": "https://images.unsplash.com/photo-1508807526345-15e9b5f4eaff?auto=format&fit=crop&w=800&q=80",
+    "card_venue": "Regional & NY Finals",
+    "card_dates_display": "March 12 – 15, 2027",
+    "card_time": "9:00 AM - 6:00 PM",
+    "date_day": "12",
+    "date_month": "MAR",
+    "card_badge_label": "SOLOIST TRACK",
+    "venue": "Regional Semifinals & NYC International Finals",
+    "times": [],
+    "orchestra": null,
+    "runtime": "Multi-Day Semi-Finals & Gala",
+    "ticket_link": null,
+    "ticket_price_range": null,
+    "detail_badge_label": "SOLOIST COMPETITION",
+    "badge_variant": "gold",
+    "author_name": "Central Studio Coaching Staff",
+    "author_role": "Competition Division",
+    "author_avatar_url": "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=300",
+    "tags": [
+      "YAGP",
+      "Competition",
+      "Soloists",
+      "Scholarships",
+      "Coaching"
+    ],
+    "gallery_images": [],
+    "content": {
+      "sections": [
+        {
+          "heading": "Intensive Private Coaching Curriculum",
+          "paragraphs": [
+            "Dancers selected for YAGP receive weekly dedicated solo coaching outside standard group classes. Focus areas include artistic phrasing, pointe stability, pirouette accuracy, and stage projection."
+          ]
+        }
+      ],
+      "leadParagraph": "Central Studio’s YAGP Competition Track provides elite soloists with individualized technical refinement, costume customization, and psychological performance conditioning for international stage success."
+    },
+    "key_highlights": [
+      "One-on-one private variation coaching with former principal dancers",
+      "Custom variation staging matched to individual dancer physical strengths",
+      "Mock jury dress rehearsals with guest international adjudicators"
+    ],
+    "schedule_overview": [],
+    "cast_and_faculty": [],
+    "related_refs": [
+      {
+        "slug": "news-1",
+        "type": "news"
+      },
+      {
+        "slug": "news-6",
+        "type": "news"
+      },
+      {
+        "slug": "spring-showcase",
+        "type": "performance"
+      }
+    ],
+    "is_active": true,
+    "updated_by_admin_id": null,
+    "created_at": "2026-08-19T21:53:32.115163+00:00",
+    "updated_at": "2026-08-19T21:53:32.115163+00:00"
+  },
+  {
+    "id": 4,
+    "slug": "summer-showcase",
+    "sort_order": 4,
+    "category": "performance",
+    "category_label": "Stage Repertoire",
+    "title": "Summer Conservatory Showcase & Finale",
+    "subtitle": "An intimate studio performance presenting the culmination of our 4-week summer intensive featuring guest international faculty repertoire.",
+    "hero_image_url": "https://images.unsplash.com/photo-1508807526345-15e9b5f4eaff?auto=format&fit=crop&q=80&w=1200",
+    "event_date_display": "August 08, 2027",
+    "season": "INTENSIVE FINALE PERFORMANCE",
+    "featured_hero_image_url": null,
+    "featured_hero_date_badge": null,
+    "is_featured": false,
+    "card_title": "Summer Conservatory Showcase",
+    "card_description": "An intimate studio performance presenting the culmination of our 4-week summer intensive featuring international guest faculty.",
+    "card_image_url": "https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?auto=format&fit=crop&w=800&q=80",
+    "card_venue": "Central Studio Grand Hall",
+    "card_dates_display": "August 08, 2027",
+    "card_time": "5:00 PM - 7:30 PM",
+    "date_day": "08",
+    "date_month": "AUG",
+    "card_badge_label": "SUMMER INTENSIVE",
+    "venue": "Central Studio Grand Hall",
+    "times": [
+      "1:00 PM & 5:00 PM"
+    ],
+    "orchestra": null,
+    "runtime": "1 Hour 15 Minutes",
+    "ticket_link": null,
+    "ticket_price_range": null,
+    "detail_badge_label": "SUMMER INTENSIVE PARTICIPANTS",
+    "badge_variant": "cyan",
+    "author_name": "Conservatory Faculty",
+    "author_role": "Summer Intensive Directors",
+    "author_avatar_url": "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=300",
+    "tags": [
+      "Summer Intensive",
+      "Showcase",
+      "Studio Performance",
+      "Guest Faculty"
+    ],
+    "gallery_images": [],
+    "content": {
+      "sections": [
+        {
+          "heading": "Celebration of Growth",
+          "paragraphs": [
+            "Featuring pieces created by guest choreographers over four intensive weeks of training, this intimate showcase highlights the stamina, versatility, and passion of rising young artists."
+          ]
+        }
+      ],
+      "leadParagraph": "The Summer Conservatory Showcase marks the energetic finale of our summer intensive program. Families and patrons are invited into our flagship studio hall to witness rapid technical acceleration and artistic growth."
+    },
+    "key_highlights": [
+      "Presentation of works staged during 4-week summer intensive",
+      "Demonstrations of character dance, partnerwork, and contemporary improv",
+      "Diploma presentation ceremony for completing conservatory students"
+    ],
+    "schedule_overview": [],
+    "cast_and_faculty": [],
+    "related_refs": [
+      {
+        "slug": "news-2",
+        "type": "news"
+      },
+      {
+        "slug": "nutcracker-repertoire",
+        "type": "performance"
+      },
+      {
+        "slug": "news-3",
+        "type": "news"
+      }
+    ],
+    "is_active": true,
+    "updated_by_admin_id": null,
+    "created_at": "2026-08-19T21:53:32.344625+00:00",
+    "updated_at": "2026-08-19T21:53:32.344625+00:00"
+  }
+]

@@ -1,0 +1,191 @@
+[
+  {
+    "id": 1,
+    "channel": "news",
+    "name": "YAGP",
+    "slug": "yagp",
+    "status": "active",
+    "created_at": "2026-09-28T07:23:38.514011+00:00",
+    "updated_at": "2026-09-28T07:23:38.514011+00:00"
+  },
+  {
+    "id": 2,
+    "channel": "news",
+    "name": "Auditions",
+    "slug": "auditions",
+    "status": "active",
+    "created_at": "2026-09-28T07:24:19.331071+00:00",
+    "updated_at": "2026-09-28T07:24:19.331071+00:00"
+  },
+  {
+    "id": 3,
+    "channel": "news",
+    "name": "Classical Ballet",
+    "slug": "classical-ballet",
+    "status": "active",
+    "created_at": "2026-09-28T07:24:52.469024+00:00",
+    "updated_at": "2026-09-28T07:24:52.469024+00:00"
+  },
+  {
+    "id": 4,
+    "channel": "news",
+    "name": "Scholarships",
+    "slug": "scholarships",
+    "status": "active",
+    "created_at": "2026-09-28T07:24:54.464604+00:00",
+    "updated_at": "2026-09-28T07:24:54.464604+00:00"
+  },
+  {
+    "id": 5,
+    "channel": "news",
+    "name": "Conservatory",
+    "slug": "conservatory",
+    "status": "active",
+    "created_at": "2026-09-28T07:24:56.788524+00:00",
+    "updated_at": "2026-09-28T07:24:56.788524+00:00"
+  },
+  {
+    "id": 6,
+    "channel": "news",
+    "name": "Gala",
+    "slug": "gala",
+    "status": "active",
+    "created_at": "2026-09-28T07:25:12.869607+00:00",
+    "updated_at": "2026-09-28T07:25:12.869607+00:00"
+  },
+  {
+    "id": 7,
+    "channel": "news",
+    "name": "Admissions",
+    "slug": "admissions",
+    "status": "active",
+    "created_at": "2026-09-28T07:25:14.917189+00:00",
+    "updated_at": "2026-09-28T07:25:14.917189+00:00"
+  },
+  {
+    "id": 8,
+    "channel": "news",
+    "name": "Ballet Training",
+    "slug": "ballet-training",
+    "status": "active",
+    "created_at": "2026-09-28T07:25:17.229067+00:00",
+    "updated_at": "2026-09-28T07:25:17.229067+00:00"
+  },
+  {
+    "id": 9,
+    "channel": "news",
+    "name": "Youth Division",
+    "slug": "youth-division",
+    "status": "active",
+    "created_at": "2026-09-28T07:25:19.692505+00:00",
+    "updated_at": "2026-09-28T07:25:19.692505+00:00"
+  },
+  {
+    "id": 10,
+    "channel": "news",
+    "name": "Masterclass",
+    "slug": "masterclass",
+    "status": "active",
+    "created_at": "2026-09-28T07:25:34.137514+00:00",
+    "updated_at": "2026-09-28T07:25:34.137514+00:00"
+  },
+  {
+    "id": 11,
+    "channel": "news",
+    "name": "Pointe Work",
+    "slug": "pointe-work",
+    "status": "active",
+    "created_at": "2026-09-28T07:25:36.105932+00:00",
+    "updated_at": "2026-09-28T07:25:36.105932+00:00"
+  },
+  {
+    "id": 12,
+    "channel": "news",
+    "name": "Partnerwork",
+    "slug": "partnerwork",
+    "status": "active",
+    "created_at": "2026-09-28T07:25:38.319858+00:00",
+    "updated_at": "2026-09-28T07:25:38.319858+00:00"
+  },
+  {
+    "id": 13,
+    "channel": "news",
+    "name": "Faculty",
+    "slug": "faculty",
+    "status": "active",
+    "created_at": "2026-09-28T07:25:40.835641+00:00",
+    "updated_at": "2026-09-28T07:25:40.835641+00:00"
+  },
+  {
+    "id": 14,
+    "channel": "news",
+    "name": "Press",
+    "slug": "press",
+    "status": "active",
+    "created_at": "2026-09-28T07:25:53.008798+00:00",
+    "updated_at": "2026-09-28T07:25:53.008798+00:00"
+  },
+  {
+    "id": 15,
+    "channel": "news",
+    "name": "Injury Prevention",
+    "slug": "injury-prevention",
+    "status": "active",
+    "created_at": "2026-09-28T07:25:55.053931+00:00",
+    "updated_at": "2026-09-28T07:25:55.053931+00:00"
+  },
+  {
+    "id": 16,
+    "channel": "news",
+    "name": "Studio Tech",
+    "slug": "studio-tech",
+    "status": "active",
+    "created_at": "2026-09-28T07:25:57.290067+00:00",
+    "updated_at": "2026-09-28T07:25:57.290067+00:00"
+  },
+  {
+    "id": 17,
+    "channel": "news",
+    "name": "Dance Science",
+    "slug": "dance-science",
+    "status": "active",
+    "created_at": "2026-09-28T07:25:59.833607+00:00",
+    "updated_at": "2026-09-28T07:25:59.833607+00:00"
+  },
+  {
+    "id": 18,
+    "channel": "news",
+    "name": "Nutcracker",
+    "slug": "nutcracker",
+    "status": "active",
+    "created_at": "2026-09-28T07:26:12.057126+00:00",
+    "updated_at": "2026-09-28T07:26:12.057126+00:00"
+  },
+  {
+    "id": 19,
+    "channel": "news",
+    "name": "Stage Production",
+    "slug": "stage-production",
+    "status": "active",
+    "created_at": "2026-09-28T07:26:14.128253+00:00",
+    "updated_at": "2026-09-28T07:26:14.128253+00:00"
+  },
+  {
+    "id": 20,
+    "channel": "news",
+    "name": "Prix de Lausanne",
+    "slug": "prix-de-lausanne",
+    "status": "active",
+    "created_at": "2026-09-28T07:26:16.474328+00:00",
+    "updated_at": "2026-09-28T07:26:16.474328+00:00"
+  },
+  {
+    "id": 21,
+    "channel": "news",
+    "name": "Soloist",
+    "slug": "soloist",
+    "status": "active",
+    "created_at": "2026-09-28T07:26:18.900494+00:00",
+    "updated_at": "2026-09-28T07:26:18.900494+00:00"
+  }
+]

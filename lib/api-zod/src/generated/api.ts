@@ -4063,6 +4063,23 @@ export const CreateWebsitePerformanceResponse = zod.object({
 });
 
 /**
+ * @summary Public News selectable as a Performance's related News — requires website.performance:view (not website.posts). Read from the same public Editorial projection the Website renders, newest first.
+ */
+export const ListWebsitePerformanceNewsOptionsResponseItem = zod
+  .object({
+    slug: zod.string(),
+    title: zod.string(),
+    categoryLabel: zod.string(),
+    image: zod.string(),
+  })
+  .describe(
+    "A public News story a Performance can link to (slug is what relatedRefs stores).",
+  );
+export const ListWebsitePerformanceNewsOptionsResponse = zod.array(
+  ListWebsitePerformanceNewsOptionsResponseItem,
+);
+
+/**
  * @summary Get one Performance, full Admin shape
  */
 export const GetAdminWebsitePerformanceParams = zod.object({
@@ -5755,6 +5772,15 @@ export const ListEditorialPostsResponse = zod.object({
           featureImageUrl: zod.string().nullable(),
           migrationSourceTable: zod.string().nullable(),
           migrationSourceId: zod.number().nullable(),
+          newsCategory: zod
+            .union([
+              zod.literal("awards"),
+              zod.literal("auditions"),
+              zod.literal("events"),
+              zod.literal("press"),
+              zod.literal(null),
+            ])
+            .nullish(),
           createdAt: zod.string(),
           updatedAt: zod.string(),
           updatedByAdminId: zod.number().nullable(),
@@ -5826,6 +5852,15 @@ export const CreateEditorialPostBody = zod
     channel: zod.enum(["news", "experience"]),
     authorId: zod.number().nullish(),
     featureImageUrl: zod.string().nullish(),
+    newsCategory: zod
+      .union([
+        zod.literal("awards"),
+        zod.literal("auditions"),
+        zod.literal("events"),
+        zod.literal("press"),
+        zod.literal(null),
+      ])
+      .nullish(),
     translation: zod
       .object({
         languageCode: zod
@@ -5991,6 +6026,15 @@ export const CreateEditorialPostResponse = zod.object({
       featureImageUrl: zod.string().nullable(),
       migrationSourceTable: zod.string().nullable(),
       migrationSourceId: zod.number().nullable(),
+      newsCategory: zod
+        .union([
+          zod.literal("awards"),
+          zod.literal("auditions"),
+          zod.literal("events"),
+          zod.literal("press"),
+          zod.literal(null),
+        ])
+        .nullish(),
       createdAt: zod.string(),
       updatedAt: zod.string(),
       updatedByAdminId: zod.number().nullable(),
@@ -6180,6 +6224,15 @@ export const GetEditorialPostResponse = zod.object({
       featureImageUrl: zod.string().nullable(),
       migrationSourceTable: zod.string().nullable(),
       migrationSourceId: zod.number().nullable(),
+      newsCategory: zod
+        .union([
+          zod.literal("awards"),
+          zod.literal("auditions"),
+          zod.literal("events"),
+          zod.literal("press"),
+          zod.literal(null),
+        ])
+        .nullish(),
       createdAt: zod.string(),
       updatedAt: zod.string(),
       updatedByAdminId: zod.number().nullable(),
@@ -6362,6 +6415,15 @@ export const UpdateEditorialPostSharedBody = zod
   .object({
     authorId: zod.number().nullish(),
     featureImageUrl: zod.string().nullish(),
+    newsCategory: zod
+      .union([
+        zod.literal("awards"),
+        zod.literal("auditions"),
+        zod.literal("events"),
+        zod.literal("press"),
+        zod.literal(null),
+      ])
+      .nullish(),
   })
   .describe(
     "Partial update of the SHARED fields only. Channel is immutable. Prose belongs to translations. A feature-image change deliberately does NOT clear any translation's localized alt text.",
@@ -6375,6 +6437,15 @@ export const UpdateEditorialPostSharedResponse = zod
     featureImageUrl: zod.string().nullable(),
     migrationSourceTable: zod.string().nullable(),
     migrationSourceId: zod.number().nullable(),
+    newsCategory: zod
+      .union([
+        zod.literal("awards"),
+        zod.literal("auditions"),
+        zod.literal("events"),
+        zod.literal("press"),
+        zod.literal(null),
+      ])
+      .nullish(),
     createdAt: zod.string(),
     updatedAt: zod.string(),
     updatedByAdminId: zod.number().nullable(),
@@ -7984,6 +8055,68 @@ export const ReplaceEditorialPostRecommendationsResponse = zod.array(
 );
 
 /**
+ * @summary A News post's related Performances, in editor order — requires website.posts:view
+ */
+export const ListEditorialPostPerformanceRefsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ListEditorialPostPerformanceRefsResponseItem = zod
+  .object({
+    performanceId: zod.number(),
+    position: zod.number(),
+    performanceSlug: zod.string(),
+    performanceTitle: zod.string(),
+    performanceIsActive: zod.boolean(),
+  })
+  .describe(
+    "A News post's pointer to a Performance (related items). `performanceSlug` \/ `performanceTitle` \/ `performanceIsActive` are read from the Performance purely so the Admin list is readable; an inactive Performance stays stored but is not shown publicly.",
+  );
+export const ListEditorialPostPerformanceRefsResponse = zod.array(
+  ListEditorialPostPerformanceRefsResponseItem,
+);
+
+/**
+ * @summary Replace a News post's related Performances — requires website.posts:edit. Replace semantics (the body is the complete new list), idempotent. Every Performance must exist and be active; no duplicates; news-channel posts only. Publicly these render AFTER the post's News recommendations.
+ */
+export const ReplaceEditorialPostPerformanceRefsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const replaceEditorialPostPerformanceRefsBodyItemsItemPositionMin = 0;
+
+export const replaceEditorialPostPerformanceRefsBodyItemsMax = 20;
+
+export const ReplaceEditorialPostPerformanceRefsBody = zod.object({
+  items: zod
+    .array(
+      zod.object({
+        performanceId: zod.number(),
+        position: zod
+          .number()
+          .min(replaceEditorialPostPerformanceRefsBodyItemsItemPositionMin)
+          .optional(),
+      }),
+    )
+    .max(replaceEditorialPostPerformanceRefsBodyItemsMax),
+});
+
+export const ReplaceEditorialPostPerformanceRefsResponseItem = zod
+  .object({
+    performanceId: zod.number(),
+    position: zod.number(),
+    performanceSlug: zod.string(),
+    performanceTitle: zod.string(),
+    performanceIsActive: zod.boolean(),
+  })
+  .describe(
+    "A News post's pointer to a Performance (related items). `performanceSlug` \/ `performanceTitle` \/ `performanceIsActive` are read from the Performance purely so the Admin list is readable; an inactive Performance stays stored but is not shown publicly.",
+  );
+export const ReplaceEditorialPostPerformanceRefsResponse = zod.array(
+  ReplaceEditorialPostPerformanceRefsResponseItem,
+);
+
+/**
  * @summary A post's revision history, newest first — requires website.posts:view. Metadata only. Each entry is either TRANSLATION-scoped (translationId set) or SHARED/post-scoped (translationId null). Filter by languageCode for one language's history.
  */
 export const ListEditorialPostRevisionsParams = zod.object({
@@ -8202,6 +8335,7 @@ export const GetEditorialPostRevisionResponse = zod.object({
         scope: zod.enum(["shared"]),
         authorId: zod.number().nullable(),
         featureImageUrl: zod.string().nullable(),
+        newsCategory: zod.string().nullish(),
         topics: zod.array(zod.number()),
       })
       .describe(
