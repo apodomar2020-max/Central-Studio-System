@@ -26,6 +26,7 @@ import Packages from "@/pages/packages";
 import Bookings from "@/pages/bookings";
 import Students from "@/pages/students";
 import ParentsPage from "@/pages/parents";
+import InactiveAccounts from "@/pages/inactive-accounts";
 import StudentDetailPage from "@/pages/student-detail";
 import ChildDetailPage from "@/pages/child-detail";
 import PromotionsPage from "@/pages/promotions";
@@ -165,6 +166,7 @@ const ROUTE_PERMS = {
   bookings: [["bookings", "view"]],
   students: [["students", "view"]],
   parents: [["parents", "view"]],
+  inactiveAccounts: [["students", "view"], ["parents", "view"], ["users", "view"]],
   // Shared guard for the 360 profile page — reachable from either the
   // Students or Parents list, so any one of these permissions is enough
   // (the backend overview endpoint enforces the same users/students/parents
@@ -256,6 +258,7 @@ function ProtectedRouter() {
         <Route path="/packages">{guarded(ROUTE_PERMS.packages, <Packages />)}</Route>
         <Route path="/bookings">{guarded(ROUTE_PERMS.bookings, <Bookings />)}</Route>
         <Route path="/students">{guarded(ROUTE_PERMS.students, <Students />)}</Route>
+        <Route path="/inactive-accounts">{guarded(ROUTE_PERMS.inactiveAccounts, <InactiveAccounts />)}</Route>
         <Route path="/students/:id">{guarded(ROUTE_PERMS.studentDetail, <StudentDetailPage />)}</Route>
         <Route path="/parents">{guarded(ROUTE_PERMS.parents, <ParentsPage />)}</Route>
         <Route path="/parents/:id">{guarded(ROUTE_PERMS.studentDetail, <StudentDetailPage />)}</Route>

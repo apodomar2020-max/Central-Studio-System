@@ -33,6 +33,7 @@ export function TableToolbar({
   onClear,
   className,
   children,
+  leadingContent,
 }: {
   searchValue: string;
   onSearchChange: (value: string) => void;
@@ -51,6 +52,8 @@ export function TableToolbar({
   className?: string;
   /** Extra controls (e.g. a page-size Select, an Add button) — rendered after Sort, matching each page's existing right-aligned toolbar items. */
   children?: React.ReactNode;
+  /** Optional workspace navigation, inside the same command surface. */
+  leadingContent?: React.ReactNode;
 }) {
   const hasActiveFilters = activeFilterCount > 0;
   const hasActiveSort = Boolean(activeSortLabel);
@@ -58,6 +61,7 @@ export function TableToolbar({
 
   return (
     <div className={cn("admin2-command-bar admin2-table-toolbar", className)}>
+      {leadingContent}
       <div className="admin2-table-toolbar-search">
         <Search aria-hidden="true" />
         <Input

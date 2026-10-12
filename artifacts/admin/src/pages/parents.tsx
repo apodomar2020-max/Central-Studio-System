@@ -12,7 +12,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
@@ -22,7 +21,7 @@ import {
 import { BadgeCheck, Edit } from "lucide-react";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import { useToast } from "@/hooks/use-toast";
-import { WorkspaceRouteNav } from "@/components/admin/workspace-route-nav";
+import { UsersDirectoryControls, useUsersDirectory } from "@/components/admin/users-directory-controls";
 import "./admin2-operations.css";
 
 /**
@@ -50,9 +49,6 @@ const editFormSchema = z.object({
 
 type EditFormValues = z.input<typeof editFormSchema>;
 
-const PAGE_SIZE_OPTIONS = [25, 50, 100] as const;
-
-/** Profile Completion Engine (Phase 4) fields — see the matching type in students.tsx. */
 type ParentRow = {
   id: number;
   name: string;
@@ -68,18 +64,6 @@ type ParentRow = {
   verificationBadge?: boolean;
   profileCompletion?: { percent: number; isComplete: boolean } | null;
 };
-
-function useDebouncedValue<T>(value: T, delayMs: number): T {
-  const [debounced, setDebounced] = useState(value);
-
-  useEffect(() => {
-    const timeout = window.setTimeout(() => setDebounced(value), delayMs);
-    return () => window.clearTimeout(timeout);
-  }, [value, delayMs]);
-
-  return debounced;
-}
-
 function paginationRange(currentPage: number, totalPages: number): number[] {
   if (totalPages <= 0) return [];
   const pages = new Set<number>([1, totalPages]);
@@ -96,17 +80,9 @@ export default function ParentsPage() {
   const queryClient = useQueryClient();
   const updateParent = useUpdateStudent();
   const [editing, setEditing] = useState<ParentRow | null>(null);
-  const [search, setSearch] = useState("");
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState<(typeof PAGE_SIZE_OPTIONS)[number]>(50);
-  const debouncedSearch = useDebouncedValue(search.trim(), 300);
-  const listParams = {
-    accountType: "parent" as const,
-    page,
-    pageSize,
-    ...(debouncedSearch ? { search: debouncedSearch } : {}),
-  };
-  const { data: parentsResponse, isLoading, isError } = useListStudents(listParams);
+  const controls = useUsersDirectory("parent");
+  const { page, pageSize, setPage, params: listParams } = controls;
+  const { data: parentsResponse, isLoading, isError } = useListStudents(listParams, { query: { queryKey: getListStudentsQueryKey(listParams), enabled: !controls.invalidDateRange } });
 
   const parents = (parentsResponse?.students ?? []) as ParentRow[];
   const total = parentsResponse?.total ?? 0;
@@ -116,11 +92,9 @@ export default function ParentsPage() {
   const startItem = total === 0 ? 0 : (currentPage - 1) * responsePageSize + 1;
   const endItem = total === 0 ? 0 : Math.min(currentPage * responsePageSize, total);
   const paginationPages = paginationRange(currentPage, totalPages);
-
   useEffect(() => {
-    setPage(1);
-  }, [debouncedSearch, pageSize]);
-
+    if (parentsResponse && page > Math.max(1, parentsResponse.totalPages)) setPage(Math.max(1, parentsResponse.totalPages));
+  }, [parentsResponse, page, setPage]);
   const form = useForm<EditFormValues>({
     resolver: zodResolver(editFormSchema),
     defaultValues: { name: "", email: "" },
@@ -163,38 +137,8 @@ export default function ParentsPage() {
 
   return (
     <div className="admin2-ops-page admin2-parents">
-      {/* Production refinement: same compact single-toolbar composition as
-          Students — see students.tsx for the full rationale. Parents has no
-          Add action, so the toolbar is switcher + search + rows. */}
-      <div className="admin2-command-bar admin2-users-command">
-        <WorkspaceRouteNav
-          ariaLabel="Users workspace"
-          items={[
-            ...(can("students", "view") ? [{ label: "Students", href: "/students" }] : []),
-            ...(can("parents", "view") ? [{ label: "Parents", href: "/parents" }] : []),
-          ]}
-        />
-        <Input
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          placeholder="Search parents by name, email, or phone"
-          className="admin2-users-search"
-          data-testid="input-parent-search"
-        />
-        <div className="admin2-users-rows">
-          <span className="text-sm text-muted-foreground">Rows</span>
-          <Select value={String(pageSize)} onValueChange={(value) => setPageSize(Number(value) as (typeof PAGE_SIZE_OPTIONS)[number])}>
-            <SelectTrigger className="w-24" data-testid="select-parent-page-size">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {PAGE_SIZE_OPTIONS.map((option) => (
-                <SelectItem key={option} value={String(option)}>{option}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
+      {/* Reuse the same directory command surface as Students and Inactive Accounts. */}
+      <UsersDirectoryControls controls={controls} />
 
       <div className="admin2-people-registry">
         <Table>
@@ -210,7 +154,9 @@ export default function ParentsPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {isLoading ? (
+            {controls.invalidDateRange ? (
+              <TableRow><TableCell colSpan={canEdit ? 7 : 6} role="alert">Select a valid joined-date range.</TableCell></TableRow>
+            ) : isLoading ? (
               <TableRow><TableCell colSpan={canEdit ? 7 : 6} className="text-center py-8">Loading...</TableCell></TableRow>
             ) : isError ? (
               <TableRow><TableCell colSpan={8} className="text-center py-8 text-destructive">Parents could not be loaded. Try again in a moment.</TableCell></TableRow>

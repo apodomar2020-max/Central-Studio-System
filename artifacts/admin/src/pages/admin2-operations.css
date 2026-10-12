@@ -64,6 +64,9 @@
    fill the middle; Rows hugs the right edge. Base .admin2-command-bar
    already collapses to a stacked column under 1024px. */
 .admin2-users-command .admin2-workspace-tabs{flex:0 0 auto}
+.admin2-users-command .admin2-workspace-tabs{max-width:100%;min-width:0;overflow-x:auto}
+.admin2-users-command{min-width:0;max-width:100%}
+@media(max-width:1024px){.admin2-users-command .admin2-table-toolbar-search{flex:0 0 auto;width:100%;min-width:0;max-width:none}.admin2-users-command .admin2-workspace-tabs{flex:0 0 auto;width:100%}}
 .admin2-users-search{flex:1 1 220px;min-width:180px;max-width:420px}
 .admin2-users-rows{display:flex;flex:0 0 auto;align-items:center;gap:8px;margin-left:auto}
 @media(max-width:1024px){.admin2-users-search{max-width:none}.admin2-users-rows{margin-left:0;justify-content:space-between}}

@@ -18,7 +18,6 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { useQueryClient } from "@tanstack/react-query";
@@ -26,7 +25,7 @@ import { Edit, BadgeCheck } from "lucide-react";
 import { Link } from "wouter";
 import { Badge } from "@/components/ui/badge";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
-import { WorkspaceRouteNav } from "@/components/admin/workspace-route-nav";
+import { UsersDirectoryControls, useUsersDirectory } from "@/components/admin/users-directory-controls";
 import "./admin2-operations.css";
 
 // Canonical Account Phone Domain — the SAME authority Mobile (Complete
@@ -75,18 +74,6 @@ type StudentRow = Student & {
     missing: string[];
   } | null;
 };
-const PAGE_SIZE_OPTIONS = [25, 50, 100] as const;
-
-function useDebouncedValue<T>(value: T, delayMs: number): T {
-  const [debounced, setDebounced] = useState(value);
-
-  useEffect(() => {
-    const timeout = window.setTimeout(() => setDebounced(value), delayMs);
-    return () => window.clearTimeout(timeout);
-  }, [value, delayMs]);
-
-  return debounced;
-}
 
 function paginationRange(currentPage: number, totalPages: number): number[] {
   if (totalPages <= 0) return [];
@@ -102,17 +89,9 @@ export default function Students() {
   const canEdit = can("students", "edit");
   // Student deletion removed from the admin UI (Phase 3). The backend
   // DELETE /students/:id endpoint is intentionally untouched.
-  const [search, setSearch] = useState("");
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState<(typeof PAGE_SIZE_OPTIONS)[number]>(50);
-  const debouncedSearch = useDebouncedValue(search.trim(), 300);
-  const listParams = {
-    accountType: "student" as const,
-    page,
-    pageSize,
-    ...(debouncedSearch ? { search: debouncedSearch } : {}),
-  };
-  const { data: studentsResponse, isLoading, isError } = useListStudents(listParams);
+  const controls = useUsersDirectory("student");
+  const { page, pageSize, setPage, params: listParams } = controls;
+  const { data: studentsResponse, isLoading, isError } = useListStudents(listParams, { query: { queryKey: getListStudentsQueryKey(listParams), enabled: !controls.invalidDateRange } });
   const students = (studentsResponse?.students ?? []) as StudentRow[];
   const total = studentsResponse?.total ?? 0;
   const currentPage = studentsResponse?.page ?? page;
@@ -121,16 +100,14 @@ export default function Students() {
   const startItem = total === 0 ? 0 : (currentPage - 1) * responsePageSize + 1;
   const endItem = total === 0 ? 0 : Math.min(currentPage * responsePageSize, total);
   const paginationPages = paginationRange(currentPage, totalPages);
+  useEffect(() => {
+    if (studentsResponse && page > Math.max(1, studentsResponse.totalPages)) setPage(Math.max(1, studentsResponse.totalPages));
+  }, [studentsResponse, page, setPage]);
   const updateStudent = useUpdateStudent();
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Student | null>(null);
-
-  useEffect(() => {
-    setPage(1);
-  }, [debouncedSearch, pageSize]);
-
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: { name: "", email: "" },
@@ -169,44 +146,9 @@ export default function Students() {
 
   return (
     <div className="admin2-ops-page admin2-students">
-      {/* Production refinement: Students/Parents switcher, search, Add
-          Student, and the Rows selector used to be three stacked sections
-          (PageHeader's own row, the pill nav's own row, then the command
-          bar). Composed into the one compact operational toolbar the owner
-          asked for, reusing the same .admin2-command-bar container Bookings
-          already uses for its multi-control row — no new architecture. */}
-      <div className="admin2-command-bar admin2-users-command">
-        <WorkspaceRouteNav
-          ariaLabel="Users workspace"
-          items={[
-            ...(can("students", "view") ? [{ label: "Students", href: "/students" }] : []),
-            ...(can("parents", "view") ? [{ label: "Parents", href: "/parents" }] : []),
-          ]}
-        />
-        <Input
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          placeholder="Search students by name, email, or phone"
-          className="admin2-users-search"
-          data-testid="input-student-search"
-        />
-        {/* Add Student intentionally removed (business rule): student
-            accounts originate from the mobile app signup flow, not manual
-            Admin creation. Not replaced with anything. */}
-        <div className="admin2-users-rows">
-          <span className="text-sm text-muted-foreground">Rows</span>
-          <Select value={String(pageSize)} onValueChange={(value) => setPageSize(Number(value) as (typeof PAGE_SIZE_OPTIONS)[number])}>
-            <SelectTrigger className="w-24" data-testid="select-student-page-size">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {PAGE_SIZE_OPTIONS.map((option) => (
-                <SelectItem key={option} value={String(option)}>{option}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
+      {/* One shared directory command surface. Account creation remains
+          in the existing mobile signup flow, not the Admin directory. */}
+      <UsersDirectoryControls controls={controls} />
 
       <div className="admin2-people-registry">
         <Table>
@@ -223,7 +165,9 @@ export default function Students() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {isLoading ? (
+            {controls.invalidDateRange ? (
+              <TableRow><TableCell colSpan={8} role="alert">Select a valid joined-date range.</TableCell></TableRow>
+            ) : isLoading ? (
               <TableRow><TableCell colSpan={8} className="text-center py-8">Loading...</TableCell></TableRow>
             ) : isError ? (
               <TableRow><TableCell colSpan={8} className="text-center py-8 text-destructive">Students could not be loaded. Try again in a moment.</TableCell></TableRow>

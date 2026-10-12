@@ -274,6 +274,9 @@ export const NAV_TREE: NavNode[] = [
       link("Parents", "/parents", [["parents", "view"]], undefined, {
         description: "Parent account profiles and family contacts",
       }),
+      link("Inactive Accounts", "/inactive-accounts", [["students", "view"], ["parents", "view"], ["users", "view"]], undefined, {
+        description: "Deactivated accounts and anonymized deleted account records",
+      }),
     ]),
     link("Package Order", "/package-orders", [["packageOrders", "view"]], ShoppingBag, {
       pageTitle: "Package Orders",
