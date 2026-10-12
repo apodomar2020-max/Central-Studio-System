@@ -425,7 +425,7 @@ export function translationSaveLabel(status: EditorialTranslationStatusValue): s
 }
 
 export const LIVE_CONTENT_WARNING =
-  "You are editing Published Editorial content. Saving changes this published translation immediately — there is no separate publish step.";
+  "You are editing published News content. Saving changes this published translation immediately — there is no separate publish step.";
 
 /**
  * Sits next to the frozen byline on a PUBLISHED translation.

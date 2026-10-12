@@ -322,7 +322,7 @@ test("save labels are status-dependent — never one generic 'Save'", () => {
 test("editing a published translation carries a persistent published-content warning", () => {
   // The SAFETY point must survive: this warns that a save takes effect
   // immediately on already-published content, with no separate publish step.
-  assert.match(LIVE_CONTENT_WARNING, /Published Editorial content/);
+  assert.match(LIVE_CONTENT_WARNING, /published News content/);
   assert.match(LIVE_CONTENT_WARNING, /immediately/);
   // What it must NOT claim, while Editorial is still in coexistence mode.
   assert.doesNotMatch(LIVE_CONTENT_WARNING, /public website|to the website|visitors/i);

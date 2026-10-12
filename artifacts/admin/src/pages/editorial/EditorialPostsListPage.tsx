@@ -1,5 +1,6 @@
 /**
- * Website → Editorial → Posts (/editorial/posts) — Wave 2.1D.
+ * Website → News → Posts (/editorial/posts) — Wave 2.1D; News UX in the
+ * Unified Website CMS slice 3 (page identity "News", "Add News" action).
  *
  * Replaces the Wave 2.1A placeholder for this one route.
  *
@@ -128,18 +129,7 @@ export default function EditorialPostsListPage() {
   };
 
   return (
-    <EditorialPageShell
-      actions={
-        capabilities.canCreate ? (
-          <Button asChild className="gap-2 shrink-0" data-testid="button-new-post">
-            <Link href="/editorial/posts/new">
-              <Plus className="h-4 w-4" aria-hidden="true" />
-              New post
-            </Link>
-          </Button>
-        ) : undefined
-      }
-    >
+    <EditorialPageShell>
       <EditorialWorkspaceNav />
       <TableToolbar
         searchValue={search}
@@ -260,7 +250,16 @@ export default function EditorialPostsListPage() {
             </div>
           </div>
         }
-      />
+      >
+        {capabilities.canCreate ? (
+          <Button asChild size="compact" className="gap-1.5 shrink-0 sm:ml-auto" data-testid="button-new-post">
+            <Link href="/editorial/posts/new">
+              <Plus className="h-4 w-4" aria-hidden="true" />
+              Add News
+            </Link>
+          </Button>
+        ) : null}
+      </TableToolbar>
 
       {/* D9: the ordering is server-owned and stated, not offered as a control. */}
       <p className="text-xs text-muted-foreground" data-testid="posts-ordering-note">

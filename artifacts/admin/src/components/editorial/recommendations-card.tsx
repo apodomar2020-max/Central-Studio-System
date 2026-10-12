@@ -23,6 +23,14 @@
  * Editing this list changes only "posts recommended FROM this post". Nothing
  * writes the reverse pointer and no endpoint answers "who recommends this
  * one", so the card never implies either.
+ *
+ * ─── PENDING MODE (Add News) ─────────────────────────────────────────────
+ *
+ * `postId: null` means the post does not exist yet. The picker still
+ * searches (there is no source post to exclude), `saved` is empty, and
+ * `onSave` is omitted: the selection is local state the create
+ * orchestration applies with the new id, so no Save button is rendered.
+ * Persisted mode (a real `postId` + `onSave`) behaves exactly as before.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -73,26 +81,28 @@ export function RecommendationsCard({
   saved,
   selected,
   languages,
-  dirty,
-  saving,
+  dirty = false,
+  saving = false,
   disabled,
-  error,
+  error = null,
   onChange,
   onSave,
 }: {
-  postId: number;
+  /** null = pending mode: the post has not been created yet. */
+  postId: number | null;
   channel: CandidateChannel;
   openLanguageCode: string;
   /** The server's own answer, from the post detail the editor already holds. */
   saved: ReadonlyArray<EditorialRecommendation>;
   selected: number[];
   languages: ReadonlyArray<{ code: string; isDefault: boolean; displayOrder: number }>;
-  dirty: boolean;
-  saving: boolean;
+  dirty?: boolean;
+  saving?: boolean;
   disabled?: boolean;
-  error: string | null;
+  error?: string | null;
   onChange: (next: number[]) => void;
-  onSave: () => void;
+  /** Omitted in pending mode: there is nothing to save to yet. */
+  onSave?: () => void;
 }) {
   const [search, setSearch] = useState("");
   const [publishedOnly, setPublishedOnly] = useState(true);
@@ -112,7 +122,8 @@ export function RecommendationsCard({
       queryKey: getListEditorialPostsQueryKey(params),
       // Its params differ from the Posts List page's, so the key differs and
       // this can never evict that page's cache.
-      enabled: postId > 0 && (pickerOpen || debounced.trim().length > 0),
+      // A pending (not-yet-created) post has no id but may still search.
+      enabled: (postId == null || postId > 0) && (pickerOpen || debounced.trim().length > 0),
       staleTime: 30_000,
       // Keeps the previous page on screen between keystrokes instead of
       // flashing an empty list.
@@ -187,7 +198,7 @@ export function RecommendationsCard({
     return sessionLabels[targetPostId] ?? { label: `Post #${targetPostId}`, languageTag: null, annotation: null };
   };
 
-  const options = filterCandidates(candidateItems, { sourcePostId: postId, selected });
+  const options = filterCandidates(candidateItems, { sourcePostId: postId ?? 0, selected });
   const atCap = !canAddRecommendation(selected);
 
   const move = (index: number, direction: "up" | "down") => {
@@ -406,16 +417,18 @@ export function RecommendationsCard({
         </div>
       )}
 
-      <Button
-        type="button"
-        variant="outline"
-        className="w-full"
-        disabled={disabled || !dirty || saving}
-        data-testid="button-save-recommendations"
-        onClick={onSave}
-      >
-        {saving ? "Saving…" : RECOMMENDATIONS_SAVE_LABEL}
-      </Button>
+      {onSave && (
+        <Button
+          type="button"
+          variant="outline"
+          className="w-full"
+          disabled={disabled || !dirty || saving}
+          data-testid="button-save-recommendations"
+          onClick={onSave}
+        >
+          {saving ? "Saving…" : RECOMMENDATIONS_SAVE_LABEL}
+        </Button>
+      )}
     </section>
   );
 }

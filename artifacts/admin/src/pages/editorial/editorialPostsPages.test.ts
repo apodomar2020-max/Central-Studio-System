@@ -25,7 +25,14 @@ const codeOf = (source: string) =>
 const list = read("./EditorialPostsListPage.tsx");
 const create = read("./EditorialPostCreatePage.tsx");
 const detail = read("./EditorialPostDetailPage.tsx");
-const editor = read("./EditorialPostTranslationPage.tsx");
+const editorPage = read("./EditorialPostTranslationPage.tsx");
+// TopicsCard was extracted verbatim (slice 3) so Add News can reuse it; the
+// editor's contract now spans the page plus that card.
+const topicsCard = readFileSync(
+  new URL("../../components/editorial/topics-card.tsx", import.meta.url),
+  "utf8",
+);
+const editor = `${editorPage}\n${topicsCard}`;
 const bodyEditor = readFileSync(
   new URL("../../components/editorial/post-body-editor.tsx", import.meta.url),
   "utf8",
@@ -103,8 +110,20 @@ test("the list has NO delete control — no delete route exists for a post", () 
   }
 });
 
-test("the New post button is gated on create, not on edit", () => {
+test("the Add News button is gated on create, not on edit", () => {
   assert.match(list, /capabilities\.canCreate \? \([\s\S]{0,300}button-new-post/);
+  assert.match(list, /Add News/);
+  assert.doesNotMatch(list, /New post/);
+});
+
+test("the News list carries no banners and no migration/editorial/compatibility copy", () => {
+  const listCode = codeOf(list);
+  // A standalone word only: identifiers such as EditorialPageShell or
+  // useListEditorialPosts have no word boundary and stay untouched.
+  assert.doesNotMatch(listCode, /\bEditorial\b/);
+  assert.doesNotMatch(listCode, /compatibility|legacy|migrat|not yet connected/i);
+  assert.doesNotMatch(listCode, /role="note"|banner/i);
+  assert.match(listCode, /<EditorialWorkspaceNav \/>\s*<TableToolbar/);
 });
 
 test("News is the normal workflow and public-eligibility guidance is lifecycle-local", () => {
@@ -113,7 +132,7 @@ test("News is the normal workflow and public-eligibility guidance is lifecycle-l
   assert.doesNotMatch(list, /value: "experience"|editorial-(news|experience)-guidance/);
   assert.doesNotMatch(editor, /editorial-(news|experience)-guidance/);
   assert.match(editor, /data-testid="publish-card"[\s\S]{0,3500}data-testid="editorial-publication-guidance"/);
-  assert.match(editor, /Publishing sets the Editorial translation state[\s\S]{0,120}public eligibility/);
+  assert.match(editor, /Publishing marks this language as Published[\s\S]{0,120}public eligibility/);
 });
 
 test("the list distinguishes empty-from-no-data and empty-from-filters", () => {
@@ -124,33 +143,83 @@ test("the list distinguishes empty-from-no-data and empty-from-filters", () => {
 
 // ─── Create ──────────────────────────────────────────────────────────────────
 
-test("create is ONE request and redirects straight into the editor", () => {
+test("Add News is ONE create request inside the orchestration, then lands in the editor", () => {
   assert.match(create, /useCreateEditorialPost\(\)/);
-  assert.equal((create.match(/\.mutate\(/g) ?? []).length, 1, "a single request, not a wizard");
-  assert.match(create, /navigate\(`\/editorial\/posts\/\$\{result\.post\.id\}\/\$\{languageCode\}`\)/);
+  assert.equal((create.match(/createPost\.mutateAsync\(/g) ?? []).length, 1, "exactly one create call site");
+  assert.match(create, /runNewsCreate\(\{ form, mode, api, progress: retry\?\.progress \}\)/);
+  assert.match(create, /`\/editorial\/posts\/\$\{progress\.postId\}\/\$\{progress\.languageCode \?\? form\.languageCode\}`/);
+});
+
+test("opening Add News writes NOTHING: no effect, no mount-time mutation", () => {
+  const createCode = codeOf(create);
+  assert.doesNotMatch(createCode, /useEffect|useLayoutEffect/);
+  assert.doesNotMatch(createCode, /\.mutate\(/);
+  // Every write goes through the api object, which only submit() hands to
+  // runNewsCreate — and submit only runs from a button click.
+  assert.equal((createCode.match(/runNewsCreate\(/g) ?? []).length, 1);
+  assert.match(createCode, /const submit = async \(mode: NewsCreateMode, retry\?: FollowUpFailure\) => \{/);
+  for (const call of createCode.matchAll(/submit\(/g)) {
+    const before = createCode.slice(Math.max(0, call.index! - 40), call.index!);
+    assert.match(before, /onClick=\{\(\) => $|const $/, "submit() is only invoked from onClick");
+  }
+});
+
+test("Add News guards against double submit and never re-creates on retry", () => {
+  assert.match(create, /if \(inFlight\.current\) return;/);
+  assert.match(create, /const locked = pending \|\| failure != null;/);
+  assert.match(create, /data-testid="button-retry-news-create"/);
+  assert.match(create, /onClick=\{\(\) => submit\(failure\.mode, failure\)\}/);
+  assert.match(create, /data-testid="news-create-followup-error"/);
+});
+
+test("Add News exposes the full authoring surface on one screen, in the shared editor layout", () => {
+  assert.match(create, /<CmsEditorLayout/);
+  for (const id of [
+    "select-post-language", "select-news-category", "select-post-author", "input-feature-image-url",
+    "input-post-title", "input-post-slug", "input-translation-deck", "input-translation-context-label",
+    "input-translation-feature-alt", "input-translation-listing-image", "input-translation-read-time",
+    "input-translation-seo-title", "input-translation-seo-description", "input-translation-og-image",
+    "button-create-post", "button-publish-news", "readiness-checklist",
+  ]) {
+    assert.match(create, new RegExp(`data-testid="${id}"`), `missing ${id}`);
+  }
+  for (const component of ["<PostBodyEditor", "<PostGalleryEditor", "<TopicsCard", "<RecommendationsCard", "<PerformanceRefsCard"]) {
+    assert.ok(create.includes(component), `missing ${component}`);
+  }
+  // Pending mode: no post id, no per-card save buttons.
+  assert.match(create, /<RecommendationsCard\s+postId=\{null\}/);
+  assert.doesNotMatch(create, /onSave=/);
+  assert.match(create, /NEWS_CATEGORY_OPTIONS\.map/);
+  assert.match(create, /publishReadiness\(\{/);
 });
 
 test("create offers only ACTIVE languages", () => {
   assert.match(create, /\.filter\(\(language\) => language\.isActive\)/);
 });
 
-test("create filters authors to the chosen channel AND to active ones", () => {
-  assert.match(create, /author\.channel === form\.channel && author\.status === "active"/);
+test("create filters authors to the News channel AND to active ones", () => {
+  assert.match(create, /author\.channel === "news" && author\.status === "active"/);
 });
 
-test("normal New post creation is News-only without page-wide compatibility guidance", () => {
+test("Add News is News-only with no channel picker and no compatibility guidance", () => {
   assert.doesNotMatch(create, /select-post-channel/);
   assert.doesNotMatch(create, /CHANNEL_OPTIONS/);
-  assert.match(create, /<Badge variant="outline" className="w-fit">News<\/Badge>/);
   assert.doesNotMatch(create, /editorial-news-guidance|new-post-channel-help/);
   assert.doesNotMatch(create, /New Editorial News posts are not automatically public/);
+  const createCode = codeOf(create);
+  assert.doesNotMatch(createCode, /compatibility|legacy|migrat|not yet connected/i);
+  // The only standalone "Editorial" left is the real permission name an
+  // operator looks up in Roles ("Website Editorial Posts").
+  assert.deepEqual(createCode.match(/\bEditorial\b/g) ?? [], ["Editorial"]);
+  assert.match(createCode, /Website Editorial Posts\./);
 });
 
 test("the create slug preview stops once the operator types (D6)", () => {
   assert.match(create, /const preview = slugTouched \? form\.slug\.trim\(\) : slugPreview\(form\.title\)/);
   assert.match(create, /setSlugTouched\(true\)/);
-  // And the preview is never what gets submitted.
-  assert.match(create, /toCreatePostPayload\(form\)/);
+  // And the preview is never what gets submitted: the payload is built from
+  // the form inside the orchestration (toNewsCreatePayload, tested there).
+  assert.match(create, /runNewsCreate\(\{ form,/);
   assert.doesNotMatch(create, /slug: slugPreview\(/);
 });
 
@@ -312,11 +381,11 @@ test("an unsaved indicator and a scope-accurate summary are rendered", () => {
 // ─── Editor: publish card ────────────────────────────────────────────────────
 
 test("the Publish card is the FIRST card in the sidebar", () => {
-  const sidebar = editor.slice(editor.indexOf('aria-label="Post settings"'));
+  const sidebar = editorPage.slice(editorPage.indexOf('aria-label="Post settings"'));
   const publishIndex = sidebar.indexOf('data-testid="publish-card"');
-  for (const other of ["channel-card", "shared-card", "topics-card"]) {
-    const index = sidebar.indexOf(`data-testid="${other}"`);
-    assert.ok(index > publishIndex, `${other} must come after the publish card`);
+  for (const marker of ['data-testid="channel-card"', 'data-testid="shared-card"', "<TopicsCard", "<RecommendationsCard", "<PerformanceRefsEditCard"]) {
+    const index = sidebar.indexOf(marker);
+    assert.ok(index > publishIndex, `${marker} must come after the publish card`);
   }
 });
 
@@ -498,8 +567,12 @@ test("placements are still deferred, and 2.1E's surfaces live only in the editor
     assert.doesNotMatch(source, /RelatedPosts/, name);
     if (name === "editor") continue;
     assert.doesNotMatch(source, /useListEditorialPostRevisions|useGetEditorialPostRevision|useRestoreEditorialPostRevision/, name);
+    assert.doesNotMatch(source, /RevisionHistory/, name);
+    // Add News (slice 3) legitimately picks recommendations in pending mode
+    // and applies them with the new id; list and detail still never do.
+    if (name === "create") continue;
     assert.doesNotMatch(source, /useReplaceEditorialPostRecommendations/, name);
-    assert.doesNotMatch(source, /RevisionHistory|RecommendationsCard/, name);
+    assert.doesNotMatch(source, /RecommendationsCard/, name);
   }
   // The editor mounts the drawer and the card, and NOTHING mounts the
   // standalone recommendations GET — the post detail already carries it.
