@@ -4509,6 +4509,24 @@ export type GetBookingParticipantCandidatesParams = {
 
 export type ListStudentsParams = {
   accountType?: ListStudentsAccountType;
+  /**
+   * Optional lifecycle scope. Inactive combines deactivated and deleted. Omitted preserves all authorized accounts.
+   */
+  accountStatus?: ListStudentsAccountStatus;
+  /**
+   * Last recorded authentication provider, not registration origin. NotRecorded means NULL, including anonymized tombstones.
+   */
+  authProvider?: ListStudentsAuthProvider;
+  /**
+   * Inclusive UTC calendar date, YYYY-MM-DD.
+   * @pattern ^\d{4}-\d{2}-\d{2}$
+   */
+  joinedFrom?: string;
+  /**
+   * Inclusive UTC calendar date, YYYY-MM-DD. Must not precede joinedFrom.
+   * @pattern ^\d{4}-\d{2}-\d{2}$
+   */
+  joinedTo?: string;
   search?: string;
   /**
    * @minimum 1
@@ -4527,6 +4545,27 @@ export type ListStudentsAccountType =
 export const ListStudentsAccountType = {
   student: "student",
   parent: "parent",
+} as const;
+
+export type ListStudentsAccountStatus =
+  (typeof ListStudentsAccountStatus)[keyof typeof ListStudentsAccountStatus];
+
+export const ListStudentsAccountStatus = {
+  active: "active",
+  inactive: "inactive",
+  deactivated: "deactivated",
+  deleted: "deleted",
+} as const;
+
+export type ListStudentsAuthProvider =
+  (typeof ListStudentsAuthProvider)[keyof typeof ListStudentsAuthProvider];
+
+export const ListStudentsAuthProvider = {
+  local: "local",
+  google: "google",
+  apple: "apple",
+  facebook: "facebook",
+  notRecorded: "notRecorded",
 } as const;
 
 export type ListPackageOrdersParams = {

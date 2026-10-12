@@ -244,6 +244,18 @@ router.get("/students", requireAdminAuth, async (req: AdminRequest, res): Promis
 
   const page = query.data.page ?? 1;
   const pageSize = query.data.pageSize ?? 50;
+  // Dates are UTC calendar days. Reject impossible dates rather than allowing
+  // PostgreSQL/JavaScript normalization to silently change a user's filter.
+  const validDay = (value: string) => {
+    const parsed = new Date(value + "T00:00:00.000Z");
+    return Number(value.slice(0, 4)) >= 1 && Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+  };
+  const { joinedFrom, joinedTo } = query.data;
+  if ((joinedFrom && !validDay(joinedFrom)) || (joinedTo && !validDay(joinedTo))
+    || (joinedFrom && joinedTo && joinedFrom > joinedTo)) {
+    res.status(400).json({ error: "Invalid joined-date range. Use valid UTC dates in YYYY-MM-DD order." });
+    return;
+  }
   const offset = (page - 1) * pageSize;
   const conditions = [];
 
@@ -267,6 +279,19 @@ router.get("/students", requireAdminAuth, async (req: AdminRequest, res): Promis
     }
   }
 
+  if (query.data.accountStatus === "inactive") {
+    conditions.push(inArray(studentsTable.accountStatus, ["deactivated", "deleted"]));
+  } else if (query.data.accountStatus) {
+    conditions.push(eq(studentsTable.accountStatus, query.data.accountStatus));
+  }
+  if (query.data.authProvider === "notRecorded") {
+    conditions.push(sql`${studentsTable.authProvider} IS NULL`);
+  } else if (query.data.authProvider) {
+    conditions.push(eq(studentsTable.authProvider, query.data.authProvider));
+  }
+  if (joinedFrom) conditions.push(sql`${studentsTable.joinedAt} >= ${joinedFrom + "T00:00:00.000Z"}::timestamptz`);
+  if (joinedTo) conditions.push(sql`${studentsTable.joinedAt} < (${joinedTo + "T00:00:00.000Z"}::timestamptz + interval '24 hours')`);
+
   const search = query.data.search?.trim().toLowerCase();
   if (search) {
     const pattern = `%${search}%`;
@@ -285,8 +310,8 @@ router.get("/students", requireAdminAuth, async (req: AdminRequest, res): Promis
   const total = Number(countRow?.total ?? 0);
 
   const rows = whereClause
-    ? await db.select().from(studentsTable).where(whereClause).orderBy(desc(studentsTable.joinedAt)).limit(pageSize).offset(offset)
-    : await db.select().from(studentsTable).orderBy(desc(studentsTable.joinedAt)).limit(pageSize).offset(offset);
+    ? await db.select().from(studentsTable).where(whereClause).orderBy(desc(studentsTable.joinedAt), desc(studentsTable.id)).limit(pageSize).offset(offset)
+    : await db.select().from(studentsTable).orderBy(desc(studentsTable.joinedAt), desc(studentsTable.id)).limit(pageSize).offset(offset);
 
   const bookingCounts = new Map<string, number>();
   const emails = rows.map((student) => student.email);

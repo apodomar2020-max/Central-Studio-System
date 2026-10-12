@@ -1711,6 +1711,22 @@ paths:
       tags: [students]
       parameters:
         - { name: accountType, in: query, schema: { type: string, enum: [student, parent] } }
+        - name: accountStatus
+          in: query
+          description: Optional lifecycle scope. Inactive combines deactivated and deleted. Omitted preserves all authorized accounts.
+          schema: { type: string, enum: [active, inactive, deactivated, deleted] }
+        - name: authProvider
+          in: query
+          description: Last recorded authentication provider, not registration origin. NotRecorded means NULL, including anonymized tombstones.
+          schema: { type: string, enum: [local, google, apple, facebook, notRecorded] }
+        - name: joinedFrom
+          in: query
+          description: Inclusive UTC calendar date, YYYY-MM-DD.
+          schema: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
+        - name: joinedTo
+          in: query
+          description: Inclusive UTC calendar date, YYYY-MM-DD. Must not precede joinedFrom.
+          schema: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
         - { name: search, in: query, schema: { type: string } }
         - { name: page, in: query, schema: { type: integer, minimum: 1 } }
         - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 200 } }

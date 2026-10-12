@@ -2812,10 +2812,41 @@ export const DeleteBookingParams = zod.object({
 
 export const DeleteBookingResponse = zod.void();
 
+export const listStudentsQueryJoinedFromRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
+export const listStudentsQueryJoinedToRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
+
 export const listStudentsQueryPageSizeMax = 200;
 
 export const ListStudentsQueryParams = zod.object({
   accountType: zod.enum(["student", "parent"]).optional(),
+  accountStatus: zod
+    .enum(["active", "inactive", "deactivated", "deleted"])
+    .optional()
+    .describe(
+      "Optional lifecycle scope. Inactive combines deactivated and deleted. Omitted preserves all authorized accounts.",
+    ),
+  authProvider: zod
+    .enum(["local", "google", "apple", "facebook", "notRecorded"])
+    .optional()
+    .describe(
+      "Last recorded authentication provider, not registration origin. NotRecorded means NULL, including anonymized tombstones.",
+    ),
+  joinedFrom: zod.coerce
+    .string()
+    .regex(listStudentsQueryJoinedFromRegExp)
+    .optional()
+    .describe("Inclusive UTC calendar date, YYYY-MM-DD."),
+  joinedTo: zod.coerce
+    .string()
+    .regex(listStudentsQueryJoinedToRegExp)
+    .optional()
+    .describe(
+      "Inclusive UTC calendar date, YYYY-MM-DD. Must not precede joinedFrom.",
+    ),
   search: zod.coerce.string().optional(),
   page: zod.coerce.number().min(1).optional(),
   pageSize: zod.coerce
