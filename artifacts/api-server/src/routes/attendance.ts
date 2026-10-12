@@ -42,6 +42,11 @@ function requireWalkInPaymentConfirmPermission(req: Request, res: Response, next
 // GET /attendance
 // ---------------------------------------------------------------------------
 const ListAttendanceQueryParams = zod.object({
+  scheduleId: zod.coerce.number().int().positive().optional(),
+  date: zod.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((value) => {
+    const parsed = new Date(`${value}T00:00:00Z`);
+    return value.slice(0, 4) !== "0000" && !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+  }, "Invalid calendar date").optional(),
   studentEmail: zod.coerce.string().optional(),
   status: zod.coerce.string().optional(),
   page: zod.coerce.number().int().min(1).optional(),

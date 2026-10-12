@@ -128,6 +128,7 @@ test("POST /admin/room-reservations — creates a valid room reservation", async
     endTime: "16:00",
     description: "Team prep",
     organizerName: "Coach Alex",
+    createdByUserId: -1,
   });
 
   assert.equal(res.status, 201);
@@ -138,6 +139,12 @@ test("POST /admin/room-reservations — creates a valid room reservation", async
   assert.equal(body.roomId, roomId);
   assert.equal(body.status, "active");
   assert.equal(typeof body.id, "number");
+  const persisted = await db.execute(sql`SELECT created_by_user_id FROM studio_room_reservations WHERE id=${body.id as number}`);
+  assert.equal(persisted.rows[0].created_by_user_id, superAdminId);
+  const anonymous = await fetch(apiUrl("/api/admin/room-reservations"), {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({}),
+  });
+  assert.equal(anonymous.status, 401);
 });
 
 test("POST /admin/room-reservations — detects conflict with regular schedule", async () => {

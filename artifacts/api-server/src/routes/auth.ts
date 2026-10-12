@@ -52,7 +52,8 @@ import {
   PasswordSchema,
   sendSecurityNotificationEmail,
   signStudentToken,
-  verifyOtpCode,
+  verifyRecoveryOtp,
+  isRecoveryEligible,
 } from "../lib/authHelpers";
 import { publicStudent, legacyProfileCompletionPatch } from "../lib/studentProfileResponse";
 import { validateProfileAge } from "../lib/eligibility/profileAgeValidation";
@@ -647,13 +648,13 @@ router.post("/auth/verify-reset-otp", resetPasswordIpLimiter, resetPasswordAccou
     return;
   }
 
-  const result = await verifyOtpCode(normalizedEmail, parsed.data.code, "reset");
-  if (result.status !== "ok") {
+  const verified = await verifyRecoveryOtp(student.id, normalizedEmail, parsed.data.code);
+  if (!verified) {
     passwordResetFailure(res);
     return;
   }
 
-  const resetToken = signPasswordResetGrant(student.id, normalizedEmail, student.tokenVersion);
+  const resetToken = signPasswordResetGrant(verified.id, verified.email, verified.tokenVersion);
   res.json({ resetToken });
 });
 
@@ -683,7 +684,7 @@ router.post("/auth/reset-password", resetPasswordIpLimiter, resetPasswordAccount
     .select()
     .from(studentsTable)
     .where(eq(studentsTable.email, normalizedEmail));
-  if (!student) {
+  if (!student || !isRecoveryEligible(student)) {
     passwordResetFailure(res);
     return;
   }
@@ -700,14 +701,14 @@ router.post("/auth/reset-password", resetPasswordIpLimiter, resetPasswordAccount
       return;
     }
   } else {
-    const result = await verifyOtpCode(normalizedEmail, code!, "reset");
-    if (result.status !== "ok") {
+    const verified = await verifyRecoveryOtp(student.id, normalizedEmail, code!);
+    if (!verified || verified.tokenVersion !== student.tokenVersion) {
       passwordResetFailure(res);
       return;
     }
   }
 
-  if (await bcrypt.compare(newPassword, student.passwordHash)) {
+  if (student.passwordHash && await bcrypt.compare(newPassword, student.passwordHash)) {
     res.status(400).json({ error: "Your new password must be different from your current password." });
     return;
   }
@@ -738,9 +739,9 @@ router.post("/auth/reset-password", resetPasswordIpLimiter, resetPasswordAccount
       updatedAt: now,
       tokenVersion: sql`${studentsTable.tokenVersion} + 1`,
     })
-    .where(grant
-      ? and(eq(studentsTable.id, student.id), eq(studentsTable.tokenVersion, grant.tokenVersion))
-      : eq(studentsTable.id, student.id))
+    .where(and(eq(studentsTable.id, student.id), eq(studentsTable.email, normalizedEmail),
+      eq(studentsTable.accountStatus, "active"), eq(studentsTable.tokenVersion, student.tokenVersion),
+      sql`(${studentsTable.passwordHash} is not null or ${studentsTable.googleId} is not null or ${studentsTable.facebookId} is not null)`))
     .returning({ id: studentsTable.id });
 
   if (!updated[0]) {

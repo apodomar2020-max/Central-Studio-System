@@ -274,7 +274,7 @@ router.post(
         organizerName: body.organizerName ?? null,
         organizerContact: body.organizerContact ?? null,
         status: "active",
-        createdByUserId: req.adminUserId ?? null,
+        createdByUserId: req.adminUser?.sub ?? null,
       })
       .returning();
 

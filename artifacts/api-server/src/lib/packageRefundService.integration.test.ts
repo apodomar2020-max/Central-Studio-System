@@ -405,6 +405,30 @@ test("duplicate and concurrent completion create one retirement only", async () 
   assert.equal(retry.replayed, true);
 });
 
+test("late refund completion failure rolls back payment, entitlement, ledger and refund atomically", async () => {
+  const fixture = await makePackage({ label: "rollback", paidAmountMinor: 600, lots: [{ creditsIssued: 2, totalValueMinor: 600 }] });
+  const { approved } = await requestAndApprove(fixture.orderId);
+  const snapshot = async () => {
+    const queries = [
+      ["SELECT * FROM package_orders WHERE id=$1", fixture.orderId],
+      ["SELECT * FROM payment_records WHERE id=$1", fixture.paymentRecordId],
+      ["SELECT * FROM payment_refunds WHERE id=$1", approved.refund.id],
+      ["SELECT * FROM package_credit_lots WHERE package_order_id=$1 ORDER BY id", fixture.orderId],
+      ["SELECT * FROM credit_transactions WHERE package_order_id=$1 ORDER BY id", fixture.orderId],
+      ["SELECT * FROM package_credit_allocations WHERE package_order_id=$1 ORDER BY id", fixture.orderId],
+      ["SELECT * FROM payment_events WHERE payment_record_id=$1 ORDER BY id", fixture.paymentRecordId],
+    ] as const;
+    return Promise.all(queries.map(async ([query, id]) => (await pool.query(query, [id])).rows));
+  };
+  const before = await snapshot();
+  // A nonexistent processing actor fails the refund FK after entitlement and
+  // payment writes, without introducing a trigger or changing the schema.
+  await assert.rejects(completePackageRefund({ refundId: approved.refund.id, processedByAdminId: -1,
+    completionIdempotencyKey: uniqueKey("rollback"), transactionReference: uniqueKey("rollback"), now: NOW }),
+    (error: unknown) => (error as { cause?: { code?: string } }).cause?.code === "23503");
+  assert.deepEqual(await snapshot(), before);
+});
+
 test("refund completion and expiration serialize without double retirement", async () => {
   const fixture = await makePackage({ label: "expiration-race", paidAmountMinor: 700, lots: [{ creditsIssued: 1, totalValueMinor: 700 }] });
   const { approved } = await requestAndApprove(fixture.orderId);

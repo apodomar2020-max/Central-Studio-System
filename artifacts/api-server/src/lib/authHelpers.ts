@@ -481,6 +481,7 @@ async function verifyOtpInTransaction(
   email: string,
   code: string,
   purpose: OtpPurpose,
+  expectedStudentId?: number,
 ): Promise<VerifyOtpResult> {
   const now = new Date().toISOString();
   const [otp] = await tx
@@ -500,6 +501,7 @@ async function verifyOtpInTransaction(
   // lexicographically comparable. An unparseable otp.expiresAt fails closed
   // (treated as expired) rather than silently accepted as still valid.
   if (!otp) return { status: "expired" };
+  if (expectedStudentId !== undefined && otp.studentId !== expectedStudentId) return { status: "expired" };
   const expiresAtMs = toEpochMs(otp.expiresAt);
   if (!Number.isFinite(expiresAtMs) || expiresAtMs <= toEpochMs(now)) return { status: "expired" };
   if (otp.attempts >= OTP_MAX_ATTEMPTS) return { status: "locked" };
@@ -542,6 +544,22 @@ export async function verifyOtpCode(
 ): Promise<VerifyOtpResult> {
   const normalizedEmail = email.toLowerCase().trim();
   return db.transaction((tx) => verifyOtpInTransaction(tx, normalizedEmail, code, purpose));
+}
+
+export function isRecoveryEligible(student: typeof studentsTable.$inferSelect): boolean {
+  return student.accountStatus === "active" && Boolean(student.email) &&
+    Boolean(student.passwordHash || student.googleId || student.facebookId);
+}
+
+/** Recovery must consume proof belonging to this exact locked account. */
+export async function verifyRecoveryOtp(studentId: number, email: string, code: string) {
+  return db.transaction(async (tx) => {
+    const [student] = await tx.select().from(studentsTable)
+      .where(and(eq(studentsTable.id, studentId), eq(studentsTable.email, email))).for("update");
+    if (!student || !isRecoveryEligible(student)) return null;
+    const result = await verifyOtpInTransaction(tx, email, code, "reset", student.id);
+    return result.status === "ok" ? student : null;
+  });
 }
 
 const verifiedStudentReturning = {
