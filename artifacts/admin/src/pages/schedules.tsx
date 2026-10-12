@@ -33,6 +33,7 @@ import type { ScheduleBranch, ScheduleRoom } from "@workspace/api-client-react";
 import { TableToolbar } from "@/components/admin/table-toolbar";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import "./admin2-studio.css";
+import { scheduleCreationErrorMessage } from "@/lib/scheduleCreationError";
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const DAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -314,7 +315,16 @@ export default function Schedules() {
         },
       );
     } else {
-      createSchedule.mutate({ data: { ...payload, branchId: values.branchId!, roomId: values.roomId! } }, { onSuccess: invalidate });
+      createSchedule.mutate({ data: { ...payload, branchId: values.branchId!, roomId: values.roomId! } }, {
+        onSuccess: invalidate,
+        onError: (err: unknown) => {
+          toast({
+            title: "Schedule creation failed",
+            description: scheduleCreationErrorMessage(err),
+            variant: "destructive",
+          });
+        },
+      });
     }
   };
 
