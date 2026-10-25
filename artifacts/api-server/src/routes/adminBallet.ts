@@ -987,6 +987,11 @@ router.patch(
     const adminId = req.adminUser?.sub ?? null;
 
     await db.transaction(async (tx) => {
+      const [current] = await tx.select().from(balletApplicationsTable)
+        .where(eq(balletApplicationsTable.id, id)).limit(1).for("update");
+      if (!current || current.status !== fromStatus || current.assignedLevelId !== app.assignedLevelId) {
+        throw Object.assign(new Error("Application changed. Refresh before changing its status."), { status: 422 });
+      }
       if (status === "cancelled" && fromStatus === "assignedToLevel") {
         const [assignment] = await tx
           .select({ id: balletLevelAssignmentsTable.id })
@@ -1143,6 +1148,11 @@ router.post(
     const now = new Date().toISOString();
 
     const { assignment, supersededExistingAssignment } = await db.transaction(async (tx) => {
+      const [current] = await tx.select({ status: balletApplicationsTable.status }).from(balletApplicationsTable)
+        .where(eq(balletApplicationsTable.id, id)).limit(1).for("update");
+      if (!current || current.status !== fromStatus) {
+        throw Object.assign(new Error("Application changed. Refresh before assigning a level."), { status: 422 });
+      }
       // Find the most recent assignment row for this application (if any).
       const [mostRecent] = await tx
         .select({ id: balletLevelAssignmentsTable.id, status: balletLevelAssignmentsTable.status })

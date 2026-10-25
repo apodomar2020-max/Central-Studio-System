@@ -75,6 +75,7 @@ import {
 import { BALLET_ASSESSMENT_BOOKING_WINDOW_DAYS } from "@workspace/api-zod";
 import { requireStudentAuth, requireVerifiedStudent } from "../middlewares/studentAuth";
 import { logger } from "../lib/logger";
+import { AccountCapacityError, assertBalletChildCapacity, assertChildProfileCapacity, lockAccountCapacity } from "../lib/accountCapacity";
 import { computeBalletCurrentSubscriptionAttendanceSummary } from "../lib/balletAttendance";
 import { normalizeInstructorPhotoUrlForResponse } from "../lib/instructorPhotoUrl";
 import { buildActiveBalletInstructorCountQuery } from "../lib/balletInstructorCountQuery";
@@ -369,10 +370,13 @@ export async function listAvailableAssessmentSchedules(
   return { schedules: occurrences };
 }
 
-export async function resolveAssessmentOccurrence(scheduleId: number, assessmentDate: string, childBirthday: string): Promise<AssessmentOccurrence | null> {
+export async function resolveAssessmentOccurrence(
+  scheduleId: number, assessmentDate: string, childBirthday: string,
+  client: Pick<typeof db, "select"> = db,
+): Promise<AssessmentOccurrence | null> {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(assessmentDate)) return null;
 
-  const rows = await db
+  const rows = await client
     .select({
       scheduleId: balletSchedulesTable.id,
       dayOfWeek:  balletSchedulesTable.dayOfWeek,
@@ -1530,6 +1534,7 @@ router.post(
 
     try {
       const result = await db.transaction(async (tx) => {
+        await lockAccountCapacity(tx, parentStudentId);
         // ── Duplicate prevention ──────────────────────────────────────────────
         // Prefer matching on the linked saved child (childId) — the most
         // reliable identity signal, immune to name/spelling variants. Falls
@@ -1631,7 +1636,7 @@ router.post(
           );
         }
 
-        const assessment = await resolveAssessmentOccurrence(assessmentScheduleId, assessmentDate, resolvedBirthday);
+        const assessment = await resolveAssessmentOccurrence(assessmentScheduleId, assessmentDate, resolvedBirthday, tx);
         if (!assessment) {
           throw Object.assign(
             new Error("Selected assessment schedule is no longer available for this child's age."),
@@ -1704,6 +1709,7 @@ router.post(
           if (existingChild) {
             resolvedChildId = existingChild.id;
           } else {
+            await assertChildProfileCapacity(tx, parentStudentId);
             const [createdChild] = await tx
               .insert(childrenTable)
               .values({
@@ -1746,6 +1752,10 @@ router.post(
             );
           }
         }
+
+        // Duplicate/ownership checks precede account capacity errors. A failed
+        // admission rolls back a manually auto-saved profile with its application.
+        await assertBalletChildCapacity(tx, parentStudentId);
 
         // ── Snapshot server-side configured assessment fee ────────────────────
         const [balletSettingsRow] = await tx
@@ -1801,7 +1811,7 @@ router.post(
         });
 
         return application;
-      });
+      }, { isolationLevel: "read committed" });
 
       logger.info(
         { applicationId: result.id, studentId: parentStudentId, assessmentScheduleId, assessmentDate },
@@ -1810,6 +1820,10 @@ router.post(
 
       res.status(201).json({ application: { id: result.id, status: result.status } });
     } catch (err: unknown) {
+      if (err instanceof AccountCapacityError) {
+        res.status(422).json(err.toResponse());
+        return;
+      }
       const typed = err as { status?: number; message?: string; existingApplicationId?: number; code?: string };
 
       if (typed.status === 409 && typed.existingApplicationId != null) {
