@@ -1,12 +1,12 @@
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useEffect, useState } from "react";
-import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Image, Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 import type { PricePackage } from "@workspace/api-client-react";
 import { normalizeMediaUrl } from "@workspace/api-client-react";
 import CsIcon from "@/components/CsIcon";
-import { iosDisplayTextStyle } from "@/utils/iosTypography";
+import { iosCapGuard, iosDisplayTextStyle } from "@/utils/iosTypography";
 import { withMediaRevision } from "@/utils/mediaRevision";
 
 const INK_900 = "#0A0B0D";
@@ -43,15 +43,20 @@ export default function PackageVisualCard({
   onPress: (pkg: PricePackage) => void;
 }) {
   const [imgFailed, setImgFailed] = useState(false);
+  const [overlayHeight, setOverlayHeight] = useState(0);
+  const [badgeHeight, setBadgeHeight] = useState(0);
   useEffect(() => setImgFailed(false), [pkg.cardImageUrl]);
 
   const uri = normalizeMediaUrl(withMediaRevision(pkg.cardImageUrl, imageRevision ?? 0));
   const hasImage = Boolean(uri && !imgFailed);
   const unlimited = pkg.sessions == null;
+  const isIOS = Platform.OS === "ios";
+  // Leave the featured-badge area above the content, even at larger text sizes.
+  const cardHeight = isIOS ? Math.max(PACKAGE_CARD_HEIGHT, overlayHeight + (pkg.isFeatured ? badgeHeight + 24 : 0)) : PACKAGE_CARD_HEIGHT;
 
   return (
     <TouchableOpacity
-      style={s.cardOuter}
+      style={isIOS ? [s.cardOuter, { height: cardHeight }] : s.cardOuter}
       activeOpacity={0.9}
       onPress={() => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -60,7 +65,7 @@ export default function PackageVisualCard({
     >
       {/* Artwork — open/unboxed layer that bleeds above the card frame; not
           clipped by the card's own bounds, so the subject can break out. */}
-      <View style={s.artworkLayer} pointerEvents="none">
+      <View style={isIOS ? [s.artworkLayer, { height: cardHeight + ARTWORK_BLEED }] : s.artworkLayer} pointerEvents="none">
         {hasImage ? (
           <Image
             source={{ uri }}
@@ -83,7 +88,7 @@ export default function PackageVisualCard({
           the artwork; only clips its own gradient/text to the card shape. */}
       <View style={s.cardFrame}>
         {pkg.isFeatured && (
-          <View style={s.featuredBadge}>
+          <View style={s.featuredBadge} onLayout={isIOS ? event => setBadgeHeight(Math.ceil(event.nativeEvent.layout.height)) : undefined}>
             <CsIcon name="star" size={11} color={INK_900} />
             <Text style={s.featuredText}>FEATURED</Text>
           </View>
@@ -92,8 +97,29 @@ export default function PackageVisualCard({
         <LinearGradient
           colors={["transparent", "rgba(6,7,8,0.80)", "rgba(6,7,8,0.98)"]}
           locations={[0, 0.3, 1]}
-          style={s.overlay}
+          style={isIOS ? [s.overlay, s.iosOverlay] : s.overlay}
+          onLayout={isIOS ? event => setOverlayHeight(Math.ceil(event.nativeEvent.layout.height)) : undefined}
         >
+          {isIOS ? <>
+            <Text style={s.iosName} numberOfLines={2} accessibilityLabel={pkg.name}>{pkg.name}</Text>
+            <View style={s.iosMetricsRow}>
+              <View style={s.iosMetricsLeft}>
+                <View style={s.ageChip}><Text style={s.ageChipText} numberOfLines={1}>{pkg.ageRangeLabel}</Text></View>
+                <View style={[s.priceRow, s.iosPriceRow]}>
+                  <Text style={s.priceNum}>{pkg.priceEgp.toLocaleString()}</Text><Text style={s.priceUnit}>EGP</Text>
+                </View>
+              </View>
+              <View style={[s.overlayRight, s.iosSessions]}>
+                {unlimited ? <>
+                  <CsIcon name="infinity" size={62} stroke={2.6} color={CYAN} />
+                  <Text style={s.sessionsLabel}>UNLIMITED</Text>
+                </> : <>
+                  <Text style={[s.sessionsNum, s.iosSessionsNum]}>{pkg.sessions}</Text>
+                  <Text style={s.sessionsLabel}>CLASSES</Text>
+                </>}
+              </View>
+            </View>
+          </> : (
           <View style={s.overlayRow}>
             <View style={s.overlayLeft}>
               <Text style={s.name} numberOfLines={2}>{pkg.name}</Text>
@@ -119,6 +145,7 @@ export default function PackageVisualCard({
               )}
             </View>
           </View>
+          )}
         </LinearGradient>
       </View>
     </TouchableOpacity>
@@ -126,6 +153,19 @@ export default function PackageVisualCard({
 }
 
 const s = StyleSheet.create({
+  iosOverlay: { height: "auto", gap: 7 },
+  iosName: {
+    fontSize: 27, fontFamily: "Anton_400Regular", color: "#fff", lineHeight: 29,
+    ...iosDisplayTextStyle(27, 29),
+    marginBottom: -iosCapGuard(27, 29),
+    textTransform: "uppercase", letterSpacing: -0.2, alignSelf: "stretch",
+  },
+  iosMetricsRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 8 },
+  iosMetricsLeft: { gap: 7, maxWidth: "100%" },
+  iosPriceRow: { flexWrap: "wrap" },
+  iosSessions: { maxWidth: "100%" },
+  // Keep the existing cap guard, without reserving its height again below the numeral.
+  iosSessionsNum: { marginBottom: -iosCapGuard(82, 74) },
   // Layout box only — no background/clipping, so the artwork layer can
   // bleed past its top edge (per-tweak: card must not box the artwork in).
   cardOuter: {

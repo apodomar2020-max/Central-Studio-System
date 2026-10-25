@@ -14,6 +14,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Path } from "react-native-svg";
+import { iosDisplayTextStyle } from "@/utils/iosTypography";
 
 import DiscoveryClassCard, { type DiscoveryStyleIcon } from "@/components/DiscoveryClassCard";
 import CentralBackButton from "@/components/CentralBackButton";
@@ -195,7 +196,7 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: BLACK },
   hero: { height: 455, backgroundColor: BLACK },
   nav: { position: "absolute", left: 16, top: 0, zIndex: 5 },
-  name: { position: "absolute", left: "8%", right: "8%", bottom: 18, fontFamily: "Anton_400Regular", fontSize: 38, lineHeight: 42, textTransform: "uppercase" },
+  name: { position: "absolute", left: "8%", right: "8%", bottom: 18, fontFamily: "Anton_400Regular", fontSize: 38, lineHeight: 42, ...iosDisplayTextStyle(38, 42), textTransform: "uppercase" },
   firstName: { color: CYAN },
   lastName: { color: "#FFFFFF" },
   bioCard: { width: "91%", alignSelf: "center", borderRadius: 18, backgroundColor: CYAN, paddingHorizontal: 18, paddingTop: 17, paddingBottom: 21 },

@@ -36,7 +36,7 @@ test("success preserves the shared celebration animation and submission pop", ()
 
 test("all children stay visible while existing Ballet applicants are disabled", () => {
   assert.match(assessmentSource, /applicationsState === "ready" && children\.map\(\(child\) =>/);
-  assert.match(assessmentSource, /const disabled = outsideRoutedSelection \|\| \(status != null && BLOCKING_CHILD_APPLICATION_STATUSES\.has\(status\)\)/);
+  assert.match(assessmentSource, /const disabled = !canProceed \|\| outsideRoutedSelection \|\| \(status != null && BLOCKING_CHILD_APPLICATION_STATUSES\.has\(status\)\)/);
   assert.match(assessmentSource, /disabled=\{disabled\}/);
   assert.match(assessmentSource, /if \(disabled \|\| lockedOut\) return/);
 });

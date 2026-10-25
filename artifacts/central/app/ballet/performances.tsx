@@ -348,8 +348,14 @@ const s = StyleSheet.create({
     letterSpacing: 0.5,
     color: "#FFFFFF",
     marginBottom: 8,
-    ...iosDisplayTextStyle(44, 40),
-    marginTop: -iosCapGuard(44, 40),
+    ...(Platform.OS === "ios" ? {
+      includeFontPadding: false,
+      ...iosDisplayTextStyle(44, 40),
+      marginBottom: 8 - iosCapGuard(44, 40),
+    } : {
+      ...iosDisplayTextStyle(44, 40),
+      marginTop: -iosCapGuard(44, 40),
+    }),
   },
   heroDesc: {
     fontSize: 14,

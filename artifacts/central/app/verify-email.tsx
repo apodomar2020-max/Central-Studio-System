@@ -3,7 +3,10 @@ import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React, { useEffect, useRef, useState } from "react";
 import {
+  Keyboard,
+  KeyboardAvoidingView,
   Platform,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -23,8 +26,8 @@ import { enterApp, fetchCurrentUser, nextStepRoute } from "@/services/authProfil
 import { clearSignupDrafts } from "./auth/register";
 import { iosCapGuard, iosDisplayTextStyle, iosTextInputStyle } from "@/utils/iosTypography";
 import { useCentralAlert } from "@/hooks/useCentralAlert";
-import BotChallenge from "@/components/BotChallenge";
 import { setStudentToken } from "@/services/secureTokenStorage";
+import { nativeAuthError } from "@/services/nativeAuthErrors";
 
 const VerifyGlow = React.memo(function VerifyGlow() {
   return (
@@ -67,11 +70,8 @@ export default function VerifyEmailScreen() {
   const [resendCountdown, setResendCountdown] = useState(0);
   const [sent, setSent] = useState(false);
   const [sendError, setSendError] = useState("");
-  // Security Wave — Bot Protection. send-email-otp is a protected action;
-  // this screen sends automatically on mount, so the challenge must
-  // complete before that first send fires. Kept in-memory only.
-  const [botToken, setBotToken] = useState<string | null>(null);
-  const [challengeResetKey, setChallengeResetKey] = useState(0);
+  const [sendingCode, setSendingCode] = useState(false);
+  const sendInFlight = useRef(false);
   const refs = useRef<(TextInput | null)[]>([]);
 
   async function leaveVerification(destination: "/auth/register" | "/auth/login") {
@@ -81,6 +81,7 @@ export default function VerifyEmailScreen() {
   }
 
   function confirmStartOver() {
+    Keyboard.dismiss();
     alert.show({
       tone: "destructive",
       title: "Start over with another email?",
@@ -97,6 +98,7 @@ export default function VerifyEmailScreen() {
   }
 
   function confirmSignIn() {
+    Keyboard.dismiss();
     alert.show({
       title: "Sign in with another account?",
       message: "This will clear the current session on this device.",
@@ -121,32 +123,6 @@ export default function VerifyEmailScreen() {
     router.replace(nextStepRoute(nextStep) as never);
   }, [user?.emailVerified, user?.profileCompletion?.nextStep]);
 
-  // Auto-send OTP as soon as the screen opens AND verification is ready
-  // (if not already verified). Gated on botToken — send-email-otp is now a
-  // protected action.
-  useEffect(() => {
-    if (!user?.id || user.emailVerified || sent || !botToken) return;
-    customFetch("/api/auth/send-email-otp", {
-      method: "POST",
-      body: JSON.stringify({ studentId: user.id, botToken }),
-    })
-      .then(() => {
-        setSent(true);
-        setSendError("");
-        setResendCountdown(60);
-      })
-      .catch((error: unknown) => {
-        const data = otpErrorData(error);
-        if (data.code === "BOT_VERIFICATION_FAILED" || data.code === "BOT_VERIFICATION_UNAVAILABLE") {
-          setBotToken(null);
-          setChallengeResetKey((k) => k + 1);
-        }
-        const retryAfter = typeof data.retryAfter === "number" ? data.retryAfter : 0;
-        if (retryAfter > 0) setResendCountdown(retryAfter);
-        setSendError(data.error ?? "We couldn't send the verification code. Please try again.");
-      });
-  }, [user?.id, botToken]); // eslint-disable-line react-hooks/exhaustive-deps
-
   useEffect(() => {
     if (resendCountdown <= 0) return;
     const t = setInterval(() => setResendCountdown((c) => c - 1), 1000);
@@ -162,7 +138,9 @@ export default function VerifyEmailScreen() {
     const next = [...code];
     next[i] = cleaned;
     setCode(next);
-    if (cleaned && i < CODE_LENGTH - 1) {
+    if (cleaned && next.every((digit) => digit !== "")) {
+      Keyboard.dismiss();
+    } else if (cleaned && i < CODE_LENGTH - 1) {
       refs.current[i + 1]?.focus();
     }
   }
@@ -174,6 +152,7 @@ export default function VerifyEmailScreen() {
   }
 
   async function handleVerify() {
+    Keyboard.dismiss();
     const full = code.join("");
     if (full.length < CODE_LENGTH) { alert.show({ tone: "warning", title: "Incomplete", message: "Please enter all 6 digits." }); return; }
     if (!user?.id) { alert.show({ tone: "error", title: "Error", message: "You must be signed in to verify your email." }); return; }
@@ -189,6 +168,7 @@ export default function VerifyEmailScreen() {
         await setStudentToken(verification.accessToken);
       }
       const refreshed = await fetchCurrentUser();
+      Keyboard.dismiss();
       await setUser(refreshed.user);
       clearSignupDrafts();
       const nextStep = refreshed.user.profileCompletion?.nextStep ?? "done";
@@ -211,6 +191,7 @@ export default function VerifyEmailScreen() {
         ],
       });
     } catch (err: unknown) {
+      Keyboard.dismiss();
       const data = otpErrorData(err);
       const attempts = typeof data.attemptsLeft === "number"
         ? ` ${data.attemptsLeft} attempt${data.attemptsLeft === 1 ? "" : "s"} remaining.`
@@ -226,34 +207,33 @@ export default function VerifyEmailScreen() {
   }
 
   async function handleResend() {
-    if (resendCountdown > 0 || !user?.id) return;
-    if (!botToken) {
-      alert.show({ tone: "error", title: "Verification Needed", message: "Please complete the verification check above, then try resending." });
+    if (resendCountdown > 0 || sendInFlight.current || user?.emailVerified) return;
+    if (!user?.id) {
+      setSendError("Please sign in again to send a verification code.");
       return;
     }
+    Keyboard.dismiss();
+    sendInFlight.current = true;
+    setSendingCode(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     try {
-      await customFetch("/api/auth/send-email-otp", {
+      await customFetch("/api/auth/native/send-email-otp", {
         method: "POST",
-        body: JSON.stringify({ studentId: user.id, botToken }),
       });
       setResendCountdown(60);
       setSent(true);
       setSendError("");
-      // Turnstile tokens are single-use — force a fresh challenge before
-      // the NEXT resend can proceed.
-      setBotToken(null);
-      setChallengeResetKey((k) => k + 1);
+      Keyboard.dismiss();
       alert.show({ tone: "success", title: "Email Sent", message: `A new verification code has been sent to ${user?.email}.` });
     } catch (err: unknown) {
-      const data = otpErrorData(err);
-      if (data.code === "BOT_VERIFICATION_FAILED" || data.code === "BOT_VERIFICATION_UNAVAILABLE") {
-        setBotToken(null);
-        setChallengeResetKey((k) => k + 1);
-      }
-      const retryAfter = typeof data.retryAfter === "number" ? data.retryAfter : 0;
+      Keyboard.dismiss();
+      const { message, retryAfter } = nativeAuthError(err);
       if (retryAfter > 0) setResendCountdown(retryAfter);
-      alert.show({ tone: "error", title: "Failed to Send", message: data.error ?? "We couldn't resend the code. Please try again in a few moments." });
+      setSendError(message);
+      alert.show({ tone: "error", title: "Failed to Send", message });
+    } finally {
+      sendInFlight.current = false;
+      setSendingCode(false);
     }
   }
 
@@ -267,89 +247,99 @@ export default function VerifyEmailScreen() {
         <View style={{ width: 42 }} />
       </View>
 
-      <View style={styles.body}>
-        <Eyebrow>Step 4 of 5</Eyebrow>
-        <ScreenTitle text={"VERIFY\nEMAIL"} />
-
-        <Text style={styles.lead}>
-          {sent ? "We sent a 6-digit verification code to" : "We'll send a 6-digit verification code to"}{"\n"}
-          <Text style={[styles.pageDescEmail, { color: CS.cyan400 }]}>{user?.email}</Text>
-        </Text>
-
-        {sendError ? <Text style={styles.sendError}>{sendError}</Text> : null}
-
-        {!botToken && !user?.emailVerified && (
-          <BotChallenge action="otp_send" resetKey={challengeResetKey} onToken={(token) => setBotToken(token)} />
-        )}
-
-        <View style={styles.codeRow}>
-          {code.map((digit, i) => (
-            <TextInput
-              key={i}
-              ref={(r) => { refs.current[i] = r; }}
-              value={digit}
-              onChangeText={(v) => handleDigit(v, i)}
-              onKeyPress={(e) => handleKeyPress(e, i)}
-              keyboardType="number-pad"
-              maxLength={1}
-              style={[
-                styles.codeInput,
-                {
-                  borderColor: digit ? CS.cyan500 : "rgba(255,255,255,0.12)",
-                  backgroundColor: digit ? "rgba(0,182,215,0.13)" : "rgba(255,255,255,0.05)",
-                  color: digit ? CS.cyan500 : "#FFFFFF",
-                },
-              ]}
-              selectTextOnFocus
-            />
-          ))}
-        </View>
-
-        <TouchableOpacity
-          onPress={handleResend}
-          disabled={resendCountdown > 0}
-          style={styles.resendBtn}
+      <KeyboardAvoidingView
+        style={styles.keyboardArea}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+      >
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.body}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
         >
-          {resendCountdown > 0 ? (
-            <Text style={styles.resendText}>
-              Resend code in{" "}
-              <Text style={{ color: CS.cyan400 }}>{resendCountdown}s</Text>
-            </Text>
-          ) : (
-            <Text style={[styles.resendText, { color: CS.cyan400, fontFamily: "Archivo_700Bold" }]}>Resend verification email</Text>
-          )}
-        </TouchableOpacity>
+          <Eyebrow>Step 4 of 5</Eyebrow>
+          <ScreenTitle text={"VERIFY\nEMAIL"} />
 
-        <View style={[styles.notice, { marginTop: 24 }]}>
-          <View style={styles.noticeIcon}>
-            <Icon name="lock" size={15} stroke={2} color={CS.amber} />
-          </View>
-          <Text style={styles.noticeText}>
-            Can't find the email? Check your spam folder or make sure you signed up with the correct address.
+          <Text style={styles.lead}>
+            {sent ? "We sent a 6-digit verification code to" : "We'll send a 6-digit verification code to"}{"\n"}
+            <Text style={[styles.pageDescEmail, { color: CS.cyan400 }]}>{user?.email}</Text>
           </Text>
-        </View>
 
-        <View style={styles.escapeSection}>
-          <Text style={styles.escapeTitle}>Wrong email?</Text>
-          <View style={styles.escapeActions}>
-            <TouchableOpacity onPress={confirmStartOver} style={styles.escapeButton}>
-              <Text style={styles.escapeButtonText}>Start over</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={confirmSignIn} style={styles.escapeButton}>
-              <Text style={styles.escapeButtonText}>Sign in with another account</Text>
-            </TouchableOpacity>
+          {sendError ? <Text style={styles.sendError}>{sendError}</Text> : null}
+
+          <View style={styles.codeRow}>
+            {code.map((digit, i) => (
+              <TextInput
+                key={i}
+                ref={(r) => { refs.current[i] = r; }}
+                value={digit}
+                onChangeText={(v) => handleDigit(v, i)}
+                onKeyPress={(e) => handleKeyPress(e, i)}
+                keyboardType="number-pad"
+                maxLength={1}
+                accessibilityLabel={`Verification code digit ${i + 1} of ${CODE_LENGTH}`}
+                style={[
+                  styles.codeInput,
+                  {
+                    borderColor: digit ? CS.cyan500 : "rgba(255,255,255,0.12)",
+                    backgroundColor: digit ? "rgba(0,182,215,0.13)" : "rgba(255,255,255,0.05)",
+                    color: digit ? CS.cyan500 : "#FFFFFF",
+                  },
+                ]}
+                selectTextOnFocus
+              />
+            ))}
           </View>
-        </View>
-      </View>
 
-      <View style={[styles.footer, { paddingBottom: (Platform.OS === "web" ? 36 : insets.bottom) + 16 }]}>
-        <PrimaryCTA
-          label="Verify Email"
-          onPress={handleVerify}
-          loading={loading}
-          icon="arrow"
-        />
-      </View>
+          <TouchableOpacity
+            onPress={handleResend}
+            disabled={resendCountdown > 0 || sendingCode || !user?.id}
+            accessibilityRole="button"
+            accessibilityState={{ disabled: resendCountdown > 0 || sendingCode || !user?.id, busy: sendingCode }}
+            style={styles.resendBtn}
+          >
+            {resendCountdown > 0 ? (
+              <Text style={styles.resendText}>
+                Resend code in{" "}
+                <Text style={{ color: CS.cyan400 }}>{resendCountdown}s</Text>
+              </Text>
+            ) : (
+              <Text style={[styles.resendText, { color: CS.cyan400, fontFamily: "Archivo_700Bold" }]}>{sendingCode ? "Sending..." : sent ? "Resend verification email" : "Send code"}</Text>
+            )}
+          </TouchableOpacity>
+
+          <View style={[styles.notice, { marginTop: 24 }]}>
+            <View style={styles.noticeIcon}>
+              <Icon name="lock" size={15} stroke={2} color={CS.amber} />
+            </View>
+            <Text style={styles.noticeText}>
+              Can't find the email? Check your spam folder or make sure you signed up with the correct address.
+            </Text>
+          </View>
+
+          <View style={styles.escapeSection}>
+            <Text style={styles.escapeTitle}>Wrong email?</Text>
+            <View style={styles.escapeActions}>
+              <TouchableOpacity onPress={confirmStartOver} style={styles.escapeButton} accessibilityRole="button">
+                <Text style={styles.escapeButtonText}>Start over</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={confirmSignIn} style={styles.escapeButton} accessibilityRole="button">
+                <Text style={styles.escapeButtonText}>Sign in with another account</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </ScrollView>
+
+        <View style={[styles.footer, { paddingBottom: (Platform.OS === "web" ? 36 : insets.bottom) + 16 }]}>
+          <PrimaryCTA
+            label="Verify Email"
+            onPress={handleVerify}
+            loading={loading}
+            icon="arrow"
+          />
+        </View>
+      </KeyboardAvoidingView>
     </View>
 
   );
@@ -361,14 +351,16 @@ const styles = StyleSheet.create({
     flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 24, height: 56,
     zIndex: 50, elevation: 10,
   },
-  body: { flex: 1, paddingHorizontal: 24, paddingTop: 28 },
+  keyboardArea: { flex: 1 },
+  scroll: { flex: 1 },
+  body: { flexGrow: 1, paddingHorizontal: 24, paddingTop: 28, paddingBottom: 16 },
   title: { fontFamily: "Anton_400Regular", fontSize: 85, lineHeight: 78, textTransform: "uppercase", color: CS.cyan500, marginBottom: 10 - iosCapGuard(85, 78), includeFontPadding: false, paddingTop: 6, ...iosDisplayTextStyle(85, 78) },
   lead: { fontSize: 14, color: "rgba(255,255,255,0.42)", lineHeight: 21, marginBottom: 24, fontFamily: "Archivo_400Regular" },
   sendError: { fontSize: 13, lineHeight: 18, color: CS.danger, fontFamily: "Archivo_600SemiBold", marginBottom: 12 },
   pageDescEmail: { fontFamily: "Archivo_700Bold" },
   codeRow: { flexDirection: "row", gap: 10, marginVertical: 8, justifyContent: "space-between" },
   codeInput: {
-    flex: 1, height: 56, borderRadius: 12, borderWidth: 1.5,
+    flex: 1, minHeight: 56, borderRadius: 12, borderWidth: 1.5,
     textAlign: "center", fontSize: 26, fontFamily: "Anton_400Regular", ...iosTextInputStyle(26, 31, "anton"),
     ...(Platform.OS === 'ios' ? {
       lineHeight: undefined,

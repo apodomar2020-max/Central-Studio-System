@@ -38,7 +38,6 @@ import {
 } from "@/components/signup/SignupKit";
 import { useGoogleSignIn } from "@/hooks/useGoogleSignIn";
 import { useFacebookSignIn } from "@/hooks/useFacebookSignIn";
-import BotChallenge from "@/components/BotChallenge";
 import SocialLinkVerifyModal from "@/components/SocialLinkVerifyModal";
 import AppleSignInButton from "@/components/AppleSignInButton";
 import { useAppleSignIn } from "@/hooks/useAppleSignIn";
@@ -155,12 +154,6 @@ export default function RegisterScreen() {
   const [showPwd, setShowPwd] = useState(false);
   const [loading, setLoading] = useState(false);
   const [apiError, setApiError] = useState("");
-  // Security Wave — Bot Protection. The token is kept ONLY in this
-  // component's in-memory state — never AsyncStorage, never logged.
-  // `challengeResetKey` is bumped to force the widget to remount and issue
-  // a fresh single-use token after any failed submission.
-  const [botToken, setBotToken] = useState<string | null>(null);
-  const [challengeResetKey, setChallengeResetKey] = useState(0);
 
   async function submit() {
     if (
@@ -227,12 +220,6 @@ export default function RegisterScreen() {
       }
     }
 
-    if (!botToken) {
-      setApiError("Please complete verification below before continuing.");
-      setLoading(false);
-      return;
-    }
-
     try {
       const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
       const name = `${firstName.trim()} ${lastName.trim()}`.trim();
@@ -244,31 +231,20 @@ export default function RegisterScreen() {
       // { ok: true } body and no token. The UX no longer branches on that
       // distinction either; the next step is always the same: try to sign
       // in with the credentials just submitted.
-      const response = await fetch(`${apiUrl}/api/auth/register`, {
+      const response = await fetch(`${apiUrl}/api/auth/native/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, email: trimmedEmail, accountType: "student", password, botToken }),
+        body: JSON.stringify({ name, email: trimmedEmail, accountType: "student", password }),
       });
       const data = await response.json();
 
       if (!response.ok) {
-        if (data.code === "BOT_VERIFICATION_FAILED" || data.code === "BOT_VERIFICATION_UNAVAILABLE") {
-          setBotToken(null);
-          setChallengeResetKey((k) => k + 1);
-          setApiError(
-            data.code === "BOT_VERIFICATION_UNAVAILABLE"
-              ? "Verification is temporarily unavailable. Please try again shortly."
-              : "Verification failed — please complete the check again.",
-          );
-          setLoading(false);
-          return;
-        }
-        if (data.code === "RATE_LIMITED") {
+        if (response.status === 429 || data.code === "RATE_LIMITED") {
           setApiError("Too many attempts. Please wait a bit before trying again.");
           setLoading(false);
           return;
         }
-        setApiError(data.error ?? "Registration failed. Please try again.");
+        setApiError(response.status === 503 ? "Registration is temporarily unavailable. Please try again later." : data.error ?? "Registration failed. Please try again.");
         setLoading(false);
         return;
       }
@@ -360,12 +336,6 @@ export default function RegisterScreen() {
                   <Icon name={showPwd ? "eyeOff" : "eye"} size={17} stroke={2} color="rgba(255,255,255,0.38)" />
                 </TouchableOpacity>
               }
-            />
-
-            <BotChallenge
-              action="register"
-              resetKey={challengeResetKey}
-              onToken={(token) => setBotToken(token)}
             />
 
             <Divider label="or sign up with" />

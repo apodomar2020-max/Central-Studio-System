@@ -49,7 +49,7 @@ function RequirementAccordion({
         style={styles.accordionHeader}
       >
         <Text numberOfLines={2} style={styles.accordionTitle}>{section.title}</Text>
-        <Ionicons name="chevron-down-outline" size={24} color={CYAN} />
+        <Ionicons name={isExpanded ? "chevron-up-outline" : "chevron-down-outline"} size={24} color={CYAN} />
       </TouchableOpacity>
 
       {isExpanded ? (
@@ -253,8 +253,14 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     color: WHITE,
     marginBottom: 8,
-    ...iosDisplayTextStyle(44, 40),
-    marginTop: -iosCapGuard(44, 40),
+    ...(Platform.OS === "ios" ? {
+      includeFontPadding: false,
+      ...iosDisplayTextStyle(44, 40),
+      marginBottom: 8 - iosCapGuard(44, 40),
+    } : {
+      ...iosDisplayTextStyle(44, 40),
+      marginTop: -iosCapGuard(44, 40),
+    }),
   },
   heroDescription: {
     maxWidth: 320,

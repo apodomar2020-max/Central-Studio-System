@@ -15,18 +15,14 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import test from "node:test";
+import { loadStatusUI } from "./bookingStatusHarness";
 
-const CARD = "artifacts/central/components/BookingCard.tsx";
 const SCREEN = "artifacts/central/app/(tabs)/bookings.tsx";
-const cardSource = readFileSync(resolve(process.cwd(), CARD), "utf8");
 const screenSource = readFileSync(resolve(process.cwd(), SCREEN), "utf8");
 
-test("BookingCard treats an unknown bookingStatus as past, not upcoming", () => {
-  assert.match(
-    cardSource,
-    /const isPast = item\.bookingStatus === "attended" \|\| item\.bookingStatus === "completed" \|\| item\.bookingStatus === "noShow" \|\| item\.bookingStatus === "unknown";/,
-    "BookingCard's isPast must include the unknown status so phase never resolves to 'upcoming' and the Cancel action never activates for it",
-  );
+test("BookingCard renders an unknown bookingStatus neutrally without inferring availability", () => {
+  const { module } = loadStatusUI("components/BookingCard.tsx");
+  assert.equal(module.bookingStatusConfig("unknown").label, "Unknown");
 });
 
 test("the bookings screen's shared item renderer treats an unknown bookingStatus as past", () => {
@@ -46,9 +42,10 @@ test("mergedBookings forces an unknown-status booking into the past regardless o
 });
 
 test("bookingStatusConfig gives 'unknown' its own neutral label, distinct from Confirmed", () => {
-  assert.match(
-    cardSource,
-    /case "unknown":\s*return \{ label: "Unknown",/,
-    "an unrecognized status must render its own neutral 'Unknown' badge, never silently reuse the Confirmed styling",
-  );
+  const { module } = loadStatusUI("components/BookingCard.tsx");
+  const unknown = module.bookingStatusConfig("unknown");
+  assert.equal(unknown.label, "Unknown");
+  assert.equal(unknown.color, "#B6BDC6");
+  assert.notEqual(unknown.label, module.bookingStatusConfig("confirmed").label);
+  assert.notEqual(unknown.color, module.bookingStatusConfig("confirmed").color);
 });

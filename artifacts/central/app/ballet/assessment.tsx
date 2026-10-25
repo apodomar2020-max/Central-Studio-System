@@ -1,11 +1,13 @@
+import { canCreateChildProfile, capacityErrorKind, CHILD_LIMIT_MESSAGE, BALLET_LIMIT_MESSAGE, BALLET_CHILD_LIMIT, createAccountRequestScope } from "@/services/accountCapacity";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
-import { router, useLocalSearchParams } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   ActivityIndicator,
+  AppState,
   Animated,
   KeyboardAvoidingView,
   Linking,
@@ -35,6 +37,7 @@ import {
   buildEffectiveEligibleBalletChildIds,
   parseEligibleBalletChildIds,
   shouldLockSingleRoutedBalletChild,
+  selectAuthoritativeBalletApplications,
 } from "@/components/ballet/balletStudentPreviewModel";
 import {
   buildAssessmentSubmissionDraft,
@@ -116,6 +119,7 @@ function getChildApplicationStatus(child: ChildProfile, applications: BalletAppl
   const childId = Number(child.id);
   const matching = applications.filter((app) => {
     if (!Number.isNaN(childId) && app.childId === childId) return true;
+    if (app.childId != null) return false;
     const sameName = app.childName.trim().toLowerCase() === child.fullName.trim().toLowerCase();
     const sameBirthday = !!child.birthday && app.childBirthday === child.birthday;
     return sameName && sameBirthday;
@@ -188,12 +192,23 @@ function ScreenTitle({ title, subtitle }: { title: string; subtitle: string }) {
 }
 
 export default function BalletAssessmentScreen() {
+  const { user } = useAppContext();
+  return <BalletAssessmentForm key={user?.id ?? "guest"} />;
+}
+
+function BalletAssessmentForm() {
   const insets = useSafeAreaInsets();
   const { eligibleChildIds: eligibleChildIdsParam } = useLocalSearchParams<{
     eligibleChildIds?: string | string[];
   }>();
-  const { user, children, addChild } = useAppContext();
+  const { user, children, childrenReady, refreshChildren, addChild } = useAppContext();
   const alert = useCentralAlert();
+  const requestScope = useRef(createAccountRequestScope()).current;
+  useEffect(() => {
+    requestScope.setAccount(user?.id ?? null);
+    return () => { requestScope.setAccount(null); };
+  }, [requestScope, user?.id]);
+  const [applicationOwner, setApplicationOwner] = useState<string | null>(null);
 
   const [step, setStep] = useState<Step>("child");
   const [selectedChild, setSelectedChild] = useState<ChildProfile | null>(null);
@@ -219,6 +234,7 @@ export default function BalletAssessmentScreen() {
   const [sessionCreatedChildIds, setSessionCreatedChildIds] = useState<Set<number>>(() => new Set());
   const [addChildErrors, setAddChildErrors] = useState<{ name?: string; birthday?: string }>({});
   const [addingChild, setAddingChild] = useState(false);
+  const addingChildRef = useRef(false);
   const authPromptShownRef = useRef(false);
   const parentPromptShownRef = useRef(false);
   const submittingRef = useRef(false);
@@ -230,6 +246,13 @@ export default function BalletAssessmentScreen() {
     staleTime: 5 * 60 * 1000,
   });
   const assessmentFeeEgp = settingsQuery.data?.assessmentFeeEgp ?? null;
+
+  const eligibilityReady = applicationsState === "ready" && applicationOwner === user?.id && childrenReady;
+  const currentBalletChildCount = selectAuthoritativeBalletApplications(applications).length;
+  const balletAtCapacity = currentBalletChildCount >= BALLET_CHILD_LIMIT;
+  const canCreateProfile = canCreateChildProfile(children.length, childrenReady);
+  const canAddAssessmentChild = eligibilityReady && !balletAtCapacity && canCreateProfile;
+  const canProceed = eligibilityReady && (editingApplicationId != null || !balletAtCapacity);
 
   const stepIndex = STEP_ORDER.indexOf(step);
   const profileComplete = user?.profileCompletion?.isComplete ?? user?.profileCompleted ?? false;
@@ -341,17 +364,21 @@ export default function BalletAssessmentScreen() {
   }, [profileComplete, user]);
 
   const loadApplications = useCallback(async (signal?: AbortSignal) => {
+    const current = requestScope.beginRead();
+    const owner = user?.id ?? null;
+    setApplicationOwner(null);
     setApplicationsState("loading");
     try {
       const data = await fetchMyApplications(signal);
-      if (signal?.aborted) return;
+      if (signal?.aborted || !current()) return;
+      setApplicationOwner(owner);
       setApplications(data);
       setApplicationsState("ready");
     } catch (err) {
-      if ((err as { name?: string })?.name === "AbortError") return;
+      if (signal?.aborted || !current() || (err as { name?: string })?.name === "AbortError") return;
       setApplicationsState(isOfflineError(err) ? "offline" : "error");
     }
-  }, []);
+  }, [requestScope, user?.id]);
 
   const loadPackages = useCallback(async (signal?: AbortSignal) => {
     setPackagesState("loading");
@@ -384,13 +411,18 @@ export default function BalletAssessmentScreen() {
     }
   }, []);
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     if (!user || !profileComplete || user.accountType !== "parent") return;
     const controller = new AbortController();
-    loadApplications(controller.signal);
-    loadPackages(controller.signal);
-    return () => controller.abort();
-  }, [loadApplications, loadPackages, profileComplete, user]);
+    const refresh = () => {
+      void refreshChildren();
+      void loadApplications(controller.signal);
+    };
+    refresh();
+    void loadPackages(controller.signal);
+    const subscription = AppState.addEventListener("change", (state) => { if (state === "active") refresh(); });
+    return () => { controller.abort(); subscription.remove(); };
+  }, [loadApplications, loadPackages, profileComplete, user?.id, user?.accountType, refreshChildren]));
 
   useEffect(() => {
     if (!selectedChild) return;
@@ -420,6 +452,7 @@ export default function BalletAssessmentScreen() {
   }
 
   function goNext() {
+    if (!canProceed) return;
     if (step === "child" && !selectedChild) {
       alert.show({ tone: "warning", title: "Select Child", message: "Choose the child applying for Ballet Assessment." });
       return;
@@ -433,7 +466,7 @@ export default function BalletAssessmentScreen() {
   }
 
   async function handleAddChild() {
-    if (addingChild) return;
+    if (addingChildRef.current || !canAddAssessmentChild) return;
     const errors: { name?: string; birthday?: string } = {};
     if (!newChildName.trim()) errors.name = "Please enter the child's full name.";
     const birthday = newChildDay && newChildMonth && newChildYear
@@ -448,6 +481,8 @@ export default function BalletAssessmentScreen() {
     setAddChildErrors(errors);
     if (Object.keys(errors).length > 0) return;
 
+    const current = requestScope.capture();
+    addingChildRef.current = true;
     setAddingChild(true);
     try {
       const created = await addChild({
@@ -457,7 +492,7 @@ export default function BalletAssessmentScreen() {
         age,
         gender: newChildGender,
       });
-      if (!created) return;
+      if (!created || !current()) return;
       const createdId = Number(created.id);
       if (Number.isInteger(createdId) && createdId > 0) {
         setSessionCreatedChildIds((current) => new Set(current).add(createdId));
@@ -471,13 +506,14 @@ export default function BalletAssessmentScreen() {
       setNewChildYear("");
       setNewChildGender("female");
     } finally {
+      addingChildRef.current = false;
       setAddingChild(false);
     }
   }
 
   async function handleSubmit() {
     // 1. reject if already submitting
-    if (submittingRef.current) return;
+    if (submittingRef.current || !canProceed) return;
 
     // 2. validate child, appointment, and payment method (a fixed
     // canonical constant in this flow — never user-selected, so always
@@ -512,6 +548,7 @@ export default function BalletAssessmentScreen() {
     });
 
     // 4. set the synchronous submission lock
+    const current = requestScope.capture();
     submittingRef.current = true;
     setSubmitting(true);
     try {
@@ -522,6 +559,7 @@ export default function BalletAssessmentScreen() {
           assessmentDate: selectedAppointment_.date,
           preferredPaymentMethod: CANONICAL_PAYMENT_METHOD,
         });
+        if (!current()) return;
         // 6. finalize the submitted snapshot by adding the returned
         // identity onto the draft — never rebuilt from state.
         setSubmittedSnapshot(finalizeAssessmentSubmissionSnapshot(draftSnapshot, {
@@ -550,6 +588,7 @@ export default function BalletAssessmentScreen() {
         preferredPaymentMethod: CANONICAL_PAYMENT_METHOD,
         childId: selectedChildId,
       });
+      if (!current()) return;
       // 6. finalize the submitted snapshot from the draft + server response
       // (7. success view renders from this snapshot only — see below).
       // This happens before any success-side state update (optimistic list
@@ -596,8 +635,16 @@ export default function BalletAssessmentScreen() {
       ]);
       void loadApplications();
     } catch (err) {
+      if (!current()) return;
       const typed = err as { status?: number; data?: { error?: string; code?: string }; message?: string };
-      if (typed.status === 409) {
+      const capacity = capacityErrorKind(err);
+      if (capacity) {
+        alert.show({ tone: "warning", title: capacity === "ballet" ? "Ballet Limit Reached" : "Child Profile Limit Reached", message: capacity === "ballet" ? BALLET_LIMIT_MESSAGE : CHILD_LIMIT_MESSAGE });
+        // Keep the entered form; server refresh updates the available actions.
+        await Promise.all([loadApplications(), refreshChildren()]);
+        return;
+      }
+      if (typed.status === 409 && typed.data?.code === "DUPLICATE_APPLICATION") {
         alert.show({ tone: "warning", title: "Already Applied", message: typed.data?.error ?? "This child already has a Ballet application." });
         setSelectedChild(null);
         setSelectedAppointment(null);
@@ -729,7 +776,7 @@ export default function BalletAssessmentScreen() {
               const status = getChildApplicationStatus(child, applications);
               const childId = Number(child.id);
               const outsideRoutedSelection = effectiveEligibleChildIds != null && !effectiveEligibleChildIds.has(childId);
-              const disabled = outsideRoutedSelection || (status != null && BLOCKING_CHILD_APPLICATION_STATUSES.has(status));
+              const disabled = !canProceed || outsideRoutedSelection || (status != null && BLOCKING_CHILD_APPLICATION_STATUSES.has(status));
               const lockedOut = routedChildLocked && selectedChild?.id !== child.id;
               const label = status === "pending" || status === "needsFollowUp"
                 ? "Application Pending"
@@ -737,7 +784,7 @@ export default function BalletAssessmentScreen() {
                   ? "Already Applied"
                   : outsideRoutedSelection
                     ? "Not Available"
-                    : undefined;
+                    : balletAtCapacity ? "Ballet Limit Reached" : undefined;
               return (
                 <BalletAssessmentChildCard
                   key={child.id}
@@ -754,15 +801,20 @@ export default function BalletAssessmentScreen() {
                 />
               );
             })}
-            <View style={styles.orDivider}><View style={styles.orLine} /><Text style={styles.orText}>OR</Text><View style={styles.orLine} /></View>
-            <TouchableOpacity style={styles.addChildButton} onPress={() => { setAddChildErrors({}); setAddChildOpen(true); }} activeOpacity={0.82}>
-              <View style={styles.addIcon}><Ionicons name="add" size={24} color="#FFFFFF" /></View>
-              <View style={styles.addChildCopy}>
-                <Text style={styles.addChildText}>Add Another Child</Text>
-                <Text style={styles.addChildHint}>Start a ballet application for another child</Text>
-              </View>
-              <Ionicons name="arrow-forward" size={31} color="#FFFFFF" />
-            </TouchableOpacity>
+            {canAddAssessmentChild && (
+              <>
+                <View style={styles.orDivider}><View style={styles.orLine} /><Text style={styles.orText}>OR</Text><View style={styles.orLine} /></View>
+                <TouchableOpacity style={styles.addChildButton} onPress={() => { setAddChildErrors({}); setAddChildOpen(true); }} activeOpacity={0.82}>
+                  <View style={styles.addIcon}><Ionicons name="add" size={24} color="#FFFFFF" /></View>
+                  <View style={styles.addChildCopy}>
+                    <Text style={styles.addChildText}>Add Another Child</Text>
+                    <Text style={styles.addChildHint}>Start a ballet application for another child</Text>
+                  </View>
+                  <Ionicons name="arrow-forward" size={31} color="#FFFFFF" />
+                </TouchableOpacity>
+              </>
+            )}
+            {eligibilityReady && balletAtCapacity ? <Text style={styles.emptyText}>{BALLET_LIMIT_MESSAGE}</Text> : null}
           </View>
         )}
 
@@ -878,11 +930,11 @@ export default function BalletAssessmentScreen() {
             </TouchableOpacity>
           ) : null}
           {step === "review" ? (
-            <TouchableOpacity style={[styles.footerButton, styles.primaryButton, (submitting || reviewMissingStep != null) && { opacity: 0.6 }]} onPress={handleSubmit} disabled={submitting || reviewMissingStep != null} activeOpacity={0.86}>
+            <TouchableOpacity style={[styles.footerButton, styles.primaryButton, (submitting || reviewMissingStep != null) && { opacity: 0.6 }]} onPress={handleSubmit} disabled={submitting || reviewMissingStep != null || !canProceed} activeOpacity={0.86}>
               {submitting ? <ActivityIndicator color={BA.ink900} /> : <Text style={styles.primaryButtonText}>Submit</Text>}
             </TouchableOpacity>
           ) : (
-            <TouchableOpacity style={[styles.footerButton, styles.primaryButton]} onPress={goNext} activeOpacity={0.86}>
+            <TouchableOpacity style={[styles.footerButton, styles.primaryButton]} onPress={goNext} disabled={!canProceed} activeOpacity={0.86}>
               <Text style={styles.primaryButtonText}>Continue</Text>
             </TouchableOpacity>
           )}
@@ -952,7 +1004,7 @@ export default function BalletAssessmentScreen() {
 
               <TouchableOpacity
                 onPress={handleAddChild}
-                disabled={addingChild}
+                disabled={addingChild || !canAddAssessmentChild}
                 activeOpacity={0.86}
                 style={[styles.primaryButton, styles.saveChildButton, addingChild && { opacity: 0.6 }]}
               >

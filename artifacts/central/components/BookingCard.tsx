@@ -1,12 +1,13 @@
 import { GlassView } from "expo-glass-effect";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useEffect, useMemo, useState } from "react";
-import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Image, Platform, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions, type ViewStyle } from "react-native";
 import Svg, { Circle, Path } from "react-native-svg";
 
-import { PriceTagIcon } from "@/components/DiscoveryClassCard";
+import { PriceTagIcon } from "@/components/PriceTagIcon";
 import type { Booking } from "@/contexts/AppContext";
 import { bookingOccurrenceStartMs } from "@/utils/bookingCancellationEligibility";
+import { iosCapGuard, iosDisplayTextStyle } from "@/utils/iosTypography";
 import {
   BOOKING_CARD_MAX_WIDTH,
   bookingCardHeightForWidth,
@@ -82,7 +83,16 @@ function bookingState(status: Booking["bookingStatus"]) {
   if (status === "cancelled" || status === "rejected") {
     return { label: "Cancelled", color: RED, bg: "rgba(255,16,27,0.22)" };
   }
-  return { label: "Available", color: GREEN, bg: "rgba(39,198,63,0.25)" };
+  switch (status) {
+    case "pending":
+    case "confirmed":
+    case "attended":
+    case "completed":
+    case "noShow":
+      return { label: "Available", color: GREEN, bg: "rgba(39,198,63,0.25)" };
+    default:
+      return { label: "Unknown", color: "#B6BDC6", bg: "rgba(255,255,255,0.12)" };
+  }
 }
 
 function dateParts(value?: string) {
@@ -95,7 +105,7 @@ function dateParts(value?: string) {
   };
 }
 
-function twentyFourHourTime(raw?: string | null, fallback?: string) {
+export function twentyFourHourTime(raw?: string | null, fallback?: string) {
   const source = raw || fallback || "";
   const match = source.match(/(\d{1,2}):(\d{2})(?:\s*(AM|PM))?/i);
   if (!match) return "--:--";
@@ -132,7 +142,7 @@ function PersonRow({ label, name, image }: { label: string; name: string; image?
       </View>
       <View style={styles.personCopy}>
         <Text style={styles.personLabel}>{label}</Text>
-        <Text style={styles.personName} numberOfLines={1}>{name || "TBD"}</Text>
+        <Text style={styles.personName}>{name || "TBD"}</Text>
       </View>
     </View>
   );
@@ -149,7 +159,6 @@ export function paymentStatusConfig(status: Booking["paymentStatus"]) {
 
 export default function BookingCard({ item, onPress, classPhotoUrl }: BookingCardProps) {
   const [now, setNow] = useState(() => Date.now());
-  const [cardWidth, setCardWidth] = useState(0);
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 60_000);
     return () => clearInterval(timer);
@@ -162,27 +171,67 @@ export default function BookingCard({ item, onPress, classPhotoUrl }: BookingCar
   const date = useMemo(() => dateParts(item.occurrenceDate ?? item.date), [item.occurrenceDate, item.date]);
   const countdown = useMemo(() => countdownLabel(item, now), [item.occurrenceDate, item.date, item.scheduleStartTime, now]);
   const time = twentyFourHourTime(item.scheduleStartTime, item.time);
-  const cardHeight = bookingCardHeightForWidth(cardWidth);
+  return <ClassCardPresentation item={item} dateLabel={date.date} timeLabel={time}
+    countdown={countdown + " · " + date.date.replace(/\s\d{4}$/, "")}
+    status={status} railLabel={payment.label} railColor={payment.color}
+    onPress={onPress} classPhotoUrl={classPhotoUrl} />;
+}
+
+interface ClassCardPresentationProps {
+  item: Pick<Booking, "className" | "instructorName" | "instructorImage" | "location" | "classPhotoUrl">;
+  dateLabel: string;
+  timeLabel: string;
+  countdown?: string;
+  status: { label: string; color: string; bg: string };
+  railLabel: string;
+  railColor: string;
+  /** Catalogue pricing occupies the existing pill; booking adapters keep status copy. */
+  priceLabel?: string;
+  onPress?: () => void;
+  classPhotoUrl?: string;
+  onImageError?: () => void;
+  tags?: React.ReactNode;
+  style?: ViewStyle;
+}
+
+/** Shared Bookings reference; adapters retain catalogue versus booking semantics. */
+export function ClassCardPresentation({ item, dateLabel, timeLabel, countdown, status, railLabel, railColor, priceLabel, onPress, classPhotoUrl, onImageError, tags, style }: ClassCardPresentationProps) {
+  const [cardWidth, setCardWidth] = useState(0);
+  const [panelHeight, setPanelHeight] = useState(0);
+  const [footerHeight, setFooterHeight] = useState(30);
+  const isIOS = Platform.OS === "ios";
+  const { fontScale } = useWindowDimensions();
+  const railWidth = Math.max(26, Math.ceil(26 * fontScale));
+  const cardHeight = Math.max(bookingCardHeightForWidth(cardWidth), panelHeight + 70);
+  const venue = (
+    <View style={styles.venueRow}>
+      <View style={styles.locationIconSlot}><LocationIcon /></View>
+      <View style={styles.personCopy}>
+        <Text style={styles.personLabel}>Venue</Text>
+        <Text style={styles.personName}>{item.location || "Central Studio"}</Text>
+      </View>
+    </View>
+  );
   return (
     <View
       testID="my-booking-card"
-      style={[styles.rail, { height: cardHeight, backgroundColor: payment.color }]}
+      style={[styles.rail, style, { height: cardHeight, backgroundColor: railColor }]}
       onLayout={(event) => {
         const nextWidth = Math.round(event.nativeEvent.layout.width);
         setCardWidth((currentWidth) => currentWidth === nextWidth ? currentWidth : nextWidth);
       }}
     >
-      <View pointerEvents="none" style={styles.paymentRailContent}>
-        <View style={styles.paymentRailInner}>
+      <View pointerEvents="none" style={[styles.paymentRailContent, { width: railWidth }]}>
+        <View style={[styles.paymentRailInner, { width: cardHeight - 24, height: railWidth }]}>
           <PriceTagIcon />
-          <Text style={styles.paymentRailText} numberOfLines={1}>{payment.label}</Text>
+          <Text style={styles.paymentRailText} numberOfLines={1}>{railLabel}</Text>
         </View>
       </View>
 
-      <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.92}>
+      <TouchableOpacity style={[styles.card, { left: railWidth }]} onPress={onPress} accessibilityRole="button" activeOpacity={0.92}>
         <View style={styles.imageArea}>
           {classPhotoUrl || item.classPhotoUrl ? (
-            <Image source={{ uri: classPhotoUrl || item.classPhotoUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+            <Image source={{ uri: classPhotoUrl || item.classPhotoUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" onError={onImageError} />
           ) : (
             <LinearGradient colors={["#30343A", "#101214"]} style={StyleSheet.absoluteFill} />
           )}
@@ -195,17 +244,17 @@ export default function BookingCard({ item, onPress, classPhotoUrl }: BookingCar
 
         <View style={[styles.statusPill, { backgroundColor: status.bg }]}>
           <View style={[styles.statusDot, { backgroundColor: status.color }]} />
-          <Text style={[styles.statusText, { color: status.color }]}>{status.label}</Text>
+          <Text style={[styles.statusText, { color: status.color }]}>{priceLabel ?? status.label}</Text>
         </View>
 
-        <View style={[styles.countdownPill, { backgroundColor: payment.color }]}>
+        {countdown && <View style={[styles.countdownPill, { backgroundColor: railColor }]} onLayout={event => setFooterHeight(Math.ceil(event.nativeEvent.layout.height))}>
           <CountdownIcon />
-          <Text style={styles.countdownText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.78}>
-            {countdown} · {date.date.replace(/\s\d{4}$/, "")}
+          <Text style={styles.countdownText}>
+            {countdown}
           </Text>
-        </View>
+        </View>}
 
-        <View style={styles.panelShell}>
+        <View style={[styles.panelShell, styles.iosPanelShell]}>
           <GlassView
             glassEffectStyle="clear"
             tintColor="rgba(3,21,24,0.20)"
@@ -213,25 +262,23 @@ export default function BookingCard({ item, onPress, classPhotoUrl }: BookingCar
             pointerEvents="none"
             style={styles.glassBackdrop}
           />
-          <View style={styles.panelContent}>
-            <View style={styles.upperRow}>
+          <View style={[styles.panelContent, styles.iosPanelContent, isIOS && styles.iosPanelInsets, { paddingBottom: countdown ? footerHeight + 14 : 14 }]}
+            onLayout={event => setPanelHeight(Math.ceil(event.nativeEvent.layout.height))}>
+            {isIOS && <Text style={styles.className} accessibilityLabel={item.className}>{item.className}</Text>}
+            <View style={[styles.upperRow, styles.iosUpperRow]}>
               <View style={styles.classInfoColumn}>
-                <Text style={styles.className} numberOfLines={1}>{item.className}</Text>
+                {!isIOS && <Text style={styles.className}>{item.className}</Text>}
                 <PersonRow label="Instructor" name={item.instructorName || "Instructor"} image={item.instructorImage} />
-                <View style={styles.venueRow}>
-                  <View style={styles.locationIconSlot}><LocationIcon /></View>
-                  <View style={styles.personCopy}>
-                    <Text style={styles.personLabel}>Venue</Text>
-                    <Text style={styles.personName} numberOfLines={1}>{item.location || "Central Studio"}</Text>
-                  </View>
-                </View>
+                {isIOS && venue}
               </View>
 
               <View style={styles.timeColumn}>
-                <Text style={styles.classDate} numberOfLines={1} adjustsFontSizeToFit>{date.date}</Text>
-                <Text style={styles.classTime} numberOfLines={1} adjustsFontSizeToFit>{time}</Text>
+                <Text style={styles.classDate} numberOfLines={1} adjustsFontSizeToFit>{dateLabel}</Text>
+                <Text style={styles.classTime} numberOfLines={1} adjustsFontSizeToFit>{timeLabel}</Text>
               </View>
             </View>
+            {!isIOS && venue}
+            {tags && <View style={styles.tagsSlot}>{tags}</View>}
           </View>
           <View pointerEvents="none" style={styles.panelBottomHighlight} />
         </View>
@@ -241,6 +288,11 @@ export default function BookingCard({ item, onPress, classPhotoUrl }: BookingCar
 }
 
 const styles = StyleSheet.create({
+  iosPanelShell: { height: "auto" },
+  iosPanelContent: { flex: 0 },
+  // Default inset; the measured countdown height overrides it at larger text sizes.
+  iosPanelInsets: { paddingHorizontal: 18, paddingTop: 14, paddingBottom: 44 },
+  iosUpperRow: { flex: 0 },
   rail: { width: "100%", maxWidth: BOOKING_CARD_MAX_WIDTH, alignSelf: "center", borderRadius: 17, marginBottom: 12, position: "relative", overflow: "hidden" },
   paymentRailContent: { position: "absolute", left: 0, top: 0, bottom: 0, width: 26, alignItems: "center", justifyContent: "center", paddingHorizontal: 6 },
   paymentRailInner: { width: 176, height: 26, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, transform: [{ rotate: "-90deg" }] },
@@ -250,17 +302,18 @@ const styles = StyleSheet.create({
   statusPill: { position: "absolute", top: 11, right: 11, zIndex: 8, flexDirection: "row", alignItems: "center", gap: 6, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 6 },
   statusDot: { width: 6, height: 6, borderRadius: 3 },
   statusText: { fontFamily: "Archivo_700Bold", fontSize: 12, lineHeight: 15 },
-  countdownPill: { position: "absolute", left: "8%", right: "8%", bottom: 10, height: 30, zIndex: 9, borderTopLeftRadius: 15, borderTopRightRadius: 15, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 9, paddingHorizontal: 14, shadowColor: "#000000", shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.22, shadowRadius: 5, elevation: 3 },
-  countdownText: { color: "#FFFFFF", fontFamily: "Archivo_700Bold", fontSize: 13, lineHeight: 16 },
+  countdownPill: { position: "absolute", left: "8%", right: "8%", bottom: 10, minHeight: 30, paddingVertical: 6, zIndex: 9, borderTopLeftRadius: 15, borderTopRightRadius: 15, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 9, paddingHorizontal: 14, shadowColor: "#000000", shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.22, shadowRadius: 5, elevation: 3 },
+  countdownText: { color: "#FFFFFF", fontFamily: "Archivo_700Bold", fontSize: 13, lineHeight: 16, flexShrink: 1, textAlign: "center" },
+  tagsSlot: { marginTop: 8 },
   panelShell: { position: "absolute", left: 12, right: 12, bottom: 10, height: "52%", zIndex: 7, borderRadius: 15, overflow: "hidden", backgroundColor: "rgba(2,25,29,0.62)" },
   glassBackdrop: { ...StyleSheet.absoluteFill, backgroundColor: "transparent" },
   panelBottomHighlight: { position: "absolute", left: 14, right: 14, bottom: 0, height: StyleSheet.hairlineWidth, backgroundColor: "rgba(255,255,255,0.16)" },
   panelContent: { flex: 1, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 32 },
   upperRow: { flex: 1, minHeight: 0, flexDirection: "row" },
   classInfoColumn: { width: "56%", minWidth: 0, paddingRight: 8 },
-  className: { color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 27, lineHeight: 31, marginBottom: 7 },
+  className: { color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 27, lineHeight: 31, ...iosDisplayTextStyle(27, 31), marginBottom: 7 - iosCapGuard(27, 31) },
   personRow: { flexDirection: "row", alignItems: "center", minHeight: 27 },
-  venueRow: { flexDirection: "row", alignItems: "center", minHeight: 27 },
+  venueRow: { flexDirection: "row", alignItems: "center", minHeight: 27, marginTop: 8 },
   avatar: { width: 25, height: 25, borderRadius: 12.5, overflow: "hidden", alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,182,215,0.18)", borderWidth: 1, borderColor: "rgba(255,255,255,0.42)" },
   initial: { color: "#FFFFFF", fontFamily: "Archivo_700Bold", fontSize: 12 },
   locationIconSlot: { width: 25, height: 25, alignItems: "center", justifyContent: "center" },
@@ -269,5 +322,5 @@ const styles = StyleSheet.create({
   personName: { color: "#FFFFFF", fontFamily: "Archivo_600SemiBold", fontSize: 13, lineHeight: 15 },
   timeColumn: { flex: 1, minWidth: 0, alignItems: "flex-end", justifyContent: "flex-start", paddingLeft: 6 },
   classDate: { color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 16, lineHeight: 20, textAlign: "right", width: "100%" },
-  classTime: { color: CYAN, fontFamily: "Anton_400Regular", fontSize: 56, lineHeight: 60, textAlign: "right", width: "100%" },
+  classTime: { color: CYAN, fontFamily: "Anton_400Regular", fontSize: 56, lineHeight: 60, ...iosDisplayTextStyle(56, 60), ...(Platform.OS === "ios" ? { marginBottom: -iosCapGuard(56, 60) } : {}), textAlign: "right", width: "100%" },
 });

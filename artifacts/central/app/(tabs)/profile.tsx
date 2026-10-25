@@ -21,6 +21,7 @@ import { Image } from "expo-image";
 import { customFetch } from "@workspace/api-client-react";
 import type { MyAttendanceRecord, MyAttendanceResponse } from "@workspace/api-client-react";
 
+import { canCreateChildProfile } from "@/services/accountCapacity";
 import { useAppContext, ChildProfile } from "@/contexts/AppContext";
 import colors from "@/constants/colors";
 import AppButton from "@/components/AppButton";
@@ -432,10 +433,12 @@ function AddChildModal({
   onClose,
   onSave,
   initial,
+  canCreate,
 }: {
   visible: boolean;
   onClose: () => void;
-  onSave: (c: Omit<ChildProfile, "id">) => void;
+  onSave: (c: Omit<ChildProfile, "id">) => Promise<boolean>;
+  canCreate: boolean;
   initial?: ChildProfile;
 }) {
   const alert = useCentralAlert();
@@ -446,6 +449,8 @@ function AddChildModal({
   const [emergencyName, setEmergencyName] = useState(initial?.emergencyContactName ?? "");
   const [emergencyPhone, setEmergencyPhone] = useState(initial?.emergencyContactPhone ?? "");
 
+  const [saving, setSaving] = useState(false);
+  const savingRef = React.useRef(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
 
   function reset() {
@@ -466,7 +471,8 @@ function AddChildModal({
   const calculatedAge = calculateAgeFromBirthday(birthday);
   const dateOfBirthLocked = initial?.dateOfBirthLocked === true;
 
-  function handleSave() {
+  async function handleSave() {
+    if (savingRef.current || (!initial && !canCreate)) return;
     if (!fullName.trim()) {
       alert.show({ tone: "warning", title: "Required", message: "Please enter the child's full name." });
       return;
@@ -481,17 +487,25 @@ function AddChildModal({
       return;
     }
 
-    onSave({
-      fullName: fullName.trim(),
-      birthday: birthday.trim(),
-      age: ageVal,
-      gender,
-      medicalNotes: medicalNotes.trim() || undefined,
-      emergencyContactName: emergencyName.trim() || undefined,
-      emergencyContactPhone: emergencyPhone.trim() || undefined,
-    });
-    reset();
-    onClose();
+    savingRef.current = true;
+    setSaving(true);
+    try {
+      const saved = await onSave({
+        fullName: fullName.trim(),
+        birthday: birthday.trim(),
+        age: ageVal,
+        gender,
+        medicalNotes: medicalNotes.trim() || undefined,
+        emergencyContactName: emergencyName.trim() || undefined,
+        emergencyContactPhone: emergencyPhone.trim() || undefined,
+      });
+      if (!saved) return;
+      reset();
+      onClose();
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
   }
 
   return (
@@ -571,7 +585,7 @@ function AddChildModal({
 
           <View style={styles.modalBtns}>
             <AppButton title="Cancel" variant="ghost" onPress={() => { reset(); onClose(); }} style={{ flex: 1 }} />
-            <AppButton title="Save" onPress={handleSave} style={{ flex: 1 }} />
+            <AppButton title={saving ? "Saving…" : "Save"} disabled={saving || (!initial && !canCreate)} onPress={handleSave} style={{ flex: 1 }} />
           </View>
         </View>
       </View>
@@ -668,13 +682,18 @@ const dpStyles = StyleSheet.create({
 });
 
 export default function ProfileScreen() {
-  const { user, logout, bookings, children, addChild, updateChild, removeChild, userPackages, unreadNotifications, refreshUserPackages } = useAppContext();
+  const { user, logout, bookings, children, childrenReady, refreshChildren, addChild, updateChild, removeChild, userPackages, unreadNotifications, refreshUserPackages } = useAppContext();
+  const canCreate = canCreateChildProfile(children.length, childrenReady);
   const alert = useCentralAlert();
   const { localEnabled: backgroundMusicEnabled, setLocalEnabled: setBackgroundMusicEnabled } = useBackgroundMusic();
   const insets = useSafeAreaInsets();
   const navigatingRef = React.useRef(false);
   const [addChildVisible, setAddChildVisible] = useState(false);
   const [editingChild, setEditingChild] = useState<ChildProfile | undefined>(undefined);
+  React.useEffect(() => {
+    setAddChildVisible(false);
+    setEditingChild(undefined);
+  }, [user?.id]);
   const [serverAttendedCount, setServerAttendedCount] = useState<number | null>(null);
   const [recentAttendance, setRecentAttendance] = useState<MyAttendanceRecord[]>([]);
   const [contactLinks, setContactLinks] = useState<AppContactLink[]>([]);
@@ -691,6 +710,7 @@ export default function ProfileScreen() {
       // session (e.g. right after an admin activates a package while the
       // student is browsing classes).
       refreshUserPackages().catch(() => {});
+      if (user.accountType === "parent") void refreshChildren();
 
       customFetch<MyAttendanceResponse>("/api/my/attendance?limit=100")
         .then((res) => {
@@ -719,7 +739,7 @@ export default function ProfileScreen() {
       return () => {
         active = false;
       };
-    }, [user, refreshUserPackages]),
+    }, [user, refreshUserPackages, refreshChildren]),
   );
 
   const upcoming = bookings.filter((booking) => isVisibleUpcomingMyBooking(booking)).length;
@@ -1021,12 +1041,14 @@ export default function ProfileScreen() {
                 </View>
                 <Text style={styles.emptyChildrenText}>No children added yet</Text>
                 <Text style={styles.emptyChildrenDesc}>Add your child profile to book classes for them.</Text>
-                <TouchableOpacity
-                  onPress={() => { setEditingChild(undefined); setAddChildVisible(true); }}
-                  style={[styles.addChildTextBtn, { marginTop: 12 }]}
-                >
-                  <Text style={styles.addChildTextBtnLabel}>+ Add Child</Text>
-                </TouchableOpacity>
+                {canCreate && (
+                  <TouchableOpacity
+                    onPress={() => { setEditingChild(undefined); setAddChildVisible(true); }}
+                    style={[styles.addChildTextBtn, { marginTop: 12 }]}
+                  >
+                    <Text style={styles.addChildTextBtnLabel}>+ Add Child</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             ) : (
               <View style={styles.childrenContainer}>
@@ -1038,13 +1060,15 @@ export default function ProfileScreen() {
                     />
                   </View>
                 ))}
-                <TouchableOpacity
-                  onPress={() => { setEditingChild(undefined); setAddChildVisible(true); }}
-                  style={[styles.addChildTextBtn, styles.addChildTextBtnDivider]}
-                >
-                  <PIcon name="plus" size={18} stroke={2.4} color="#00B6D7" />
-                  <Text style={styles.addChildTextBtnLabel}>Add Child</Text>
-                </TouchableOpacity>
+                {canCreate && (
+                  <TouchableOpacity
+                    onPress={() => { setEditingChild(undefined); setAddChildVisible(true); }}
+                    style={[styles.addChildTextBtn, styles.addChildTextBtnDivider]}
+                  >
+                    <PIcon name="plus" size={18} stroke={2.4} color="#00B6D7" />
+                    <Text style={styles.addChildTextBtnLabel}>Add Child</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             )}
           </View>
@@ -1188,15 +1212,15 @@ export default function ProfileScreen() {
       <AddChildModal
 
 
+        key={user?.id}
+        canCreate={canCreate}
         visible={addChildVisible}
         onClose={() => { setAddChildVisible(false); setEditingChild(undefined); }}
         initial={editingChild}
-        onSave={(data) => {
-          if (editingChild) {
-            updateChild({ ...data, id: editingChild.id });
-          } else {
-            addChild({ ...data, id: `child-${Date.now()}` });
-          }
+        onSave={async (data) => {
+          if (editingChild) return updateChild({ ...data, id: editingChild.id });
+          if (!canCreate) return false;
+          return Boolean(await addChild({ ...data, id: `child-${Date.now()}` }));
         }}
       />
     </View>

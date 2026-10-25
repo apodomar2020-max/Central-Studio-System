@@ -5,6 +5,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Path } from "react-native-svg";
 import { customFetch } from "@workspace/api-client-react";
 import CentralBackButton from "@/components/CentralBackButton";
+import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
+import { iosCapGuard, iosDisplayTextStyle } from "@/utils/iosTypography";
 
 type ContentPage = { title: string; subtitle?: string | null; content: string };
 type FaqCategory = { id: number; name: string; sortOrder: number; isActive: boolean };
@@ -12,13 +14,14 @@ type FaqItem = { id: number; question: string; answer: string; sortOrder: number
 type HelpSupportResponse = { page: ContentPage; faqs: FaqItem[]; faqCategories?: FaqCategory[] };
 
 const FALLBACK_PAGE: ContentPage = { title: "Help & Support", content: "" };
+const HERO_CONTENT_INSET = 50;
 
 function SearchIcon() {
   return <Svg width={17} height={16} viewBox="0 0 17 16" fill="none"><Path d="M12.9685 12.8628L15.6133 15.4852" stroke="#03B6D7" strokeLinecap="round" /><Path d="M4.0894 1.45226C5.1453 0.846622 6.37123 0.5 7.6788 0.5C11.6435 0.5 14.8576 3.68682 14.8576 7.61796C14.8576 11.5491 11.6435 14.7359 7.6788 14.7359C3.71406 14.7359 0.5 11.5491 0.5 7.61796C0.5 6.32148 0.849585 5.10594 1.4604 4.05898" stroke="#03B6D7" strokeLinecap="round" /></Svg>;
 }
 
 function Chevron({ open }: { open: boolean }) {
-  return <Svg width={11} height={6} viewBox="0 0 11 6" fill="none" style={open ? styles.chevronOpen : undefined}><Path d="M9.59644 5.08709L5.04822 0.5L0.500002 5.08709" stroke="#03B6D7" strokeLinecap="round" strokeLinejoin="round" /></Svg>;
+  return <Svg width={11} height={6} viewBox="0 0 11 6" fill="none" style={open ? styles.chevronOpen : undefined}><Path d="M9.59644 0.5L5.04822 5.08709L0.500002 0.5" stroke="#03B6D7" strokeLinecap="round" strokeLinejoin="round" /></Svg>;
 }
 
 function FaqRow({ item }: { item: FaqItem }) {
@@ -52,36 +55,43 @@ export default function HelpSupportScreen() {
     return faqs.filter((faq) => (selectedCategory === null || faq.category?.id === selectedCategory) && (!term || `${faq.question} ${faq.answer}`.toLowerCase().includes(term)));
   }, [faqs, search, selectedCategory]);
 
-  return <View style={styles.container}>
-    <View style={[styles.hero, { paddingTop: Platform.OS === "web" ? 18 : insets.top + 10 }]}>
+  const SearchScrollView = Platform.OS === "ios" ? KeyboardAwareScrollView : ScrollView;
+  const topicOptions = <>
+    <TouchableOpacity onPress={() => setSelectedCategory(null)} style={[styles.topic, Platform.OS === "ios" && styles.iosTopic, selectedCategory === null && styles.topicActive]}><Text style={[styles.topicText, selectedCategory === null && styles.topicTextActive]}>All Topics</Text></TouchableOpacity>
+    {categories.map((category) => <TouchableOpacity key={category.id} onPress={() => setSelectedCategory(category.id)} style={[styles.topic, Platform.OS === "ios" && styles.iosTopic, selectedCategory === category.id && styles.topicActive]}><Text style={[styles.topicText, selectedCategory === category.id && styles.topicTextActive]}>{category.name}</Text></TouchableOpacity>)}
+  </>;
+  const hero = <View style={[styles.hero, { paddingTop: Platform.OS === "web" ? 18 : insets.top + 10 }]}>
       <CentralBackButton style={styles.backButton} />
       <View style={styles.heroTitleWrap}><Text style={styles.heroKicker}>How Can We</Text><Text style={styles.heroTitle}>Help You?</Text></View>
       <View style={styles.searchBox}><SearchIcon /><TextInput value={search} onChangeText={setSearch} placeholder="Search Topics..." placeholderTextColor="#03B6D7" style={styles.searchInput} returnKeyType="search" /></View>
-    </View>
+    </View>;
 
-    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.scroll, { paddingBottom: Platform.OS === "web" ? 44 : 32 }]}>
+  return <View style={styles.container}>
+    {Platform.OS !== "ios" && hero}
+    <SearchScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive" showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: Platform.OS === "web" ? 44 : 32 }}>
+      {Platform.OS === "ios" && hero}
+      <View style={styles.scroll}>
       <Text style={styles.topicsTitle}>Topics</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.topicList} style={styles.topicScroller}>
-        <TouchableOpacity onPress={() => setSelectedCategory(null)} style={[styles.topic, selectedCategory === null && styles.topicActive]}><Text style={[styles.topicText, selectedCategory === null && styles.topicTextActive]}>All Topics</Text></TouchableOpacity>
-        {categories.map((category) => <TouchableOpacity key={category.id} onPress={() => setSelectedCategory(category.id)} style={[styles.topic, selectedCategory === category.id && styles.topicActive]}><Text style={[styles.topicText, selectedCategory === category.id && styles.topicTextActive]}>{category.name}</Text></TouchableOpacity>)}
-      </ScrollView>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.topicList} style={styles.topicScroller}>{topicOptions}</ScrollView>
       {loading ? <View style={styles.loading}><ActivityIndicator size="small" color="#03B6D7" /></View> : visibleFaqs.length ? <View style={styles.faqList}>{visibleFaqs.map((item) => <FaqRow key={item.id} item={item} />)}</View> : <Text style={styles.empty}>No topics found.</Text>}
-    </ScrollView>
+      </View>
+    </SearchScrollView>
   </View>;
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#0D1110" },
-  hero: { height: 267, backgroundColor: "#08B4D3", borderBottomLeftRadius: 30, borderBottomRightRadius: 30, zIndex: 2, elevation: 2 },
+  hero: { ...(Platform.OS === "ios" ? { minHeight: 267, paddingBottom: 22 } : { height: 267 }), backgroundColor: "#08B4D3", borderBottomLeftRadius: 30, borderBottomRightRadius: 30, zIndex: 2, elevation: 2 },
   backButton: { width: 34, height: 34, marginLeft: 16 },
-  heroTitleWrap: { marginTop: 17, marginLeft: 69 },
+  heroTitleWrap: { marginTop: 17, ...(Platform.OS === "ios" ? { marginHorizontal: HERO_CONTENT_INSET } : { marginLeft: 69 }) },
   heroKicker: { color: "#FFFFFF", fontFamily: "Archivo_400Regular", fontSize: 25, lineHeight: 29, textTransform: "uppercase" },
-  heroTitle: { color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 72, lineHeight: 68, textTransform: "uppercase" },
+  heroTitle: { color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 72, lineHeight: 68, ...iosDisplayTextStyle(72, 68), ...(Platform.OS === "ios" ? { marginBottom: -iosCapGuard(72, 68) } : {}), textTransform: "uppercase" },
   scroll: { paddingTop: 40, paddingHorizontal: 17 },
-  searchBox: { position: "absolute", left: 50, right: 50, bottom: -21, height: 43, borderRadius: 24, backgroundColor: "#FFFFFF", flexDirection: "row", alignItems: "center", paddingHorizontal: 13, gap: 9, zIndex: 10, elevation: 10 },
+  searchBox: { ...(Platform.OS === "ios" ? { marginHorizontal: HERO_CONTENT_INSET, marginTop: 16, minHeight: 43 } : { position: "absolute", left: 50, right: 50, bottom: -21, height: 43 }), borderRadius: 24, backgroundColor: "#FFFFFF", flexDirection: "row", alignItems: "center", paddingHorizontal: 13, gap: 9, zIndex: 10, elevation: 10 },
   searchInput: { flex: 1, padding: 0, color: "#151515", fontFamily: "Archivo_400Regular", fontSize: 13, height: 43 },
   topicsTitle: { color: "#FFFFFF", fontFamily: "Archivo_700Bold", fontSize: 18, lineHeight: 22 },
   topicScroller: { marginTop: 7, marginHorizontal: -17 },
+  iosTopic: { minHeight: 44, maxWidth: "100%" },
   topicList: { paddingHorizontal: 17, gap: 5, paddingRight: 34 },
   topic: { minHeight: 34, paddingHorizontal: 14, borderRadius: 18, backgroundColor: "#FFFFFF", alignItems: "center", justifyContent: "center" },
   topicActive: { backgroundColor: "#04B5D7" },

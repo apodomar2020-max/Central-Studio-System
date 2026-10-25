@@ -29,9 +29,9 @@ test("time-left bar is attached to the bottom of the glass panel with fluid side
   assert.match(cardSource, /panelShell: \{[^}]*bottom: 10, height: "52%"/);
 });
 
-test("long variable text remains on one line inside the responsive card", () => {
-  assert.match(cardSource, /className\} numberOfLines=\{1\}/);
-  assert.match(cardSource, /countdownText\} numberOfLines=\{1\} adjustsFontSizeToFit minimumFontScale=\{0\.78\}/);
+test("long titles wrap while the existing countdown treatment is retained", () => {
+  assert.doesNotMatch(cardSource, /className\} numberOfLines=\{1\}/);
+  assert.doesNotMatch(cardSource, /countdownText\} numberOfLines/);
 });
 
 test("glass panel stays a single clipped surface with only a restrained lower highlight", () => {

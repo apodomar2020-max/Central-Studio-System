@@ -17,6 +17,7 @@ import { createLogoutCoordinator } from "@/services/logoutCoordinator";
 import { isAccountDeletionInProgress } from "@/services/accountDeletion";
 import { getStudentToken, setStudentToken, clearStudentToken } from "@/services/secureTokenStorage";
 import { stripSensitiveChildFields } from "@/services/childProfilePrivacy";
+import { capacityErrorKind, CHILD_LIMIT_MESSAGE, createAccountRequestScope } from "@/services/accountCapacity";
 import { presentUserFacingError } from "@/utils/userFacingError";
 
 /** Mirrors the backend's Profile Completion Engine (lib/profileCompletion.ts). */
@@ -173,13 +174,14 @@ interface AppContextType {
   setUser: (user: User | null) => Promise<void>;
   logout: () => Promise<void>;
   children: ChildProfile[];
+  childrenReady: boolean;
   /** Returns the created profile (with its real backend id) on success, or
    *  null on failure — the caller can use the id immediately (e.g. to link
    *  a just-created child to something being submitted in the same flow)
    *  without waiting for a re-render. Shows its own error Alert on failure;
    *  callers don't need to show a duplicate one. */
   addChild: (child: ChildProfile) => Promise<ChildProfile | null>;
-  updateChild: (child: ChildProfile) => void;
+  updateChild: (child: ChildProfile) => Promise<boolean>;
   removeChild: (childId: string) => void;
   refreshChildren: () => Promise<void>;
   bookings: Booking[];
@@ -297,6 +299,7 @@ const AUTH_SCOPED_STORAGE_KEYS = [
   "user",
   "bookings",
   "children",
+  "childrenOwner",
   "notifications",
 ];
 
@@ -322,6 +325,8 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
   const [isOnboarded, setIsOnboardedState] = useState(false);
   const [user, setUserState] = useState<User | null>(null);
   const [children, setChildren] = useState<ChildProfile[]>([]);
+  const [childrenReady, setChildrenReady] = useState(false);
+  const childRequestScope = useRef(createAccountRequestScope()).current;
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [userPackages, setUserPackages] = useState<UserPackage[]>([]);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
@@ -330,6 +335,7 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
   const isMountedRef = useRef(true);
   // Track user in a ref so callbacks can access it without re-creating
   const userRef = useRef<User | null>(null);
+  const explicitSessionRef = useRef(false);
   const logoutRef = useRef<(() => Promise<void>) | null>(null);
   useEffect(() => {
     isMountedRef.current = true;
@@ -355,6 +361,7 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
       if (!cameToForeground || !userRef.current) return;
       fetchAndSetPackages().catch(() => {});
       fetchAndSetBookings().catch(() => {});
+      if (userRef.current.accountType === "parent") void fetchAndSetChildren();
     });
     return () => subscription.remove();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -376,6 +383,7 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
           getStudentToken(),
         ]);
 
+      if (explicitSessionRef.current) return;
       if (lang) setLanguageState(lang as "en" | "ar");
       if (onboarded === "true") setIsOnboardedState(true);
       const parsedUser = usr ? (JSON.parse(usr) as User) : null;
@@ -391,20 +399,26 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
           let effectiveUser = parsedUser;
           try {
             const refreshed = await customFetch<{ student: AuthStudent }>("/api/auth/me");
+            if (explicitSessionRef.current) return;
             effectiveUser = mapStudentToUser(refreshed.student);
             await AsyncStorage.setItem("user", JSON.stringify(effectiveUser));
           } catch {
             // Offline or backend unavailable — keep the persisted user for now.
           }
+          if (explicitSessionRef.current) return;
           setUserState(effectiveUser);
           userRef.current = effectiveUser;
+          childRequestScope.setAccount(effectiveUser.id);
         }
       }
 
       const confirmedUser = userRef.current;
       if (confirmedUser) {
         if (bks) setBookings(JSON.parse(bks));
-        if (chldrn) setChildren(JSON.parse(chldrn));
+        // Old unscoped caches cannot establish ownership or creation eligibility.
+        const cachedOwner = await AsyncStorage.getItem("childrenOwner");
+        if (explicitSessionRef.current) return;
+        if (chldrn && cachedOwner === confirmedUser.id && userRef.current?.id === confirmedUser.id) setChildren(JSON.parse(chldrn));
         if (notifs) setNotifications(JSON.parse(notifs));
       }
       // Load packages + bookings from API for the confirmed user
@@ -419,7 +433,7 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
         }
       }
     } catch {}
-    setIsLoading(false);
+    finally { setIsLoading(false); }
   }
 
   /**
@@ -490,6 +504,10 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
   }
 
   async function fetchAndSetChildren() {
+    if (!userRef.current || userRef.current.accountType !== "parent") return;
+    const owner = userRef.current.id;
+    const current = childRequestScope.beginRead();
+    setChildrenReady(false);
     try {
       const data = await customFetch<{ children: any[] }>("/api/children");
       const mapped = data.children.map((c) => ({
@@ -506,18 +524,17 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
         dateOfBirthLockReasons: c.dateOfBirthLockReasons ?? [],
       }));
 
-      if (isMountedRef.current) {
+      if (isMountedRef.current && current()) {
         setChildren(mapped);
-        await AsyncStorage.setItem("children", JSON.stringify(stripSensitiveChildFields(mapped)));
+        setChildrenReady(true);
+        await AsyncStorage.multiSet([
+          ["children", JSON.stringify(stripSensitiveChildFields(mapped))],
+          ["childrenOwner", owner],
+        ]);
       }
     } catch {
-      // Best-effort cache restore if offline
-      try {
-        const cached = await AsyncStorage.getItem("children");
-        if (cached && isMountedRef.current) {
-          setChildren(JSON.parse(cached));
-        }
-      } catch {}
+      // Keep this account's visible profiles, but disable creation until refreshed.
+      if (isMountedRef.current && current()) setChildrenReady(false);
     }
   }
 
@@ -532,6 +549,11 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
   }, []);
 
   const setUser = useCallback(async (usr: User | null) => {
+    explicitSessionRef.current = true;
+    if (childRequestScope.setAccount(usr?.id ?? null)) {
+      setChildren([]);
+      setChildrenReady(false);
+    }
     setUserState(usr);
     userRef.current = usr;
     if (usr) {
@@ -542,6 +564,7 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
       // raw AsyncStorage file on a rooted/jailbroken device.
       const { qrToken: _qrToken, ...persistedUser } = usr;
       await AsyncStorage.setItem("user", JSON.stringify(persistedUser));
+      if (userRef.current?.id !== usr.id) return;
       // Load this user's packages + bookings from the API
       fetchAndSetPackages().catch(() => {});
       fetchAndSetBookings().catch(() => {});
@@ -640,6 +663,9 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
   }, []);
 
   const addChild = useCallback(async (child: ChildProfile) => {
+    const owner = userRef.current?.id;
+    const current = childRequestScope.capture();
+    if (!owner || userRef.current?.accountType !== "parent" || !current()) return null;
     try {
       const payload = {
         fullName: child.fullName,
@@ -675,18 +701,25 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
         dateOfBirthLocked: c.dateOfBirthLocked === true,
         dateOfBirthLockReasons: c.dateOfBirthLockReasons ?? [],
       };
+      if (!isMountedRef.current || !current()) return null;
+      childRequestScope.invalidateReads();
+      setChildrenReady(false);
       setChildren((prev) => {
-        const next = [...prev, mappedChild];
-        AsyncStorage.setItem("children", JSON.stringify(stripSensitiveChildFields(next)));
+        const next = [...prev.filter((item) => item.id !== mappedChild.id), mappedChild];
+        void AsyncStorage.multiSet([["children", JSON.stringify(stripSensitiveChildFields(next))], ["childrenOwner", owner]]).catch(() => {});
         return next;
       });
+      void fetchAndSetChildren();
       return mappedChild;
     } catch (err) {
-      console.error("addChild error:", err);
+      if (!current()) return null;
+      const atLimit = capacityErrorKind(err) === "child";
+      await fetchAndSetChildren();
+      if (!current()) return null;
       alert.show({
         tone: "error",
-        title: "Error",
-        message: presentUserFacingError(err, "We couldn’t add this child profile. Please try again."),
+        title: atLimit ? "Child Profile Limit Reached" : "Error",
+        message: atLimit ? CHILD_LIMIT_MESSAGE : presentUserFacingError(err, "We couldn’t add this child profile. Please try again."),
         actions: [{ label: "OK", tone: "primary" }],
       });
       return null;
@@ -694,6 +727,9 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
   }, [alert]);
 
   const updateChild = useCallback(async (child: ChildProfile) => {
+    const owner = userRef.current?.id;
+    const current = childRequestScope.capture();
+    if (!owner || !current()) return false;
     try {
       const childId = parseInt(child.id, 10);
       if (isNaN(childId)) {
@@ -733,12 +769,18 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
         dateOfBirthLocked: c.dateOfBirthLocked === true,
         dateOfBirthLockReasons: c.dateOfBirthLockReasons ?? [],
       };
+      if (!isMountedRef.current || !current()) return false;
+      childRequestScope.invalidateReads();
+      setChildrenReady(false);
       setChildren((prev) => {
         const next = prev.map((item) => (item.id === mappedChild.id ? mappedChild : item));
-        AsyncStorage.setItem("children", JSON.stringify(stripSensitiveChildFields(next)));
+        void AsyncStorage.multiSet([["children", JSON.stringify(stripSensitiveChildFields(next))], ["childrenOwner", owner]]).catch(() => {});
         return next;
       });
+      void fetchAndSetChildren();
+      return true;
     } catch (err) {
+      if (!current()) return false;
       console.error("updateChild error:", err);
       alert.show({
         tone: "error",
@@ -746,10 +788,14 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
         message: presentUserFacingError(err, "We couldn’t update this child profile. Please try again."),
         actions: [{ label: "OK", tone: "primary" }],
       });
+      return false;
     }
   }, [alert]);
 
   const removeChild = useCallback(async (childId: string) => {
+    const owner = userRef.current?.id;
+    const current = childRequestScope.capture();
+    if (!owner || !current()) return;
     try {
       const numericId = parseInt(childId, 10);
       if (isNaN(numericId)) {
@@ -758,12 +804,17 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
       await customFetch(`/api/children/${numericId}`, {
         method: "DELETE",
       });
+      if (!isMountedRef.current || !current()) return;
+      childRequestScope.invalidateReads();
+      setChildrenReady(false);
       setChildren((prev) => {
         const next = prev.filter((c) => c.id !== childId);
-        AsyncStorage.setItem("children", JSON.stringify(stripSensitiveChildFields(next)));
+        void AsyncStorage.multiSet([["children", JSON.stringify(stripSensitiveChildFields(next))], ["childrenOwner", owner]]).catch(() => {});
         return next;
       });
+      void fetchAndSetChildren();
     } catch (err) {
+      if (!current()) return;
       console.error("removeChild error:", err);
       alert.show({
         tone: "error",
@@ -874,6 +925,7 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
         setUser,
         logout,
         children,
+        childrenReady,
         addChild,
         updateChild,
         removeChild,

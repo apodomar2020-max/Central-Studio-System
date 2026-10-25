@@ -10,7 +10,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { customFetch } from "@workspace/api-client-react";
 import AppButton from "@/components/AppButton";
-import BotChallenge from "@/components/BotChallenge";
+import { nativeAuthError } from "@/services/nativeAuthErrors";
 import CentralBackButton from "@/components/CentralBackButton";
 import { useAppContext } from "@/contexts/AppContext";
 import { useCentralAlert } from "@/hooks/useCentralAlert";
@@ -59,8 +59,6 @@ export default function ChangePasswordScreen(): React.ReactElement {
   const [success, setSuccess] = useState(false);
   const [view, setView] = useState<"form" | "recovery">("form");
   const [sendingCode, setSendingCode] = useState(false);
-  const [botToken, setBotToken] = useState<string | null>(null);
-  const [challengeResetKey, setChallengeResetKey] = useState(0);
 
   const initials = (user?.fullName ?? "User").split(" ").filter(Boolean).map((part) => part[0]).join("").slice(0, 2).toUpperCase();
 
@@ -71,30 +69,14 @@ export default function ChangePasswordScreen(): React.ReactElement {
       alert.show({ tone: "error", title: "Something Went Wrong", message: "We couldn't verify your account. Please try again later." });
       return;
     }
-    if (!botToken) {
-      alert.show({ tone: "warning", title: "Verification Required", message: "Please complete the verification before continuing." });
-      return;
-    }
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setSendingCode(true);
     try {
-      await customFetch("/api/auth/forgot-password", { method: "POST", auth: "omit", body: JSON.stringify(buildForgotPasswordPayload(email, botToken)) });
+      await customFetch("/api/auth/native/forgot-password", { method: "POST", auth: "omit", body: JSON.stringify(buildForgotPasswordPayload(email)) });
       forgotPasswordOutcome();
       pushOnce({ pathname: "/auth/otp-verification", params: { email } });
     } catch (err: unknown) {
-      const apiError = toApiErrorLike(err);
-      if (!apiError) {
-        alert.show({ tone: "error", title: "Network Error", message: "Please check your connection and try again." });
-        return;
-      }
-      const data = apiError.data;
-      const code = data && typeof data === "object" && "code" in data ? String((data as { code?: unknown }).code ?? "") : "";
-      if (code === "BOT_VERIFICATION_FAILED" || code === "BOT_VERIFICATION_UNAVAILABLE") {
-        setBotToken(null);
-        setChallengeResetKey((value) => value + 1);
-      }
-      const message = data && typeof data === "object" && "error" in data ? String((data as { error?: unknown }).error ?? "") : "";
-      alert.show({ tone: "error", title: "Couldn't Send Code", message: message || "Something went wrong. Please try again." });
+      alert.show({ tone: "error", title: "Couldn't Send Code", message: nativeAuthError(err).message });
     } finally {
       setSendingCode(false);
     }
@@ -146,8 +128,7 @@ export default function ChangePasswordScreen(): React.ReactElement {
           <Text style={styles.maskedEmail}>{maskEmail(user?.email ?? "")}</Text>
         </View>
         <View style={styles.recoveryActions}>
-          <BotChallenge action="forgot_password" resetKey={challengeResetKey} onToken={setBotToken} />
-          <AppButton title="Send Verification Code" onPress={handleSendCode} loading={sendingCode} disabled={!botToken} fullWidth size="lg" style={styles.primaryButton} />
+          <AppButton title="Send Verification Code" onPress={handleSendCode} loading={sendingCode} fullWidth size="lg" style={styles.primaryButton} />
           <TouchableOpacity onPress={() => setView("form")} style={styles.textAction}>
             <Text style={styles.textActionLabel}>Use my current password instead</Text>
           </TouchableOpacity>

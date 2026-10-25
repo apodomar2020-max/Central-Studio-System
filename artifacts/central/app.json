@@ -8,6 +8,7 @@
     "scheme": "com.centralstudio.app",
     "userInterfaceStyle": "dark",
     "ios": {
+      "runtimeVersion": "1.0.0-otp13",
       "supportsTablet": false,
       "usesAppleSignIn": true,
       "bundleIdentifier": "com.centralstudio.app",
@@ -38,6 +39,7 @@
       "backgroundColor": "#060C10"
     },
     "plugins": [
+      ["expo-build-properties", { "ios": { "enableSceneSupport": true } }],
       "expo-apple-authentication",
       "expo-asset",
       ["expo-secure-store", { "faceIDPermission": false }],

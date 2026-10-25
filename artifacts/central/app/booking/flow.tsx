@@ -1,3 +1,4 @@
+import { bookingPromoActivationCode } from "@/components/booking/promoActivation";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
@@ -36,7 +37,6 @@ import { DEFAULT_CLASS_CAPACITY_ENABLED, fetchClassCapacitySettings } from "@/se
 import { getBookingErrorMessage } from "@/services/bookingErrorMessages";
 import DiscoveryClassCard from "@/components/DiscoveryClassCard";
 import BookingFlowIcon from "@/components/booking/BookingFlowIcon";
-import { bookingPromoActivationCode } from "@/components/booking/promoActivation";
 import { getFriendlyPromoError } from "@/components/booking/promoError";
 import { PACKAGE_AGE_BAND_LABELS, parsePackageAgeBand } from "@/utils/packageAgeBands";
 

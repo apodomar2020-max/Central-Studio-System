@@ -26,10 +26,10 @@ test("forgotPasswordOutcome always continues to reset — it takes no response b
   assert.deepEqual(forgotPasswordOutcome(), forgotPasswordOutcome());
 });
 
-test("buildForgotPasswordPayload includes the short-lived bot token for every recovery entry point", () => {
-  const payload = buildForgotPasswordPayload(" user@example.com ", "turnstile-token");
-  assert.deepEqual(payload, { email: "user@example.com", botToken: "turnstile-token" });
-  assert.deepEqual(Object.keys(payload).sort(), ["botToken", "email"]);
+test("buildForgotPasswordPayload uses the email-only native recovery contract", () => {
+  const payload = buildForgotPasswordPayload(" user@example.com ");
+  assert.deepEqual(payload, { email: "user@example.com" });
+  assert.deepEqual(Object.keys(payload), ["email"]);
 });
 
 test("OTP verification and password submission use separate secure contracts", () => {

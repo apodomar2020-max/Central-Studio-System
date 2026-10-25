@@ -81,24 +81,22 @@ function NavGlyph({ name, color, size = 24 }: { name: NavGlyphName; color: Color
 
 // ── Native Liquid Glass layout (iOS 26+ only) ────────────────────────────────
 function NativeTabLayout({ hidden }: { hidden: boolean }) {
-  if (hidden) return null;
-
   return (
-    <NativeTabs>
+    <NativeTabs hidden={hidden} iconColor={{ default: INACTIVE_TINT, selected: ACTIVE_TINT }}>
       <NativeTabs.Trigger name="index">
-        <Icon src={<NavGlyph name="home" color="#FFFFFF" />} selectedColor={ACTIVE_TINT} />
+        <Icon src={require("@/assets/images/native-tabs/home.png")} renderingMode="template" selectedColor={ACTIVE_TINT} />
         <Label>Home</Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="classes">
-        <Icon src={<NavGlyph name="classes" color="#FFFFFF" />} selectedColor={ACTIVE_TINT} />
+        <Icon src={require("@/assets/images/native-tabs/classes.png")} renderingMode="template" selectedColor={ACTIVE_TINT} />
         <Label>Classes</Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="bookings">
-        <Icon src={<NavGlyph name="bookings" color="#FFFFFF" />} selectedColor={ACTIVE_TINT} />
+        <Icon src={require("@/assets/images/native-tabs/bookings.png")} renderingMode="template" selectedColor={ACTIVE_TINT} />
         <Label>My Bookings</Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="profile">
-        <Icon src={<NavGlyph name="profile" color="#FFFFFF" />} selectedColor={ACTIVE_TINT} />
+        <Icon src={require("@/assets/images/native-tabs/profile.png")} renderingMode="template" selectedColor={ACTIVE_TINT} />
         <Label>Profile</Label>
       </NativeTabs.Trigger>
     </NativeTabs>
