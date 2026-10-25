@@ -73,6 +73,7 @@ import { z } from "zod";
 import { db, systemUsersTable, rolesTable } from "@workspace/db";
 import type { RolePermissions } from "@workspace/db";
 import { countCatalogPermissions, hasRolePermission, PERMISSION_CATALOG } from "@workspace/api-zod";
+import type { DbClient } from "../lib/dbTypes";
 import { logger } from "../lib/logger";
 import { logActivity } from "../lib/activityLog";
 import { accountRateLimiter, ipRateLimiter, resetAccountLimiter } from "../middlewares/authRateLimit";
@@ -152,8 +153,8 @@ export function verifyAdminToken(token: string): AdminTokenPayload {
   return payload;
 }
 
-export async function loadAdminIdentity(userId: number): Promise<AdminIdentity | null> {
-  const [user] = await db
+export async function loadAdminIdentity(userId: number, client: DbClient = db): Promise<AdminIdentity | null> {
+  const [user] = await client
     .select({
       id: systemUsersTable.id,
       username: systemUsersTable.username,
@@ -172,7 +173,7 @@ export async function loadAdminIdentity(userId: number): Promise<AdminIdentity |
 
   let role: AdminRoleIdentity | null = null;
   if (user.roleId != null) {
-    const [currentRole] = await db
+    const [currentRole] = await client
       .select({
         id: rolesTable.id,
         name: rolesTable.name,
@@ -219,12 +220,12 @@ function adminTokenVersionMatches(payload: AdminTokenPayload, identity: AdminIde
   return claimed === identity.tokenVersion;
 }
 
-export async function resolveOptionalAdminIdentity(req: Request): Promise<AdminIdentity | null> {
+export async function resolveOptionalAdminIdentity(req: Request, client: DbClient = db): Promise<AdminIdentity | null> {
   const token = req.headers["x-admin-token"];
   if (typeof token !== "string" || token.length === 0) return null;
   try {
     const payload = verifyAdminToken(token);
-    const identity = await loadAdminIdentity(payload.sub);
+    const identity = await loadAdminIdentity(payload.sub, client);
     if (!identity || !adminTokenVersionMatches(payload, identity)) return null;
     return identity;
   } catch {

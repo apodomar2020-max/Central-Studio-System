@@ -1,3 +1,4 @@
+import { clearPendingPromotionOperation } from "@/lib/promotionSaveProtocol";
 /**
  * AdminAuthContext — stores the current admin user + JWT token.
  *
@@ -71,6 +72,7 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
       .catch(() => {
         // Token expired or account deactivated — clear it.
         localStorage.removeItem(ADMIN_TOKEN_STORAGE_KEY);
+        clearPendingPromotionOperation();
         setToken(null);
         setUser(null);
       })
@@ -97,6 +99,7 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = useCallback(() => {
     localStorage.removeItem(ADMIN_TOKEN_STORAGE_KEY);
+    clearPendingPromotionOperation();
     setToken(null);
     setUser(null);
   }, []);

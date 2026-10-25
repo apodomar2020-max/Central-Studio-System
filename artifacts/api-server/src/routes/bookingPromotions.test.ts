@@ -66,5 +66,5 @@ test("promotion redemption is linked to the new booking inside the booking trans
 test("package-credit checkout excludes promo code and tax/discount rows while cash keeps tax at zero", () => {
   assert.match(bookingFlow, /\{!isPackageMode \? \(/);
   assert.match(bookingFlow, /<Text style=\{styles\.priceLabel\}>Tax<\/Text><Text style=\{styles\.priceValue\}>0 EGP<\/Text>/);
-  assert.match(bookingFlow, /promoCode:\s*apiPaymentMode === "pay_at_studio"/);
+  assert.match(bookingFlow, /promoCode:\s*bookingPromoActivationCode\(apiPaymentMode, promoCode\)/);
 });

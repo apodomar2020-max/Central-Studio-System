@@ -47,7 +47,7 @@ async function makeStudent(): Promise<{ id: number; email: string }> {
   studentCounter += 1;
   const email = `booking-atomic-${Date.now()}-${studentCounter}@example.com`;
   const result = await pool.query(
-    `INSERT INTO students (name, email, phone, account_type, email_verified) VALUES ('Atomicity Test', $1, '0100000000', 'student', true) RETURNING id`,
+    `INSERT INTO students (name, email, phone, account_type, email_verified) VALUES ('Atomicity Test', $1, NULL, 'student', true) RETURNING id`,
     [email],
   );
   return { id: result.rows[0].id as number, email };

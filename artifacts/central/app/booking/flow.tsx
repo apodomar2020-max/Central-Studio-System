@@ -36,6 +36,7 @@ import { DEFAULT_CLASS_CAPACITY_ENABLED, fetchClassCapacitySettings } from "@/se
 import { getBookingErrorMessage } from "@/services/bookingErrorMessages";
 import DiscoveryClassCard from "@/components/DiscoveryClassCard";
 import BookingFlowIcon from "@/components/booking/BookingFlowIcon";
+import { bookingPromoActivationCode } from "@/components/booking/promoActivation";
 import { getFriendlyPromoError } from "@/components/booking/promoError";
 import { PACKAGE_AGE_BAND_LABELS, parsePackageAgeBand } from "@/utils/packageAgeBands";
 
@@ -548,7 +549,7 @@ export default function BookingFlowScreen() {
           // nothing written) if this no longer matches. Omitted for
           // package/free bookings, exactly like the backend expects.
           expectedPriceEgp: apiPaymentMode === "pay_at_studio" ? grossPrice : undefined,
-          promoCode: apiPaymentMode === "pay_at_studio" ? confirmedPromoQuote?.promotionCode ?? undefined : undefined,
+          promoCode: bookingPromoActivationCode(apiPaymentMode, promoCode),
           expectedFinalPriceEgp: apiPaymentMode === "pay_at_studio" && confirmedPromoQuote
             ? confirmedPromoQuote.finalSubtotal
             : undefined,

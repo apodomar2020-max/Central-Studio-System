@@ -960,6 +960,13 @@
       "when": 1791676800001,
       "tag": "0136_editorial_post_performance_refs",
       "breakpoints": true
+    },
+    {
+      "idx": 138,
+      "version": "7",
+      "when": 1792670400000,
+      "tag": "0137_promotion_admin_operations",
+      "breakpoints": true
     }
   ]
 }

@@ -120,3 +120,4 @@ export * from "./editorialPostPerformanceRefs";
 export * from "./editorialPlacements";
 export * from "./editorialPostRevisions";
 export * from "./editorialWebsiteLinks";
+export * from "./promotionAdminOperations";
