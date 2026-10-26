@@ -21,7 +21,6 @@ import { canViewFinanceAmounts } from "../lib/financialVisibility";
 import { logger } from "../lib/logger";
 import { createStudentNotification } from "../lib/notifications";
 import { sendPushNotification } from "../lib/pushNotifications";
-import { createPromotionRedemptions, validatePackagePromotion } from "../lib/promotionService";
 import { confirmCanonicalPaymentRecord, appendActivationCreditsIssuedEventOnce } from "../lib/financeConfirmation";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
 import { requireStudentAuth, requireVerifiedStudent } from "../middlewares/studentAuth";
@@ -407,23 +406,10 @@ router.post(
       }, "Allowing package purchase with legacy-unconfigured age eligibility.");
     }
 
-    const promotionResult = await validatePackagePromotion({
-      student: { id: resolution.account.id, emailVerified: resolution.account.emailVerified },
-      package: {
-        id: packageDefinition.id,
-        name: packageDefinition.name,
-        priceEgp: packageDefinition.priceEgp,
-        isActive: packageDefinition.isActive,
-      },
-      basket: { items: [{ type: "package", id: packageDefinition.id, amount: packageDefinition.priceEgp }] },
-      subtotal: packageDefinition.priceEgp,
-      verified: resolution.account.emailVerified,
-    }, parsed.data.promoCode, tx, { lockRedemptionScope: true });
-    if (parsed.data.promoCode && !promotionResult.eligible) {
-      return {
-        kind: "promotion_not_eligible" as const,
-        reason: promotionResult.reason ?? "Promo code is not eligible.",
-      };
+    // Accept the legacy field, but reject explicit promotion attempts before writes.
+    if (parsed.data.promoCode?.trim()) {
+      return { kind: "promotion_not_eligible" as const,
+        reason: "Promotions apply to Direct Single Class purchases only. Packages use their catalog price." };
     }
 
     const allowedDanceTypeRows = await tx
@@ -470,10 +456,9 @@ router.post(
     // Finance Phase 2B-1: capture the creation-time monetary snapshot as a
     // live payment_records row, plus its opening payment_events "created"
     // row, in the same transaction as the package_orders write above. The
-    // amount is always the server-computed catalog price minus any locked
-    // promotion discount — never a client-provided figure.
+    // amount is always the server-computed catalog price (packages never receive promotions) — never a client-provided figure.
     const grossAmountMinor = egpToMinor(packageDefinition.priceEgp);
-    const discountAmountMinor = promotionResult.eligible ? egpToMinor(promotionResult.discountAmount) : 0;
+    const discountAmountMinor = 0;
     const finalPayableAmountMinor = grossAmountMinor - discountAmountMinor;
 
     const requestedPaymentChannel: PaymentRecordRequestedChannel =
@@ -572,27 +557,12 @@ router.post(
       };
     }
 
-    // Promotion redemption mutates usage state (redemption counts) that
-    // must correspond atomically to the captured discount above — it stays
-    // inside this transaction, not deferred like the push dispatch, so a
-    // failure here still rolls back the package order and both payment rows.
-    await createPromotionRedemptions(tx, promotionResult, {
-      studentId: resolution.account.id,
-      packageOrderId: inserted.id,
-      metadata: {
-        packageId: packageDefinition.id,
-        packageName: packageDefinition.name,
-        promoCode: promotionResult.promotionCode,
-        source: "package_checkout",
-      },
-    });
-
     return inserted;
   });
   // Deterministic post-commit boundary: the push is dispatched only after
   // `db.transaction` above has resolved, i.e. only after package_orders,
-  // payment_records, payment_events, the notification row, and any
-  // promotion redemption have all actually committed. Not awaited — matches
+  // payment_records, payment_events, and the notification row have all
+  // actually committed. Not awaited — matches
   // the pre-existing fire-and-forget contract; a push failure here has
   // never rolled back a package purchase and still does not.
   if (pushState.pending) {

@@ -1,5 +1,4 @@
 import { useEffect, useId, useState } from "react";
-import { useListPricePackages } from "@workspace/api-client-react";
 import { ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,12 +11,11 @@ import { PromotionConditions } from "./promotion-conditions";
 import { readPromotionConditions } from "@/lib/promotionConditions";
 import { conditionLabels, promotionSummary, type PromotionFormErrors, type PromotionFormState } from "@/lib/promotionForm";
 
-export function PromotionForm({ form, update, generateCode, errors, specificPackages, setSpecificPackages }: {
+export function PromotionForm({ form, update, generateCode, errors }: {
   form: PromotionFormState; update: <K extends keyof PromotionFormState>(key: K, value: PromotionFormState[K]) => void;
-  generateCode: () => void; errors: PromotionFormErrors; specificPackages: boolean; setSpecificPackages: (value: boolean) => void;
+  generateCode: () => void; errors: PromotionFormErrors;
 }) {
   const id = useId();
-  const packages = useListPricePackages();
   let rules: Record<string, unknown> = {}, malformed = false;
   try { rules = readPromotionConditions(form.rulesConfig); } catch { malformed = true; }
   const unsafe = malformed || Object.keys(rules).some(key => !Object.prototype.hasOwnProperty.call(conditionLabels, key));
@@ -38,7 +36,7 @@ export function PromotionForm({ form, update, generateCode, errors, specificPack
       onChange={event => update(key, (key === "code" ? event.target.value.toUpperCase() : event.target.value) as never)} />
     {errors[key] && <p id={`${id}-${key}-error`} className="text-sm text-destructive">{errors[key]}</p>}
   </div>;
-  const summary = promotionSummary(form, new Map((packages.data ?? []).map(pkg => [pkg.id, `${pkg.name}${!pkg.isActive ? " (inactive)" : ""}`])));
+  const summary = promotionSummary(form);
   const conditionProps = { value: form.rulesConfig, onChange: (value: string) => update("rulesConfig", value), errors };
   return <div className="min-w-0 space-y-6">
     <section aria-label="Promotion identity" className="space-y-4">
@@ -57,10 +55,10 @@ export function PromotionForm({ form, update, generateCode, errors, specificPack
       {field("discountValue", form.discountType === "percentage" ? "Discount (%)" : "Discount (EGP)", "number")}</div>
       <p className="text-sm text-muted-foreground">Discounts never exceed the eligible purchase amount.</p>
     </section>
-    {unsafe && <div role="alert" className="rounded-lg border border-destructive/40 p-3 text-sm text-destructive">Saved conditions need review. They have been preserved; saving is blocked to prevent an unintended change.<details className="mt-2"><summary className="cursor-pointer">View preserved legacy conditions</summary><pre className="mt-2 whitespace-pre-wrap break-all text-xs">{form.rulesConfig}</pre></details></div>}
+    {unsafe && <div role="alert" className="rounded-lg border border-destructive/40 p-3 text-sm text-destructive">Saved conditions need review. Package-specific or unsupported conditions are preserved; saving is blocked. You can deactivate this promotion from the list and create a new Direct Single Class promotion.<details className="mt-2"><summary className="cursor-pointer">View preserved legacy conditions</summary><pre className="mt-2 whitespace-pre-wrap break-all text-xs">{form.rulesConfig}</pre></details></div>}
     <fieldset disabled={unsafe} className="min-w-0 space-y-5 border-t border-border pt-5">
       <PromotionConditions {...conditionProps} section="audience" />
-      <PromotionConditions {...conditionProps} section="packages" specific={specificPackages} setSpecific={setSpecificPackages} packages={packages.data ?? []} loading={packages.isLoading} failed={packages.isError} retry={() => { void packages.refetch(); }} />
+      <section aria-label="Applies to" className="space-y-2"><h3 className="font-semibold">4. Applies to</h3><p className="text-sm text-muted-foreground">Direct Single Class purchases only. Packages and bookings paid with package credits never receive promotion discounts.</p></section>
     </fieldset>
     <section aria-label="Schedule" className="space-y-3 border-t border-border pt-5">
       <h3 className="font-semibold">5. Schedule</h3>
@@ -81,7 +79,7 @@ export function PromotionForm({ form, update, generateCode, errors, specificPack
     </Collapsible>
     <section aria-label="Promotion summary" aria-live="polite" aria-atomic="true" className="rounded-xl border border-primary/30 bg-primary/5 p-4">
       <h3 className="mb-2 font-semibold">At a glance</h3>
-      {specificPackages && !(Array.isArray(rules.packageIds) && rules.packageIds.length) ? <p className="text-sm">Choose at least one package to finish this promotion.</p> : <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">{summary.map((line, index) => <li key={index}>{line}</li>)}</ul>}
+      <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">{summary.map((line, index) => <li key={index}>{line}</li>)}</ul>
       <p className="mt-2 text-xs text-muted-foreground">Schedule shown in {timezone}. Eligibility and the final discount are checked at checkout.</p>
     </section>
   </div>;

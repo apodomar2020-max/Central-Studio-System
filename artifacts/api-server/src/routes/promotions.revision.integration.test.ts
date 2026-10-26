@@ -197,7 +197,7 @@ test("supported JSON values retain identity; key order and volatile usage/time f
   assert.notEqual(revision,promotionRevision({...promotion,rulesConfig:{...promotion.rulesConfig,branches:["Other"]}},codeRows));
   assert.notEqual(revision,promotionRevision({...promotion,description:"changed"},codeRows));
 });
-for (const kind of ["package","class"] as const) {
+for (const kind of ["class"] as const) {
   test(`${kind} checkout revalidation catches a date-only change after candidate discovery`,async()=>{
     const f=await checkoutFixture(kind);
     const [edit,checkout]=await orderedRace(f.promotion.id,

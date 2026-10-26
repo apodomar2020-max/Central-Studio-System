@@ -54,7 +54,7 @@ async function makeStudent(label: string): Promise<{ id: number; email: string }
   studentCounter += 1;
   const email = `booking-capture-${Date.now()}-${studentCounter}-${label}@example.com`;
   const result = await pool.query(
-    `INSERT INTO students (name, email, phone, account_type, date_of_birth, email_verified) VALUES ($1, $2, '0100000000', 'student', '1990-01-01', true) RETURNING id`,
+    `INSERT INTO students (name, email, phone, account_type, date_of_birth, email_verified) VALUES ($1, $2, NULL, 'student', '1990-01-01', true) RETURNING id`,
     [`Booking Capture Test ${label}`, email],
   );
   return { id: result.rows[0].id as number, email };
@@ -380,6 +380,7 @@ test("a package_credit booking creates no payment_records / payment_events rows"
     [student.email, student.email, student.id, pkgPackage.rows[0].id],
   );
   const packageOrderId = pkgOrder.rows[0].id as number;
+  await pool.query("update package_orders set allowed_dance_type_ids_snapshot=ARRAY[]::integer[], dance_type_restriction_state_snapshot='unrestricted' where id=$1",[packageOrderId]);
   await pool.query(
     `INSERT INTO credit_transactions
       (package_order_id, student_id, participant_type, type, delta, balance_before, balance_after, created_by)
@@ -457,6 +458,7 @@ test("a Parent child booking consumes only the same child's assigned package", a
      RETURNING id`,
     [parent.email, parent.id, child.rows[0].id, pkg.rows[0].id],
   );
+  await pool.query("update package_orders set allowed_dance_type_ids_snapshot=ARRAY[]::integer[], dance_type_restriction_state_snapshot='unrestricted' where id=$1",[order.rows[0].id]);
   await pool.query(
     `INSERT INTO credit_transactions
       (package_order_id, student_id, participant_type, participant_child_id, type,
@@ -512,6 +514,7 @@ test("expired and wrong-dance packages cannot fund a booking and create no deduc
      RETURNING id`,
     [student.email, student.id, pkg.rows[0].id],
   );
+  await pool.query("update package_orders set allowed_dance_type_ids_snapshot=ARRAY[$2]::integer[], dance_type_restriction_state_snapshot='restricted' where id=$1",[order.rows[0].id,dance.rows[0].id]);
   await pool.query(
     `INSERT INTO credit_transactions
       (package_order_id, student_id, participant_type, type, delta, balance_before, balance_after, created_by)

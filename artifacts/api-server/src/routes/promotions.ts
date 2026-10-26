@@ -1,12 +1,11 @@
 import { blockStudentJwt } from "../middlewares/auth";
 import { Router, type IRouter, type Request, type Response, type RequestHandler } from "express";
-import { and, asc, count, desc, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   db,
   promotionCodesTable,
   promotionRedemptionsTable,
-  pricePackagesTable,
   promotionsTable,
 } from "@workspace/db";
 import { requireAdminAuth, requireAdminPermission, type AdminRequest } from "./adminAuth";
@@ -167,11 +166,11 @@ function parsePromotion(value: unknown): z.infer<typeof PromotionFields> {
   return data;
 }
 
-async function validatePackages(client: DbClient, ids: number[] | undefined): Promise<void> {
-  if (!ids?.length) return;
-  const rows = await client.select({ id: pricePackagesTable.id }).from(pricePackagesTable).where(inArray(pricePackagesTable.id, ids));
-  if (new Set(rows.map((row) => row.id)).size !== new Set(ids).size) {
-    throw new PromotionWriteError(400, "INVALID_PACKAGE_SELECTION", "One or more eligible packages no longer exist.");
+function assertSingleClassRules(rules: unknown): void {
+  if (rules && typeof rules === "object" && (Object.prototype.hasOwnProperty.call(rules, "packageIds")
+    || Object.prototype.hasOwnProperty.call(rules, "firstPackagePurchaseOnly"))) {
+    throw new PromotionWriteError(409, "LEGACY_PROMOTION_REVIEW_REQUIRED",
+      "Package-specific conditions are incompatible with Direct Single Class promotions. Existing rules are preserved; deactivate this promotion and create a new one.");
   }
 }
 
@@ -319,7 +318,7 @@ router.post("/promotions", blockStudentJwt, requireAdminAuth, requireAdminPermis
   }
   const { code, maxUses, usesPerUser, ...promotionData } = parsePromotion(parsed.data);
   const execute = async () => {
-    await validatePackages(tx, promotionData.rulesConfig.packageIds);
+    assertSingleClassRules(promotionData.rulesConfig);
     if (code) await assertCodeAvailable(tx, code);
     const [promotion] = await tx.insert(promotionsTable).values(promotionData).returning();
     let promotionCode: typeof promotionCodesTable.$inferSelect | null = null;
@@ -411,7 +410,8 @@ router.patch("/promotions/:id", blockStudentJwt, requireAdminAuth, requireAdminP
       usesPerUser: beforeCode?.usesPerUser ?? null,
       ...parsed.data,
     });
-    await validatePackages(tx, effective.rulesConfig.packageIds);
+    assertSingleClassRules(effective.rulesConfig);
+    assertSingleClassRules(beforePromotion.rulesConfig);
     const { code, maxUses, usesPerUser, ...promotionData } = effective;
     if (beforeCode) {
       await assertCodeAvailable(tx, beforeCode.code, beforeCode.id);

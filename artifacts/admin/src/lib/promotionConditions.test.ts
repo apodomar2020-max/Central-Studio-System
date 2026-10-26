@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { changePromotionCondition, readPromotionConditions, validatePromotionConditions } from "./promotionConditions";
 
 test("existing condition values round trip without normalization or omitted-value defaults", () => {
-  const rules = { verifiedStudentOnly: false, firstPackagePurchaseOnly: true, minimumBasketAmount: 0, packageIds: [8, 7, 8], branches: ["Main", "Giza"], maxGlobalUses: 2, maxUsesPerUser: 1 };
+  const rules = { verifiedStudentOnly: false, minimumBasketAmount: 0, branches: ["Main", "Giza"], maxGlobalUses: 2, maxUsesPerUser: 1 };
   assert.deepEqual(validatePromotionConditions(JSON.stringify(rules)), rules);
   assert.deepEqual(validatePromotionConditions("{}"), {});
 });
@@ -25,3 +25,5 @@ test("invalid counts and types cannot become a broader valid promotion", () => {
 test("package/branch/boolean validation matches the existing contract", () => {
   for (const rules of [{ packageIds: [0] }, { branches: [""] }, { branches: ["A\0B"] }, { verifiedStudentOnly: "true" }]) assert.throws(() => validatePromotionConditions(JSON.stringify(rules)));
 });
+
+test("obsolete package conditions remain readable but cannot be saved, even empty or false", () => { for(const rules of [{packageIds:[7]},{packageIds:[]},{firstPackagePurchaseOnly:true},{firstPackagePurchaseOnly:false}]) { const raw=JSON.stringify(rules); assert.deepEqual(readPromotionConditions(raw),rules); assert.throws(()=>validatePromotionConditions(raw),/preserved|incompatible/i); } });

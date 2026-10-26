@@ -5,7 +5,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
 import { pushOnce } from "@/utils/navigation";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ActivityIndicator,
@@ -279,7 +279,21 @@ export default function BookingFlowScreen() {
   const classPackageAgeLabel = PACKAGE_AGE_BAND_LABELS[classPackageAgeBand];
   const isPackageMode = paymentMethod === "packageCredit" && canUsePackageCredits;
   const grossPrice = cls?.price ?? 0;
-  const finalPrice = isPackageMode ? 0 : (promoQuote?.finalSubtotal ?? grossPrice);
+  const automaticQuote = useQuery({
+    queryKey: ["single-class-promotion-quote", user?.id, cls?.scheduleId, grossPrice],
+    enabled: Boolean(user && cls?.scheduleId && !isPackageMode),
+    queryFn: ({ signal }) => customFetch<PromotionQuote>("/api/promotions/validate", {
+      method: "POST", signal, body: JSON.stringify({ scheduleId: Number(cls!.scheduleId) }),
+    }),
+    staleTime: 0,
+  });
+  const displayedQuote = promoQuote ?? (!promoCode.trim() ? automaticQuote.data : null);
+  const finalPrice = isPackageMode ? 0 : (displayedQuote?.finalSubtotal ?? grossPrice);
+  // Ignore a manual response after code, schedule or payment mode changes.
+  const promoRequest = useRef(0);
+  const quoteScope = `${user?.id}:${cls?.scheduleId}:${isPackageMode}:${promoCode}`;
+  const latestQuoteScope = useRef(quoteScope);
+  latestQuoteScope.current = quoteScope;
 
   useEffect(() => {
     if (!selectedChildId && children.length > 0) {
@@ -350,6 +364,8 @@ export default function BookingFlowScreen() {
     }
   }, [paymentMethod]);
 
+  useEffect(() => { setPromoQuote(null); setPromoError(null); }, [user?.id, cls?.scheduleId, isPackageMode]);
+
   // ── Guard: must be signed in ──
   if (!user) {
     return (
@@ -419,20 +435,23 @@ export default function BookingFlowScreen() {
   async function validatePromoCode(): Promise<PromotionQuote | null> {
     const normalizedCode = promoCode.trim().toUpperCase();
     const promoScheduleId = cls?.scheduleId;
-    if (!normalizedCode || isPackageMode || !promoScheduleId) {
+    if (isPackageMode || !promoScheduleId) {
       setPromoQuote(null);
       setPromoError(normalizedCode ? "Promo codes are only available with cash payment." : null);
       return null;
     }
 
+    const request = ++promoRequest.current;
+    const scope = latestQuoteScope.current;
     setPromoChecking(true);
     setPromoError(null);
     try {
       const quote = await customFetch<PromotionQuote>("/api/promotions/validate", {
         method: "POST",
-        body: JSON.stringify({ scheduleId: Number(promoScheduleId), promoCode: normalizedCode }),
+        body: JSON.stringify({ scheduleId: Number(promoScheduleId), promoCode: normalizedCode || undefined }),
       });
-      if (!quote.eligible) {
+      if (request !== promoRequest.current || scope !== latestQuoteScope.current) return null;
+      if (normalizedCode && !quote.eligible) {
         setPromoQuote(null);
         setPromoError(getFriendlyPromoError(quote.reason ?? "This promo code is not eligible."));
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -441,21 +460,22 @@ export default function BookingFlowScreen() {
       setPromoCode(normalizedCode);
       setPromoQuote(quote);
       setPromoError(null);
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      if (normalizedCode) void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       return quote;
     } catch (error) {
+      if (request !== promoRequest.current || scope !== latestQuoteScope.current) return null;
       setPromoQuote(null);
       setPromoError(getFriendlyPromoError(error));
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       return null;
     } finally {
-      setPromoChecking(false);
+      if (request === promoRequest.current) setPromoChecking(false);
     }
   }
 
   // ── Confirm booking — POST to API then update local state ──
   async function handleConfirm() {
-    if (!cls || !user) return;
+    if (!cls || !user || loading || promoChecking) return;
     if (!hasSchedule) {
       alert.show({
         tone: "warning",
@@ -492,14 +512,16 @@ export default function BookingFlowScreen() {
       });
       return;
     }
-    let confirmedPromoQuote = promoQuote;
-    if (!isPackageMode && promoCode.trim()) {
-      const normalizedCode = promoCode.trim().toUpperCase();
-      if (!confirmedPromoQuote || confirmedPromoQuote.promotionCode !== normalizedCode) {
-        const checked = await validatePromoCode();
-        if (!checked) return;
-        confirmedPromoQuote = checked;
+    let confirmedPromoQuote = displayedQuote;
+    if (!isPackageMode) {
+      const checked = await validatePromoCode();
+      if (!checked) return;
+      // A refreshed quote must be reviewed before submitting a different total.
+      if (Math.round(checked.finalSubtotal * 100) !== Math.round(finalPrice * 100)) {
+        setPromoError("The discount changed. Review the updated total, then confirm again.");
+        return;
       }
+      confirmedPromoQuote = checked;
     }
     const confirmedFinalPrice = isPackageMode ? 0 : (confirmedPromoQuote?.finalSubtotal ?? grossPrice);
     setLoading(true);
@@ -700,11 +722,13 @@ export default function BookingFlowScreen() {
           <>
             <View style={styles.priceLine}><Text style={styles.priceLabel}>Price</Text><Text style={styles.priceValue}>{grossPrice} EGP</Text></View>
             <View style={styles.priceLine}><Text style={styles.priceLabel}>Tax</Text><Text style={styles.priceValue}>0 EGP</Text></View>
-            {promoQuote ? (
-              <View style={styles.priceLine}><Text style={styles.priceLabel}>Discount</Text><Text style={styles.priceValue}>-{promoQuote.discountAmount} EGP</Text></View>
+            {displayedQuote?.eligible ? (
+              <View style={styles.priceLine}><Text style={styles.priceLabel}>Discount</Text><Text style={styles.priceValue}>-{displayedQuote.discountAmount} EGP</Text></View>
             ) : null}
             <View style={styles.priceRule} />
             <View style={styles.priceLine}><Text style={styles.totalLabel}>Total Price</Text><Text style={styles.totalValue}>{finalPrice} EGP</Text></View>
+            {!promoCode.trim() && automaticQuote.isFetching && !displayedQuote ? <Text accessibilityLiveRegion="polite" style={styles.priceLabel}>Checking available discounts…</Text> : null}
+            {!promoExpanded && promoError ? <Text accessibilityLiveRegion="polite" style={[styles.promoError, { marginLeft: 0, fontSize: 12 }]}>{promoError}</Text> : null}
           </>
         )}
       </View>
@@ -1089,7 +1113,7 @@ export default function BookingFlowScreen() {
             <AppButton
               title={isPackageMode ? "Confirm Package Booking" : "Confirm Booking"}
               onPress={handleConfirm}
-              loading={loading}
+              loading={loading || promoChecking}
               fullWidth
               size="lg"
               style={styles.roundedCta}

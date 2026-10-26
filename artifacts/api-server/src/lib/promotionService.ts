@@ -318,6 +318,13 @@ export async function validateCheckoutPromotion(
   options: ValidationOptions = {},
 ): Promise<InternalValidationResult> {
   const normalizedCode = normalizePromoCode(promoCode);
+  // Only server-resolved direct-class contexts may evaluate promotions.
+  if (context.package || !context.booking || context.basket?.items?.some(item => item.type === "package")
+    || context.paymentMethod === "package_credit" || context.paymentMethod === "free") {
+    return { eligible: false, reason: "Promotions apply to Direct Single Class purchases only.",
+      originalSubtotal: context.subtotal, discountAmount: 0, finalSubtotal: context.subtotal,
+      promotion: null, promotionCode: normalizedCode, appliedPromotionIds: [], candidates: [] };
+  }
   let automaticRows = await client
     .select()
     .from(promotionsTable)
@@ -414,6 +421,8 @@ export async function createPromotionRedemptions(
   evaluation: InternalValidationResult,
   input: { studentId: number; packageOrderId?: number | null; bookingId?: number | null; metadata?: Record<string, unknown> },
 ): Promise<void> {
+  // Historical package redemptions remain readable; new ones are prohibited.
+  if (input.packageOrderId != null) throw new Error("Package promotion redemptions are prohibited.");
   if (!evaluation.eligible || evaluation.discountAmount <= 0) return;
   const allocations = allocatePromotionDiscount(
     egpToMinor(evaluation.discountAmount),

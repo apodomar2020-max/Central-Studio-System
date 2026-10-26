@@ -155,7 +155,7 @@ test("another promotion's code cannot be acquired", async () => {
   assert.equal(result.status, 409); assert.deepEqual(await snapshot(a.id), beforeA); assert.deepEqual(await snapshot(b.id), beforeB);
 });
 test("omitted code, limits and all supported rules are preserved", async () => {
-  const rules = { verifiedStudentOnly: true, firstPackagePurchaseOnly: true, minimumBasketAmount: 5, packageIds:[packageId], branches:["Downtown"], maxGlobalUses:8, maxUsesPerUser:1 };
+  const rules = { verifiedStudentOnly: true, minimumBasketAmount: 5, branches:["Downtown"], maxGlobalUses:8, maxUsesPerUser:1 };
   const p = await create({ rulesConfig: rules });
   const result = await request("PATCH", `/promotions/${p.id}`, { name: "Renamed promotion" });
   assert.equal(result.status, 200); assert.deepEqual(result.data.rulesConfig, rules);
@@ -183,8 +183,8 @@ const invalid: Array<[string, Record<string, unknown>]> = [
 ];
 for (const [label, fields] of invalid) test(`POST/PATCH reject ${label} without changing persisted state`, async () => {
   const p = await create(); const prior = await snapshot(p.id);
-  assert.equal((await request("POST","/promotions",payload(fields))).status,400);
-  assert.equal((await request("PATCH",`/promotions/${p.id}`,fields)).status,400);
+  assert.equal((await request("POST","/promotions",payload(fields))).status,label==="missing package"?409:400);
+  assert.equal((await request("PATCH",`/promotions/${p.id}`,fields)).status,label==="missing package"?409:400);
   assert.deepEqual(await snapshot(p.id),prior);
 });
 test("numeric strings and offset dates round-trip through partial PATCH", async () => {
@@ -320,7 +320,7 @@ async function financeHistory(promotionId: number) {
   const bookings = (await pool.query("select * from bookings where id=any($1::int[]) order by id", [redemptions.map(r=>r.booking_id).filter(Boolean)])).rows;
   return { redemptions, payments, events, orders, bookings };
 }
-for (const kind of ["package", "class"] as const) {
+for (const kind of ["class"] as const) {
   test(`${kind} HTTP checkout preserves discount and financial snapshots after CRUD edits`, async () => {
     const f = await checkoutFixture(kind);
     const response = await request("POST",f.path,f.body,null,f.token);
@@ -350,8 +350,8 @@ for (const kind of ["package", "class"] as const) {
       const failure = unexpectedErrors.at(-1) as Error & { cause?: Error };
       assert.match(String(failure.cause ?? failure), /phase1a forced redemption failure/);
       assert.deepEqual(await financeHistory(f.promotion.id),{redemptions:[],payments:[],events:[],orders:[],bookings:[]});
-      const table = kind === "package" ? "package_orders" : "bookings";
-      const column = kind === "package" ? "student_id" : "account_owner_student_id";
+      const table = "bookings";
+      const column = "account_owner_student_id";
       assert.equal((await pool.query(`select id from ${table} where ${column}=$1`,[f.studentId])).rowCount,0);
       assert.equal((await codes(f.promotion.id))[0].current_uses,0);
     } finally {

@@ -17,7 +17,7 @@ import test from "node:test";
 
 const read = (p: string) => readFileSync(resolve(process.cwd(), p), "utf8");
 
-const HOME_SCREEN = "artifacts/central/app/(tabs)/index.tsx";
+const HOME_SCREEN = "artifacts/central/components/AvailablePackagesSection.tsx";
 const PACKAGES_SCREEN = "artifacts/central/app/(tabs)/packages.tsx";
 
 function purchasePackageCallBody(source: string): string {
@@ -47,8 +47,9 @@ test("both entry points send the exact same paymentMode value", () => {
   assert.equal(extract(homeBody), "pay_at_studio");
 });
 
-test("the Packages tab's participant selection and promo code are unchanged by this correction", () => {
+test("package participant selection is preserved without promotion activation", () => {
   const body = purchasePackageCallBody(read(PACKAGES_SCREEN));
-  assert.match(body, /promoCode,/);
+  assert.doesNotMatch(body, /promoCode/);
+  assert.doesNotMatch(read("artifacts/central/contexts/AppContext.tsx"), /promoCode/);
   assert.match(body, /participant,/);
 });

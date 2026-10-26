@@ -9,9 +9,9 @@ export type PromotionFormState = {
 };
 export type PromotionFormErrors = Record<string, string>;
 export const conditionLabels: Record<string, string> = {
-  verifiedStudentOnly: "Verified students only", firstPackagePurchaseOnly: "First package purchase only",
+  verifiedStudentOnly: "Verified students only",
   minimumBasketAmount: "Minimum purchase (EGP)", maxGlobalUses: "Total promotion redemptions",
-  maxUsesPerUser: "Promotion redemptions per customer", packageIds: "Eligible packages", branches: "Eligible branches",
+  maxUsesPerUser: "Promotion redemptions per customer", branches: "Eligible branches",
 };
 export function validatePromotionForm(form: PromotionFormState): PromotionFormErrors {
   const errors: PromotionFormErrors = {};
@@ -37,7 +37,7 @@ export function validatePromotionForm(form: PromotionFormState): PromotionFormEr
   return errors;
 }
 
-export function promotionSummary(form: PromotionFormState, names: Map<number, string> = new Map()): string[] {
+export function promotionSummary(form: PromotionFormState): string[] {
   let rules: Record<string, unknown>;
   try { rules = validatePromotionConditions(form.rulesConfig); }
   catch { return ["Saved conditions need review before this promotion can be safely summarized or saved."]; }
@@ -46,11 +46,7 @@ export function promotionSummary(form: PromotionFormState, names: Map<number, st
     ? `${form.discountType === "percentage" ? `${amount}%` : `EGP ${amount}`} off eligible purchases${form.type === "manual" ? ` with promo code ${form.code.trim() || "(enter a code)"}` : ", applied automatically"}.`
     : "Enter a valid discount to complete this summary."];
   summary.push(rules.verifiedStudentOnly ? "For verified student accounts." : "For everyone who meets the purchase conditions.");
-  if (rules.firstPackagePurchaseOnly) summary.push("First package purchase only: accounts with an existing non-cancelled package order do not qualify, including unpaid orders.");
-  const ids = rules.packageIds as number[] | undefined;
-  if (ids?.length) summary.push(`Selected packages: ${ids.map(id => names.get(id) ?? `saved package #${id}`).join(", ")}. Direct-class purchases do not qualify.`);
-  else if (rules.firstPackagePurchaseOnly) summary.push("All eligible packages. Direct-class purchases do not qualify.");
-  else summary.push("All eligible packages and eligible direct-class purchases; package-credit bookings remain excluded.");
+  summary.push("Direct Single Class purchases only. Packages and package-credit bookings are excluded.");
   const format = (date: string) => Number.isFinite(new Date(date).getTime()) ? new Date(date).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "a valid date is needed";
   summary.push(`${form.isActive ? (form.startDate ? `Starts ${format(form.startDate)}` : "Starts immediately") : "Inactive — not available at checkout"}${form.endDate ? `; ends ${format(form.endDate)}` : "; no end date"}.`);
   if (rules.minimumBasketAmount != null) summary.push(`Minimum purchase: EGP ${rules.minimumBasketAmount}.`);
@@ -59,7 +55,7 @@ export function promotionSummary(form: PromotionFormState, names: Map<number, st
   if (form.type === "manual" && form.maxUses) summary.push(`Code limit: ${form.maxUses} total uses.`);
   if (form.type === "manual" && form.usesPerUser) summary.push(`Code limit: ${form.usesPerUser} uses per customer.`);
   const branches = rules.branches as string[] | undefined;
-  if (branches?.length) summary.push(`Branches: ${branches.join(", ")}. Package purchases without a branch do not qualify.`);
+  if (branches?.length) summary.push(`Branches: ${branches.join(", ")}. Direct Single Class purchases without a matching branch do not qualify.`);
   summary.push(form.isStackable ? "Can combine only when all eligible promotions allow combining." : "Does not combine: checkout selects the best eligible discount.");
   if (Number(form.priority)) summary.push(`Priority ${form.priority} breaks ties between equal discounts.`);
   if (form.isExclusive) summary.push("Exclusive flag is saved; it does not independently prevent other discounts.");
