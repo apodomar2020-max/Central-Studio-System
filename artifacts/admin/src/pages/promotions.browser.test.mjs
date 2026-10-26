@@ -4,14 +4,16 @@
  */
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
-import { before, after, test } from "node:test";
+import { beforeEach, afterEach, test } from "node:test";
 const require=createRequire(import.meta.url);
 const {chromium}=require(process.env.PLAYWRIGHT_MODULE_PATH || "playwright");
 const base=process.env.PROMOTIONS_ADMIN_TEST_URL;
 if(!base || !["localhost","127.0.0.1"].includes(new URL(base).hostname)) throw Error("Set a localhost PROMOTIONS_ADMIN_TEST_URL");
 let browser;
-before(async()=>{browser=await chromium.launch({headless:true,...(process.env.PROMOTIONS_TEST_CHROME ? {executablePath:process.env.PROMOTIONS_TEST_CHROME}: {})});});
-after(async()=>{await browser?.close();});
+// Each test owns its browser, including reload/replay checks within that test.
+// Avoid accumulating macOS display-link resources across many closed contexts.
+beforeEach(async()=>{browser=await chromium.launch({headless:true,args:["--disable-gpu"],...(process.env.PROMOTIONS_TEST_CHROME ? {executablePath:process.env.PROMOTIONS_TEST_CHROME}: {})});});
+afterEach(async()=>{await browser?.close();});
 async function fixture(mode) {
   const context=await browser.newContext({timezoneId:"UTC"});
   await context.addInitScript(()=>localStorage.setItem("admin_jwt","local-browser-fixture"));
