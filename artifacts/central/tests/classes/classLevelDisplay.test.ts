@@ -71,20 +71,16 @@ test(`${CLASS_DETAIL_SCREEN}: the detail badge reads the class's own stored leve
   const source = read(CLASS_DETAIL_SCREEN);
   assert.match(
     source,
-    /const difficulty = cls\.level;/,
+    /const level = cls\.level \|\| "All Levels";/,
     "the class-detail badge must read cls.level directly",
   );
 });
 
-test("diffColor is unchanged — this correction only changes the INPUT to the color mapping, not the mapping itself", () => {
-  for (const path of [CLASSES_SCREEN, CLASS_DETAIL_SCREEN]) {
-    const source = read(path);
-    assert.match(
-      source,
-      /function diffColor\([a-zA-Z]+: string\) \{\s*return [a-zA-Z]+ === "Beginner" \? CYAN : [a-zA-Z]+ === "Intermediate" \? AMBER : MAGENTA;\s*\}/,
-      `${path}'s diffColor mapping must be unchanged`,
-    );
-  }
+test("detail tags use shared level semantics independently of age labels", () => {
+  const source = read(CLASS_DETAIL_SCREEN);
+  assert.match(source, /backgroundColor: levelTagColor\(level\)/);
+  assert.match(source, /backgroundColor: ageTagColor\(cls\?\.ageGroup/);
+  assert.doesNotMatch(source, /function levelColor|function ageColor/);
 });
 
 test("neither screen removed Age Group/Audience display — only decoupled it from the Level badge", () => {

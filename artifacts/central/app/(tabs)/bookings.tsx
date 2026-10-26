@@ -38,6 +38,7 @@ import {
 import { useCentralAlert } from "@/hooks/useCentralAlert";
 import { scheduleLocationLabel } from "@/utils/scheduleLocation";
 import { bookingOccurrenceStartMs, isBookingSelfCancellableClientSide } from "@/utils/bookingCancellationEligibility";
+import { isSelfCancellableBookingStatus } from "@/utils/bookingStatus";
 import { isVisibleUpcomingMyBooking } from "@/utils/myBookingsVisibility";
 import { presentUserFacingError } from "@/utils/userFacingError";
 
@@ -307,7 +308,8 @@ function BookingDetailOverlay({
   // exactly, so a booking is never cancellable from one surface and not
   // the other, and never past the same self-cancellation cutoff.
   const canCancel = !isBallet && !isPast && !isCancelled && !b.sourceUnavailable
-    && isBookingSelfCancellableClientSide({ occurrenceDate: b.occurrenceDate ?? null, startTime: b.scheduleStartTime ?? null });
+    && isBookingSelfCancellableClientSide({ occurrenceDate: b.occurrenceDate ?? null, startTime: b.scheduleStartTime ?? null })
+    && isSelfCancellableBookingStatus(b.bookingStatus);
   const timeline = !isPast && !isCancelled
     ? [
         { label: "Booking Created", done: true, date: new Date(b.createdAt || Date.now()).toLocaleDateString("en-GB") },
@@ -465,6 +467,7 @@ export default function BookingsScreen() {
   // other (F-09). Calls the same cancelBooking() the card always did;
   // no new backend contract, no new confirmation UX.
   const confirmCancelBooking = useCallback((booking: Booking) => {
+    if (booking.sourceUnavailable || !isSelfCancellableBookingStatus(booking.bookingStatus)) return;
     alert.show({
       tone: "destructive",
       title: "Cancel booking?",

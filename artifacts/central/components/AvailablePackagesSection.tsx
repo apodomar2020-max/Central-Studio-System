@@ -3,7 +3,7 @@ import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
 import { pushOnce } from "@/utils/navigation";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { FlatList, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { FlatList, Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 import { getListPricePackagesQueryKey, useListPricePackages } from "@workspace/api-client-react";
 import type { PricePackage } from "@workspace/api-client-react";
@@ -18,6 +18,7 @@ import type { PackageParticipantSelection } from "@/contexts/AppContext";
 import { useCentralAlert } from "@/hooks/useCentralAlert";
 import { showAuthRequiredPrompt } from "@/utils/authRequired";
 import { presentUserFacingError } from "@/utils/userFacingError";
+import { iosCapGuard, iosDisplayTextStyle } from "@/utils/iosTypography";
 import {
   PACKAGE_AGE_BAND_LABELS,
   packageMatchesAgeBand,
@@ -281,6 +282,8 @@ const styles = StyleSheet.create({
     fontFamily: "Anton_400Regular",
     fontSize: 28,
     lineHeight: 31,
+    ...iosDisplayTextStyle(28, 31),
+    ...(Platform.OS === "ios" ? { marginBottom: -iosCapGuard(28, 31) } : {}),
     letterSpacing: 0.3,
   },
   centerSubtitle: {

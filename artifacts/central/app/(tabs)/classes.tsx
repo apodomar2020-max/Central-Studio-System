@@ -30,6 +30,7 @@ import XI from "@/components/XiIcon";
 import CategoryIcon from "@/components/CategoryIcon";
 import DiscoveryClassCard from "@/components/DiscoveryClassCard";
 import { iosCapGuard, iosDisplayTextStyle, iosTextInputStyle } from "@/utils/iosTypography";
+import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { useListClasses, useListInstructors, useListSchedules, useListDanceTypes, getListSchedulesQueryKey, normalizeMediaUrl } from "@workspace/api-client-react";
 
 import {
@@ -1035,6 +1036,13 @@ export default function ClassesScreen() {
     } as any);
   }
 
+  const SearchScrollView = Platform.OS === "ios" ? KeyboardAwareScrollView : ScrollView;
+  const searchHeader = <View style={s.fixedHeader}>
+    <ExploreHero topPad={topPad} />
+    <ExploreSearch query={search} onChange={setSearch} onFilter={() => setFilterOpen(true)} filterActive={filtersActive} />
+    <StyleCarousel categories={styleCategories} selectedId={selectedStyleId} classCount={displayedClasses.length} onSelect={setSelectedStyleId} />
+  </View>;
+
   return (
     <View style={s.screen}>
       {/* Exact design feed glow (full-bleed cyan radials):
@@ -1064,25 +1072,11 @@ export default function ClassesScreen() {
         </View>
       ) : (
         <View style={s.loadedLayout}>
-          <View style={s.fixedHeader}>
-            <ExploreHero topPad={topPad} />
-            <ExploreSearch
-              query={search}
-              onChange={setSearch}
-              onFilter={() => setFilterOpen(true)}
-              filterActive={filtersActive}
-            />
-
-            <StyleCarousel
-              categories={styleCategories}
-              selectedId={selectedStyleId}
-              classCount={displayedClasses.length}
-              onSelect={setSelectedStyleId}
-            />
-          </View>
-
-          <ScrollView
+          {Platform.OS !== "ios" && searchHeader}
+          <SearchScrollView
             style={s.classesScroll}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="interactive"
             showsVerticalScrollIndicator={false}
             alwaysBounceVertical
             refreshControl={
@@ -1090,6 +1084,7 @@ export default function ClassesScreen() {
             }
             contentContainerStyle={{ paddingBottom: Platform.OS === "web" ? 120 : 100 + insets.bottom }}
           >
+            {Platform.OS === "ios" && searchHeader}
             <View style={s.classListSection}>
               {displayedClasses.length === 0 ? (
                 <View style={s.emptyState}>
@@ -1116,6 +1111,7 @@ export default function ClassesScreen() {
                     const styleCategory = nonBalletCats.find((cat) => cat.matchesClass(item));
                     return (
                       <DiscoveryClassCard
+                    presentation="bookingReference"
                         key={`${item.id}-${item.scheduleId ?? item.date}`}
                         item={item}
                         instructor={instructorById.get(item.instructorId)}
@@ -1133,7 +1129,7 @@ export default function ClassesScreen() {
                 </View>
               )}
             </View>
-          </ScrollView>
+          </SearchScrollView>
         </View>
       )}
 

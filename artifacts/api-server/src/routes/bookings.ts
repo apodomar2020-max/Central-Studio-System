@@ -1315,6 +1315,13 @@ router.post(
             currentPriceEgp: promotionEvaluation.finalSubtotal,
           };
         }
+      } else if (
+        expectedFinalPriceEgp != null
+        && egpToMinor(expectedFinalPriceEgp) !== egpToMinor(priceEgp)
+      ) {
+        // A quote may have activated Automatic candidates via an entered code.
+        // If that activation is omitted, never silently charge a higher total.
+        return { kind: "promotion_changed" as const, currentPriceEgp: priceEgp };
       }
     }
 

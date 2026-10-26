@@ -10,7 +10,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { customFetch } from "@workspace/api-client-react";
 import AppButton from "@/components/AppButton";
-import BotChallenge from "@/components/BotChallenge";
+import { nativeAuthError } from "@/services/nativeAuthErrors";
 import CentralBackButton from "@/components/CentralBackButton";
 import {
   buildForgotPasswordPayload,
@@ -40,8 +40,6 @@ export default function OtpVerificationScreen(): React.ReactElement {
   const [resendCountdown, setResendCountdown] = useState(RESEND_COOLDOWN_SECONDS);
   const [resendPending, setResendPending] = useState(false);
   const [resendMessage, setResendMessage] = useState("");
-  const [resendBotToken, setResendBotToken] = useState<string | null>(null);
-  const [resendChallengeKey, setResendChallengeKey] = useState(0);
 
   useEffect(() => {
     if (resendCountdown <= 0) return;
@@ -93,39 +91,24 @@ export default function OtpVerificationScreen(): React.ReactElement {
       setError("Something went wrong. Please start again from Forgot Password.");
       return;
     }
-    if (!resendBotToken) {
-      setError("Please complete verification before requesting another code.");
-      return;
-    }
     setError("");
     setResendMessage("");
     setResendPending(true);
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     try {
-      await customFetch("/api/auth/forgot-password", {
+      await customFetch("/api/auth/native/forgot-password", {
         method: "POST",
         auth: "omit",
-        body: JSON.stringify(buildForgotPasswordPayload(targetEmail, resendBotToken)),
+        body: JSON.stringify(buildForgotPasswordPayload(targetEmail)),
       });
       forgotPasswordOutcome();
       setCode("");
       setResendCountdown(RESEND_COOLDOWN_SECONDS);
-      setResendBotToken(null);
-      setResendChallengeKey((value) => value + 1);
       setResendMessage("Check your inbox for the most recent code.");
     } catch (err: unknown) {
-      const apiError = toApiErrorLike(err);
-      if (!apiError) {
-        setError("Network error. Please check your connection.");
-        return;
-      }
-      const data = apiError.data;
-      const responseCode = data && typeof data === "object" && "code" in data ? String((data as { code?: unknown }).code ?? "") : "";
-      if (responseCode === "BOT_VERIFICATION_FAILED" || responseCode === "BOT_VERIFICATION_UNAVAILABLE") {
-        setResendBotToken(null);
-        setResendChallengeKey((value) => value + 1);
-      }
-      setError("Something went wrong. Please try again.");
+      const { message, retryAfter } = nativeAuthError(err);
+      if (retryAfter > 0) setResendCountdown(retryAfter);
+      setError(message);
     } finally {
       setResendPending(false);
     }
@@ -157,7 +140,6 @@ export default function OtpVerificationScreen(): React.ReactElement {
         </TouchableOpacity>
 
         {error ? <View style={styles.errorBanner}><Text style={styles.errorText}>{error}</Text></View> : null}
-        {resendCountdown <= 0 ? <BotChallenge action="forgot_password" resetKey={resendChallengeKey} onToken={setResendBotToken} /> : null}
         {resendMessage ? <Text style={styles.resendMessage}>{resendMessage}</Text> : null}
       </View>
 

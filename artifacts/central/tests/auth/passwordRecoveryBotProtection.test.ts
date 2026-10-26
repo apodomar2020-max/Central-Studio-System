@@ -9,10 +9,11 @@ const resetPassword = readFileSync(new URL("../../app/auth/reset-password.tsx", 
 const artwork = new URL("../../assets/images/enter-otp-amico.svg", import.meta.url);
 const otpArtwork = new URL("../../assets/images/my-password-pana.svg", import.meta.url);
 
-test("all forgot-password callers include a verified bot token", () => {
+test("all recovery callers use the native email-only endpoint without a browser challenge", () => {
   for (const source of [changePassword, forgotPassword, otpVerification]) {
-    assert.match(source, /buildForgotPasswordPayload\([^,]+,\s*[^)]+BotToken|buildForgotPasswordPayload\([^,]+,\s*botToken\)/i);
-    assert.match(source, /<BotChallenge action="forgot_password"/);
+    assert.match(source, /\/api\/auth\/native\/forgot-password/);
+    assert.match(source, /buildForgotPasswordPayload\((email|targetEmail)\)/);
+    assert.doesNotMatch(source, /BotChallenge|botToken|BotToken|challengeReset|ChallengeKey/);
   }
 });
 

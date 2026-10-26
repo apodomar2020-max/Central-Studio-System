@@ -20,7 +20,7 @@ export type LocalPaymentStatus =
   | "refunded"
   | "failed";
 
-export function mapApiStatusToLocal(apiStatus: string): LocalBookingStatus {
+export function mapApiStatusToLocal(apiStatus: unknown): LocalBookingStatus {
   const map: Record<string, LocalBookingStatus> = {
     pending: "pending",
     confirmed: "confirmed",
@@ -37,7 +37,14 @@ export function mapApiStatusToLocal(apiStatus: string): LocalBookingStatus {
   // fall through to "confirmed". No canonical customer-facing label exists
   // for it anywhere in the system today, so no business meaning is
   // invented here — it maps to the neutral "unknown" state instead.
-  return map[apiStatus] ?? "unknown";
+  return typeof apiStatus === "string" && Object.prototype.hasOwnProperty.call(map, apiStatus)
+    ? map[apiStatus]
+    : "unknown";
+}
+
+/** Mirrors the server's ordinary self-cancellation allowlist, not payment or seat availability. */
+export function isSelfCancellableBookingStatus(status: unknown): status is "pending" | "confirmed" {
+  return status === "pending" || status === "confirmed";
 }
 
 export function mapApiPaymentStatusToLocal(apiStatus: string | undefined): LocalPaymentStatus {

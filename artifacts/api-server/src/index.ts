@@ -1,3 +1,4 @@
+import { startPromotionOperationCleanup } from "./lib/promotionOperationCleanup";
 import app from "./app";
 import { logger } from "./lib/logger";
 import { initErrorMonitoring, captureError } from "./lib/errorMonitoring";
@@ -68,5 +69,6 @@ app.listen(port, (err) => {
     process.exit(1);
   }
 
+  startPromotionOperationCleanup();
   logger.info({ port }, "Server listening");
 });

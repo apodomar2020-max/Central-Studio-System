@@ -1,3 +1,5 @@
+import { classTagColors, classTagStyles, levelTagColor, ageTagColor } from "@/constants/classTags";
+import { iosDisplayTextStyle } from "@/utils/iosTypography";
 import { Ionicons } from "@expo/vector-icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -21,6 +23,7 @@ import {
   Image,
   Linking,
   Platform,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -99,20 +102,6 @@ function clock(raw?: string | null) {
 
 function normalizedName(value?: string | null) {
   return (value ?? "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
-}
-
-function levelColor(level: string) {
-  if (/beginner/i.test(level)) return "#D800D8";
-  if (/intermediate/i.test(level)) return AMBER;
-  if (/advanced/i.test(level)) return RED;
-  return "#7C3AED";
-}
-
-function ageColor(age: string) {
-  if (/kid/i.test(age)) return "#075CE5";
-  if (/teen/i.test(age)) return "#7C3AED";
-  if (/adult/i.test(age)) return "#FF6B2C";
-  return CYAN;
 }
 
 function PersonAvatar({ image, name, size = 38 }: { image?: string; name: string; size?: number }) {
@@ -350,7 +339,7 @@ export default function ClassDetailScreen() {
 
   return (
     <View style={styles.screen}>
-      <View style={styles.fixedContent}>
+      <ScrollView style={styles.fixedContent} contentContainerStyle={styles.detailContent} showsVerticalScrollIndicator={false}>
         <View style={styles.hero}>
           {heroImage && !heroFailed ? (
             <Image source={{ uri: heroImage }} style={StyleSheet.absoluteFill} resizeMode="cover" onError={() => setHeroFailed(true)} />
@@ -363,13 +352,13 @@ export default function ClassDetailScreen() {
 
         <View style={styles.mainCard}>
           <View style={styles.titleRow}>
-            <Text style={styles.title} numberOfLines={2}>{cls.title}</Text>
+            <Text style={styles.title}>{cls.title}</Text>
             <View style={[styles.statusPill, { backgroundColor: status.background, borderColor: status.color }]}>
               <View style={[styles.statusDot, { backgroundColor: status.color }]} />
               <Text style={[styles.statusText, { color: status.color }]}>{status.label}</Text>
             </View>
           </View>
-          <Text style={styles.description} numberOfLines={2}>{cls.description}</Text>
+          <Text style={styles.description}>{cls.description}</Text>
 
           <View style={styles.schedulePanel}>
             <GlassView glassEffectStyle="clear" tintColor="rgba(255,255,255,0.08)" colorScheme="dark" pointerEvents="none" style={StyleSheet.absoluteFill} />
@@ -405,21 +394,22 @@ export default function ClassDetailScreen() {
             <PersonAvatar image={instructorImage} name={instructorName} size={38} />
             <View style={styles.instructorCopy}>
               <Text style={styles.instructorLabel}>Instructor</Text>
-              <Text style={styles.instructorName} numberOfLines={1}>{instructorName}</Text>
+              <Text style={styles.instructorName}>{instructorName}</Text>
             </View>
           </TouchableOpacity>
 
           <View style={styles.tags}>
             <View style={[styles.tag, styles.styleTag]}>
+              <View pointerEvents="none" style={classTagStyles.danceOutline} />
               <CategoryIcon iconSvg={danceType?.iconSvg} iconUrl={danceType?.iconUrl} name={classType} color={danceType?.color || CYAN} size={13} />
-              <Text style={[styles.tagText, styles.styleTagText]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>{classType}</Text>
+              <Text style={[styles.tagText, styles.styleTagText]}>{classType}</Text>
             </View>
-            <View style={[styles.tag, { backgroundColor: levelColor(level) }]}><Text style={styles.tagText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>{level}</Text></View>
-            <View style={[styles.tag, { backgroundColor: ageColor(age) }]}><Text style={styles.tagText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>{age}</Text></View>
+            <View style={[styles.tag, { backgroundColor: levelTagColor(level) }]}><Text style={styles.tagText}>{level}</Text></View>
+            <View style={[styles.tag, { backgroundColor: ageTagColor(cls?.ageGroup || "All Ages") }]}><Text style={styles.tagText}>{age}</Text></View>
           </View>
         </View>
 
-      </View>
+      </ScrollView>
 
       <View style={[styles.actionCard, { paddingBottom: bottomPad }]}>
           <View style={styles.priceRow}>
@@ -447,17 +437,18 @@ export default function ClassDetailScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: INK },
   fixedContent: { flex: 1, minHeight: 0 },
+  detailContent: { flexGrow: 1, paddingBottom: 12 },
   stateBack: { position: "absolute", top: 60, left: 16, zIndex: 10 },
   hero: { height: 190, position: "relative", backgroundColor: "#17191D" },
   back: { position: "absolute", left: 16, zIndex: 10 },
-  mainCard: { flex: 1, minHeight: 0, marginTop: -35, borderTopLeftRadius: 26, borderTopRightRadius: 26, borderBottomLeftRadius: 25, borderBottomRightRadius: 25, backgroundColor: CARD, paddingHorizontal: 19, paddingTop: 24, paddingBottom: 20, zIndex: 3 },
+  mainCard: { marginTop: -35, borderTopLeftRadius: 26, borderTopRightRadius: 26, borderBottomLeftRadius: 25, borderBottomRightRadius: 25, backgroundColor: CARD, paddingHorizontal: 19, paddingTop: 24, paddingBottom: 20, zIndex: 3 },
   titleRow: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 12 },
-  title: { flex: 1, color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 34, lineHeight: 38, textTransform: "uppercase" },
+  title: { flex: 1, color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 34, lineHeight: 38, ...iosDisplayTextStyle(34, 38), textTransform: "uppercase" },
   statusPill: { minHeight: 30, paddingHorizontal: 13, borderRadius: 999, borderWidth: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, marginTop: 2 },
   statusDot: { width: 5, height: 5, borderRadius: 3 },
   statusText: { fontFamily: "Archivo_700Bold", fontSize: 11.5 },
   description: { marginTop: 4, color: "#D2D7DC", fontFamily: "Archivo_400Regular", fontSize: 14, lineHeight: 20 },
-  schedulePanel: { height: 78, borderRadius: 15, overflow: "hidden", marginTop: 14, backgroundColor: "rgba(255,255,255,0.08)", borderWidth: 1, borderColor: "rgba(255,255,255,0.25)" },
+  schedulePanel: { minHeight: 78, borderRadius: 15, overflow: "hidden", marginTop: 14, backgroundColor: "rgba(255,255,255,0.08)", borderWidth: 1, borderColor: "rgba(255,255,255,0.25)" },
   scheduleContent: { flex: 1, flexDirection: "row", paddingHorizontal: 9, paddingVertical: 9 },
   scheduleCell: { flex: 1, minWidth: 0, alignItems: "center", justifyContent: "center", gap: 2 },
   separator: { width: 1, marginVertical: 3, backgroundColor: "rgba(255,255,255,0.28)" },
@@ -470,22 +461,22 @@ const styles = StyleSheet.create({
   youtubeButton: { width: 57, height: 40, borderRadius: 10, backgroundColor: "#FF101B", alignItems: "center", justifyContent: "center", paddingLeft: 3 },
   avatar: { overflow: "hidden", backgroundColor: "rgba(0,182,215,0.18)", borderWidth: 1, borderColor: "rgba(255,255,255,0.52)", alignItems: "center", justifyContent: "center" },
   avatarInitial: { color: "#FFFFFF", fontFamily: "Archivo_700Bold", fontSize: 13 },
-  instructorAndTags: { width: "100%", height: 64, paddingHorizontal: 19, flexDirection: "row", alignItems: "center", gap: 7, overflow: "hidden" },
-  instructor: { width: 116, flexDirection: "row", alignItems: "center", flexShrink: 0 },
+  instructorAndTags: { width: "100%", paddingHorizontal: 19, paddingVertical: 12, gap: 10 },
+  instructor: { flexDirection: "row", alignItems: "center" },
   instructorCopy: { flex: 1, minWidth: 0, marginLeft: 6 },
   instructorLabel: { color: "#7F8892", fontFamily: "Archivo_400Regular", fontSize: 10, lineHeight: 12 },
-  instructorName: { color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 18, lineHeight: 21 },
-  tags: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 4 },
-  tag: { height: 30, minWidth: 0, maxWidth: "32%", paddingHorizontal: 9, borderRadius: 999, alignItems: "center", justifyContent: "center", flexShrink: 1 },
-  styleTag: { maxWidth: "40%", backgroundColor: "#FFFFFF", flexDirection: "row", gap: 4 },
-  tagText: { color: "#FFFFFF", fontFamily: "Archivo_700Bold", fontSize: 10 },
-  styleTagText: { color: CYAN },
+  instructorName: { color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 18, lineHeight: 21, ...iosDisplayTextStyle(18, 21) },
+  tags: { minWidth: 0, flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 6 },
+  tag: { minHeight: 30, maxWidth: "100%", paddingHorizontal: 9, paddingVertical: 6, borderRadius: 999, alignItems: "center", justifyContent: "center" },
+  styleTag: { backgroundColor: classTagColors.danceBackground, flexDirection: "row", gap: 4 },
+  tagText: { color: "#FFFFFF", fontFamily: "Archivo_700Bold", fontSize: 10, flexShrink: 1 },
+  styleTagText: { color: classTagColors.danceText },
   actionCard: { flexShrink: 0, borderTopLeftRadius: 46, borderTopRightRadius: 46, backgroundColor: CARD, paddingHorizontal: 19, paddingTop: 24 },
   priceRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 14 },
   purchaseHint: { flex: 1, color: "#FFFFFF", fontFamily: "Archivo_400Regular", fontSize: 14, lineHeight: 20 },
-  priceColumn: { alignItems: "flex-end" },
+  priceColumn: { alignItems: "flex-end", flexShrink: 1, maxWidth: "50%" },
   priceLabel: { color: "#FFFFFF", fontFamily: "Archivo_400Regular", fontSize: 16, lineHeight: 20 },
-  price: { color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 34, lineHeight: 38 },
+  price: { color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 34, lineHeight: 38, ...iosDisplayTextStyle(34, 38) },
   primaryButton: { height: 50, marginTop: 16, borderRadius: 26, backgroundColor: CYAN, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
   cancelButton: { backgroundColor: RED },
   disabledButton: { backgroundColor: "rgba(255,255,255,0.12)" },

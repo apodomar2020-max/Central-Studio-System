@@ -1,3 +1,4 @@
+import { bookingPromoActivationCode } from "@/components/booking/promoActivation";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
@@ -548,7 +549,7 @@ export default function BookingFlowScreen() {
           // nothing written) if this no longer matches. Omitted for
           // package/free bookings, exactly like the backend expects.
           expectedPriceEgp: apiPaymentMode === "pay_at_studio" ? grossPrice : undefined,
-          promoCode: apiPaymentMode === "pay_at_studio" ? confirmedPromoQuote?.promotionCode ?? undefined : undefined,
+          promoCode: bookingPromoActivationCode(apiPaymentMode, promoCode),
           expectedFinalPriceEgp: apiPaymentMode === "pay_at_studio" && confirmedPromoQuote
             ? confirmedPromoQuote.finalSubtotal
             : undefined,

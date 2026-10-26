@@ -9,12 +9,11 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { customFetch } from "@workspace/api-client-react";
 import AppButton from "@/components/AppButton";
-import BotChallenge from "@/components/BotChallenge";
+import { nativeAuthError } from "@/services/nativeAuthErrors";
 import CentralBackButton from "@/components/CentralBackButton";
 import {
   buildForgotPasswordPayload,
   forgotPasswordOutcome,
-  toApiErrorLike,
 } from "@/services/passwordRecoveryFlow";
 import { iosDisplayTextStyle, iosTextInputStyle } from "@/utils/iosTypography";
 
@@ -28,8 +27,6 @@ export default function ForgotPasswordScreen(): React.ReactElement {
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [botToken, setBotToken] = useState<string | null>(null);
-  const [challengeResetKey, setChallengeResetKey] = useState(0);
 
   async function handleSend(): Promise<void> {
     if (loading) return;
@@ -37,31 +34,19 @@ export default function ForgotPasswordScreen(): React.ReactElement {
       setError("Please enter your email address.");
       return;
     }
-    if (!botToken) {
-      setError("Please complete the verification before continuing.");
-      return;
-    }
     setError("");
     setLoading(true);
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     try {
-      await customFetch("/api/auth/forgot-password", {
+      await customFetch("/api/auth/native/forgot-password", {
         method: "POST",
         auth: "omit",
-        body: JSON.stringify(buildForgotPasswordPayload(email, botToken)),
+        body: JSON.stringify(buildForgotPasswordPayload(email)),
       });
       forgotPasswordOutcome();
       router.replace({ pathname: "/auth/otp-verification", params: { email: email.trim() } });
     } catch (err: unknown) {
-      const apiError = toApiErrorLike(err);
-      const data = apiError?.data;
-      const code = data && typeof data === "object" && "code" in data ? String((data as { code?: unknown }).code ?? "") : "";
-      if (code === "BOT_VERIFICATION_FAILED" || code === "BOT_VERIFICATION_UNAVAILABLE") {
-        setBotToken(null);
-        setChallengeResetKey((value) => value + 1);
-      }
-      const message = data && typeof data === "object" && "error" in data ? String((data as { error?: unknown }).error ?? "") : "";
-      setError(message || (apiError ? "Something went wrong. Please try again." : "Please check your connection and try again."));
+      setError(nativeAuthError(err).message);
     } finally {
       setLoading(false);
     }
@@ -100,8 +85,7 @@ export default function ForgotPasswordScreen(): React.ReactElement {
           onSubmitEditing={() => void handleSend()}
           style={styles.input}
         />
-        <BotChallenge action="forgot_password" resetKey={challengeResetKey} onToken={setBotToken} />
-        <AppButton title="Send Verification Code" onPress={handleSend} loading={loading} disabled={!botToken} fullWidth size="lg" style={styles.primaryButton} />
+        <AppButton title="Send Verification Code" onPress={handleSend} loading={loading} fullWidth size="lg" style={styles.primaryButton} />
       </View>
       <TouchableOpacity onPress={() => router.replace("/auth/login")} style={styles.textAction}>
         <Text style={styles.textActionLabel}>Back to Sign In</Text>

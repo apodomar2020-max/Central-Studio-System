@@ -1,3 +1,4 @@
+import { canStartBalletApplication } from "../../services/accountCapacity";
 export interface BalletStudentPreviewApplicationSource {
   id: number;
   childId: number | null;
@@ -213,6 +214,7 @@ function applicationBelongsToChild(
     return true;
   }
 
+  if (application.childId != null) return false;
   return application.childName.trim().toLowerCase() === child.fullName.trim().toLowerCase()
     && Boolean(child.birthday)
     && application.childBirthday === child.birthday;
@@ -228,8 +230,8 @@ export function selectEligibleBalletChildren<T extends BalletEligibleChildSource
   )));
 }
 
-export function shouldShowAddBalletChildCard(activeStudentCount: number, eligibleChildCount: number): boolean {
-  return activeStudentCount === 1 && eligibleChildCount > 0;
+export function shouldShowAddBalletChildCard(activeStudentCount: number, eligibleChildCount: number, canCreateProfile = false): boolean {
+  return canStartBalletApplication(activeStudentCount, eligibleChildCount, canCreateProfile);
 }
 
 export function parseEligibleBalletChildIds(value: string | string[] | undefined): number[] | null {

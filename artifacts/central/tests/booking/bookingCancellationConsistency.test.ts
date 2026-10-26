@@ -46,7 +46,7 @@ test("the compact list card does not expose cancellation or the removed particip
 
 test("the standalone booking details route keeps the cancellation action", () => {
   assert.match(detailRoute, /onCancel=\{confirmCancel\}/);
-  assert.match(detailView, /onPress=\{\(\) => \{[\s\S]{0,120}onCancel\?\.\(\)/);
+  assert.match(detailView, /onPress=\{\(\) => \{\s*if \(!canCancel\) return;\s*Haptics\.impactAsync\(Haptics\.ImpactFeedbackStyle\.Medium\);\s*onCancel\?\.\(\)/);
 });
 
 test("the overlay's cancellability check mirrors BookingCard's isUpcomingActive gate exactly", () => {

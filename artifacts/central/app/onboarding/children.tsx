@@ -4,12 +4,13 @@
  * new child system. Visual style matches the rest of the onboarding funnel.
  */
 import * as Haptics from "expo-haptics";
-import { router, useLocalSearchParams } from "expo-router";
-import React, { useState } from "react";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import ProgressDots from "@/components/ProgressDots";
+import { canCreateChildProfile } from "@/services/accountCapacity";
 import { useAppContext } from "@/contexts/AppContext";
 import { fetchCurrentUser, nextStepRoute } from "@/services/authProfile";
 import { BackBtn, CS, Eyebrow, Icon, PrimaryCTA, ScreenTitle } from "@/components/signup/SignupKit";
@@ -30,7 +31,10 @@ function calculateAge(birthday: string): number | null {
 export default function OnboardingChildrenScreen() {
   const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
   const insets = useSafeAreaInsets();
-  const { children, addChild, setUser } = useAppContext();
+  const { user, children, childrenReady, refreshChildren, addChild, setUser } = useAppContext();
+  const canCreate = canCreateChildProfile(children.length, childrenReady);
+  const savingRef = useRef(false);
+  useFocusEffect(useCallback(() => { void refreshChildren(); }, [refreshChildren, user?.id]));
   const topPad = (Platform.OS === "web" ? 40 : insets.top) + 24;
 
   const [showForm, setShowForm] = useState(children.length === 0);
@@ -43,21 +47,30 @@ export default function OnboardingChildrenScreen() {
   const [continuing, setContinuing] = useState(false);
   const [error, setError] = useState("");
 
+  useEffect(() => {
+    setFullName(""); setDobD(""); setDobM(""); setDobY("");
+    setGender("female"); setError(""); setShowForm(true);
+  }, [user?.id]);
+
   async function handleAddChild() {
+    if (savingRef.current || !canCreate) return;
     if (!fullName.trim()) { setError("Please enter the child's full name."); return; }
     const birthday = dobD && dobM && dobY ? `${dobY}-${dobM.padStart(2, "0")}-${dobD.padStart(2, "0")}` : "";
     const age = calculateAge(birthday);
     if (age === null) { setError("Please select a valid date of birth."); return; }
     setError("");
+    savingRef.current = true;
     setSaving(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     try {
-      await addChild({ id: "", fullName: fullName.trim(), birthday, age, gender });
+      const created = await addChild({ id: "", fullName: fullName.trim(), birthday, age, gender });
+      if (!created) return;
       setFullName("");
       setDobD(""); setDobM(""); setDobY("");
       setGender("female");
       setShowForm(false);
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   }
@@ -110,7 +123,7 @@ export default function OnboardingChildrenScreen() {
           </View>
         ))}
 
-        {showForm ? (
+        {canCreate && (showForm ? (
           <View style={{ gap: 12, marginTop: children.length > 0 ? 16 : 4 }}>
             <View style={styles.fieldBox}>
               <Icon name="user" size={18} stroke={2} color="rgba(255,255,255,0.32)" />
@@ -151,7 +164,7 @@ export default function OnboardingChildrenScreen() {
             <Icon name="user" size={16} stroke={2} color={CS.cyan400} />
             <Text style={styles.addAnotherText}>Add {children.length > 0 ? "another" : "a"} child</Text>
           </TouchableOpacity>
-        )}
+        ))}
       </ScrollView>
 
       <View style={[styles.footer, { paddingBottom: (Platform.OS === "web" ? 36 : insets.bottom) + 16 }]}>

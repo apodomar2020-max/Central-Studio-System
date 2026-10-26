@@ -24,14 +24,15 @@ import Constants from "expo-constants";
 // services/notificationsRuntime.ts. All runtime access goes through the
 // import-safe lazy loader below.
 import type { NotificationResponse } from "expo-notifications";
-import { router, Stack, usePathname, useRootNavigationState, useSegments } from "expo-router";
+import { router, Stack, useNavigationContainerRef, usePathname, useRootNavigationState, useSegments } from "expo-router";
 import { pushOnce } from "@/utils/navigation";
 import * as SplashScreen from "expo-splash-screen";
 import * as Sentry from "@sentry/react-native";
 import * as Updates from "expo-updates";
 import * as WebBrowser from "expo-web-browser";
-import React, { useCallback, useEffect, useRef } from "react";
-import { AppState, type AppStateStatus } from "react-native";
+import React, { useCallback, useReducer, useEffect, useLayoutEffect, useRef } from "react";
+import { AppState, Platform, type AppStateStatus } from "react-native";
+import { AUTH_MODAL_SCREENS, completedAuthModalHistory, normalRoutePresentation } from "@/utils/iosAuthModalHistory";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -46,7 +47,8 @@ import { AppContextProvider } from "@/contexts/AppContext";
 import { useAppContext } from "@/contexts/AppContext";
 import { TabVisibilityProvider } from "@/contexts/TabVisibilityContext";
 import { CentralAlertProvider } from "@/providers/CentralAlertProvider";
-import { NotificationRoute, resolveNotificationRoute } from "@/services/notificationNavigation";
+import { initialNotificationIntentState, notificationIntentReducer, notificationIntentRoute, notificationNavigationReady } from "@/services/notificationIntent";
+import { customFetch } from "@workspace/api-client-react";
 import { ensureNotificationHandler, loadExpoNotifications } from "@/services/notificationsRuntime";
 import { scrubCrashEvent } from "@/services/telemetryPrivacy";
 import { useAndroidHardwareBackGuard } from "@/hooks/useAndroidHardwareBackGuard";
@@ -167,36 +169,35 @@ function notificationResponseKey(response: NotificationResponse): string {
 function NotificationRoutingGate() {
   const { isLoading, user } = useAppContext();
   const navigationState = useRootNavigationState();
-  const processedResponsesRef = useRef<Set<string>>(new Set());
-  const pendingRouteRef = useRef<NotificationRoute | null>(null);
-  const previousAccountRef = useRef(user?.id);
+  const pathname = usePathname();
+  const segments = useSegments();
+  const [intent, dispatch] = useReducer(notificationIntentReducer, initialNotificationIntentState);
+  const currentAccountRef = useRef(user?.id ?? null);
+  currentAccountRef.current = user?.id ?? null;
+  const previousAccountRef = useRef(user?.id ?? null);
   useEffect(() => {
-    if (previousAccountRef.current !== user?.id) {
-      pendingRouteRef.current = null;
+    if (isLoading) return;
+    if (previousAccountRef.current !== (user?.id ?? null)) {
       queryClient.clear();
+      if (previousAccountRef.current && intent.pending) {
+        const discardedKey = intent.pending.key;
+        void loadExpoNotifications().then(Notifications => {
+          const last = Notifications?.getLastNotificationResponse();
+          if (last && notificationResponseKey(last) === discardedKey) Notifications?.clearLastNotificationResponse();
+        }).catch(() => {});
+      }
     }
-    previousAccountRef.current = user?.id;
-  }, [user?.id]);
-  const navigationReady = Boolean(navigationState?.key);
-  const canNavigateToNotificationTarget = navigationReady && !isLoading && Boolean(user?.id) && user?.emailVerified === true;
+    previousAccountRef.current = user?.id ?? null;
+    if (!isLoading) dispatch({ type: "session", account: user?.id ?? null });
+  }, [isLoading, user?.id, intent.pending]);
+  const canNavigateToNotificationTarget = notificationNavigationReady(isLoading, user?.id ?? null,
+    user?.emailVerified === true, Boolean(navigationState?.key), pathname, segments[0] === "(tabs)");
 
   const queueResponse = useCallback(
-    (
-      Notifications: Awaited<ReturnType<typeof loadExpoNotifications>>,
-      response: NotificationResponse | null,
-    ) => {
-      if (!response?.notification) return;
-      const key = notificationResponseKey(response);
-      if (processedResponsesRef.current.has(key)) return;
-      processedResponsesRef.current.add(key);
-      pendingRouteRef.current = resolveNotificationRoute(response.notification.request.content.data);
-      try {
-        Notifications?.clearLastNotificationResponse();
-      } catch {
-        // Older native modules may not expose this; the local processed set still dedupes.
-      }
-    },
-    [],
+    (Notifications: Awaited<ReturnType<typeof loadExpoNotifications>>, response: NotificationResponse | null) => {
+      if (!response?.notification || response.actionIdentifier !== Notifications?.DEFAULT_ACTION_IDENTIFIER) return;
+      dispatch({ type: "receive", key: notificationResponseKey(response), data: response.notification.request.content.data });
+    }, [],
   );
 
   useEffect(() => {
@@ -231,14 +232,27 @@ function NotificationRoutingGate() {
   }, [queueResponse]);
 
   useEffect(() => {
-    if (!canNavigateToNotificationTarget || !pendingRouteRef.current) return;
-    const route = pendingRouteRef.current;
+    const pending = intent.pending;
     const account = user?.id;
-    pendingRouteRef.current = null;
-    setTimeout(() => {
-      if (account === previousAccountRef.current) pushOnce(route as never);
-    }, 0);
-  }, [canNavigateToNotificationTarget]);
+    if (!canNavigateToNotificationTarget || !pending || !account || intent.account !== account || pending.owner !== account) return;
+    let cancelled = false;
+    void (async () => {
+      const route = await notificationIntentRoute(pending.data, () => customFetch("/api/notifications/my?limit=100&offset=0"));
+      if (cancelled || currentAccountRef.current !== account) return;
+      // Auth/index redirects have left their routes before this effect can run.
+      // A duplicate destination rejected by pushOnce is already being navigated to.
+      try {
+        pushOnce(route as never);
+        dispatch({ type: "consume", key: pending.key });
+        const Notifications = await loadExpoNotifications();
+        const last = Notifications?.getLastNotificationResponse();
+        if (last && notificationResponseKey(last) === pending.key) Notifications?.clearLastNotificationResponse();
+      } catch {
+        // Keep the native response for a subsequent launch if navigation fails.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [canNavigateToNotificationTarget, intent.pending, intent.account, user?.id, pathname]);
 
   return null;
 }
@@ -259,39 +273,32 @@ function AndroidHardwareBackGuard() {
 
 function RootLayoutNav() {
   const pathname = usePathname();
+  const navigation = useNavigationContainerRef();
   const hideBottomTabs = pathname.startsWith("/class/") || pathname.startsWith("/booking/");
+
+  useLayoutEffect(() => {
+    if (Platform.OS !== "ios") return;
+    const reconcile = () => {
+      if (!navigation.isReady()) return;
+      // Read current state on each action; never reset a captured destination.
+      const nextState = completedAuthModalHistory(navigation.getRootState(), Platform.OS);
+      if (nextState) navigation.resetRoot(nextState);
+    };
+    const unsubscribe = navigation.addListener("state", reconcile);
+    reconcile();
+    return unsubscribe;
+  }, [navigation]);
 
   return (
     <TabVisibilityProvider hideBottomTabs={hideBottomTabs}>
       <AndroidHardwareBackGuard />
-      <Stack screenOptions={{ headerShown: false, animation: "slide_from_right" }}>
+      <Stack screenOptions={{ headerShown: false, animation: "slide_from_right", ...normalRoutePresentation(Platform.OS) }}>
         <Stack.Screen name="index" />
         <Stack.Screen name="onboarding/welcome" options={{ animation: "fade" }} />
         <Stack.Screen name="(tabs)" />
-        <Stack.Screen
-          name="auth/login"
-          options={{ presentation: "modal", animation: "slide_from_bottom", gestureEnabled: false }}
-        />
-        <Stack.Screen
-          name="auth/register"
-          options={{ presentation: "modal", animation: "slide_from_bottom", gestureEnabled: false }}
-        />
-        <Stack.Screen
-          name="auth/complete-profile"
-          options={{ presentation: "modal", animation: "slide_from_bottom", gestureEnabled: false }}
-        />
-        <Stack.Screen
-          name="auth/forgot-password"
-          options={{ presentation: "modal", animation: "slide_from_bottom", gestureEnabled: false }}
-        />
-        <Stack.Screen
-          name="auth/otp-verification"
-          options={{ presentation: "modal", animation: "slide_from_right", gestureEnabled: false }}
-        />
-        <Stack.Screen
-          name="auth/reset-password"
-          options={{ presentation: "modal", animation: "slide_from_bottom", gestureEnabled: false }}
-        />
+        {AUTH_MODAL_SCREENS.map(({ name, animation }) => (
+          <Stack.Screen key={name} name={name} options={{ presentation: "modal", animation, gestureEnabled: false }} />
+        ))}
         <Stack.Screen name="onboarding/children" options={{ animation: "slide_from_right", gestureEnabled: false }} />
         <Stack.Screen name="onboarding/medical" options={{ animation: "slide_from_right", gestureEnabled: false }} />
         <Stack.Screen name="onboarding/styles" options={{ animation: "slide_from_right", gestureEnabled: false }} />

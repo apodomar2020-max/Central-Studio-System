@@ -97,12 +97,16 @@ export function BalletStudentPreviewSection({
   students,
   loading,
   eligibleChildCount,
+  canCreateProfile = false,
+  eligibilityReady = true,
   onAddAnotherChild,
   onOpenStudent,
 }: {
   students: BalletStudentPreview[];
   loading: boolean;
   eligibleChildCount: number;
+  canCreateProfile?: boolean;
+  eligibilityReady?: boolean;
   onAddAnotherChild: () => void;
   onOpenStudent?: (student: BalletStudentPreview) => void;
 }) {
@@ -111,9 +115,9 @@ export function BalletStudentPreviewSection({
   const [activeIndex, setActiveIndex] = useState(0);
   const items = useMemo<CarouselItem[]>(() => {
     const list: CarouselItem[] = students.map((student) => ({ kind: "student", key: student.key, student }));
-    if (students.length === 0 || shouldShowAddBalletChildCard(students.length, eligibleChildCount)) list.push({ kind: "addChild", key: "add-child" });
+    if (eligibilityReady && shouldShowAddBalletChildCard(students.length, eligibleChildCount, canCreateProfile)) list.push({ kind: "addChild", key: "add-child" });
     return list;
-  }, [eligibleChildCount, students]);
+  }, [eligibleChildCount, students, canCreateProfile, eligibilityReady]);
 
   if (!loading && items.length === 0) return null;
 

@@ -51,16 +51,13 @@ export function forgotPasswordOutcome(): { action: "continue-to-reset" } {
 }
 
 /**
- * Builds the protected forgot-password request body. Keeping this in one
- * shared helper prevents authenticated recovery (Change Password) and public
- * recovery (Forgot Password) from drifting apart again: the API requires the
- * short-lived Turnstile token for both entry points.
+ * Native recovery uses server-side bounded admission, not a browser token.
+ * Both recovery entry points and reset resend share this email-only contract.
  */
-export function buildForgotPasswordPayload(email: string, botToken: string): {
+export function buildForgotPasswordPayload(email: string): {
   email: string;
-  botToken: string;
 } {
-  return { email: email.trim(), botToken };
+  return { email: email.trim() };
 }
 
 export function buildVerifyResetOtpPayload(email: string, code: string): {

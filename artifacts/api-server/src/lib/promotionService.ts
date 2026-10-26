@@ -1,4 +1,4 @@
-import { and, count, desc, eq, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   db,
   classesTable,
@@ -16,6 +16,11 @@ import {
   type PromotionRulesConfig,
 } from "@workspace/db";
 
+import { allocatePromotionDiscount } from "./promotionAllocation";
+import { egpToMinor, minorToEgp } from "./money";
+
+import { promotionRevision } from "./promotionRevision";
+import { ExposableHttpError } from "./httpError";
 import { DbClient } from "./dbTypes";
 import { resolveSingleClassPriceEgp } from "./singleClassPricing";
 
@@ -313,7 +318,7 @@ export async function validateCheckoutPromotion(
   options: ValidationOptions = {},
 ): Promise<InternalValidationResult> {
   const normalizedCode = normalizePromoCode(promoCode);
-  const automaticRows = await client
+  let automaticRows = await client
     .select()
     .from(promotionsTable)
     .where(eq(promotionsTable.type, "automatic"))
@@ -350,6 +355,25 @@ export async function validateCheckoutPromotion(
       manualPair ? [...automaticRows, manualPair.promotion] : automaticRows,
       manualPair?.code ?? null,
     );
+    // Re-read only the identities we locked. Never discover a replacement code
+    // or acquire a new promotion lock after the code/student lock phase.
+    const discovered = manualPair ? [...automaticRows, manualPair.promotion] : automaticRows;
+    const ids = [...new Set(discovered.map((row) => row.id))];
+    const fresh = ids.length ? await client.select().from(promotionsTable).where(inArray(promotionsTable.id, ids)) : [];
+    const byId = new Map(fresh.map((row) => [row.id, row]));
+    const changed = () => new ExposableHttpError(409, "Promotion details changed during checkout. Please review your discount and try again.");
+    for (const row of discovered) {
+      const current = byId.get(row.id);
+      if (!current || promotionRevision(row, []) !== promotionRevision(current, [])) throw changed();
+    }
+    if (manualPair) {
+      const [code] = await client.select().from(promotionCodesTable).where(eq(promotionCodesTable.id, manualPair.code.id));
+      const promotion = byId.get(manualPair.promotion.id)!;
+      if (!code || code.promotionId !== promotion.id || code.code !== normalizedCode
+        || promotionRevision(promotion, [manualPair.code]) !== promotionRevision(promotion, [code])) throw changed();
+      manualPair = { promotion, code };
+    }
+    automaticRows = automaticRows.map((row) => byId.get(row.id)!);
   }
 
   const candidates: Candidate[] = [];
@@ -391,10 +415,15 @@ export async function createPromotionRedemptions(
   input: { studentId: number; packageOrderId?: number | null; bookingId?: number | null; metadata?: Record<string, unknown> },
 ): Promise<void> {
   if (!evaluation.eligible || evaluation.discountAmount <= 0) return;
+  const allocations = allocatePromotionDiscount(
+    egpToMinor(evaluation.discountAmount),
+    evaluation.candidates.map((candidate) => ({
+      promotionId: candidate.promotion.id,
+      weightMinor: egpToMinor(candidate.discountAmount),
+    })),
+  );
   for (const candidate of evaluation.candidates) {
-    const proportional = evaluation.discountAmount === candidate.discountAmount
-      ? candidate.discountAmount
-      : roundMoney(Math.min(candidate.discountAmount, evaluation.discountAmount));
+    const proportional = minorToEgp(allocations.get(candidate.promotion.id)!);
     if (input.packageOrderId != null || input.bookingId != null) {
       const targetCondition = input.packageOrderId != null
         ? eq(promotionRedemptionsTable.packageOrderId, input.packageOrderId)
@@ -433,8 +462,8 @@ export async function writePromotionAuditLog(input: {
   actorAdminId?: number | null;
   action: string;
   metadata?: Record<string, unknown> | null;
-}): Promise<void> {
-  await db.insert(promotionAuditLogsTable).values({
+}, client: DbClient = db): Promise<void> {
+  await client.insert(promotionAuditLogsTable).values({
     promotionId: input.promotionId ?? null,
     actorAdminId: input.actorAdminId ?? null,
     action: input.action,

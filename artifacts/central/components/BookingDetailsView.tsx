@@ -1,3 +1,5 @@
+import { classTagColors, classTagStyles, levelTagColor, ageTagColor } from "@/constants/classTags";
+import { iosDisplayTextStyle } from "@/utils/iosTypography";
 import * as Haptics from "expo-haptics";
 import { GlassView } from "expo-glass-effect";
 import { LinearGradient } from "expo-linear-gradient";
@@ -29,6 +31,7 @@ import { PriceTagIcon } from "@/components/DiscoveryClassCard";
 import SBI from "@/components/SbIcon";
 import { useCentralAlert } from "@/hooks/useCentralAlert";
 import { isBookingSelfCancellableClientSide } from "@/utils/bookingCancellationEligibility";
+import { isSelfCancellableBookingStatus } from "@/utils/bookingStatus";
 import {
   BookingBellIcon,
   BookingCalendarIcon,
@@ -106,20 +109,6 @@ function normalizedName(value?: string | null) {
   return (value ?? "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
 
-function levelColor(level: string) {
-  if (/beginner/i.test(level)) return "#D800D8";
-  if (/intermediate/i.test(level)) return AMBER;
-  if (/advanced/i.test(level)) return RED;
-  return "#7C3AED";
-}
-
-function ageColor(age: string) {
-  if (/kid/i.test(age)) return "#075CE5";
-  if (/teen/i.test(age)) return "#7C3AED";
-  if (/adult/i.test(age)) return "#FF6B2C";
-  return CYAN;
-}
-
 function PersonAvatar({ image, name, size = 31 }: { image?: string; name: string; size?: number }) {
   return (
     <View style={[styles.avatar, { width: size, height: size, borderRadius: size / 2 }]}>
@@ -173,7 +162,7 @@ export default function BookingDetailsView({ booking, participantImage, onClose,
   const age = cls?.ageRangeLabel || cls?.ageGroup || "All Ages";
   const heroImage = normalizeMediaUrl(cls?.photoUrl, "image") || booking.classPhotoUrl;
   const isCancelled = booking.bookingStatus === "cancelled" || booking.bookingStatus === "rejected";
-  const canCancel = !isCancelled && !booking.sourceUnavailable && isBookingSelfCancellableClientSide({
+  const canCancel = isSelfCancellableBookingStatus(booking.bookingStatus) && !booking.sourceUnavailable && isBookingSelfCancellableClientSide({
     occurrenceDate,
     startTime: booking.scheduleStartTime,
   });
@@ -249,7 +238,7 @@ export default function BookingDetailsView({ booking, participantImage, onClose,
 
         <View style={styles.mainCard}>
           <View style={styles.titleRow}>
-            <Text style={styles.title} numberOfLines={2}>{title}</Text>
+            <Text style={styles.title}>{title}</Text>
             <View style={[styles.paymentPill, { backgroundColor: payment.color }]}>
               <PriceTagIcon />
               <Text style={styles.paymentText}>{payment.label}</Text>
@@ -298,11 +287,12 @@ export default function BookingDetailsView({ booking, participantImage, onClose,
 
           <View style={styles.tags}>
             <View style={[styles.tag, styles.styleTag]}>
+              <View pointerEvents="none" style={classTagStyles.danceOutline} />
               <CategoryIcon iconSvg={danceType?.iconSvg} iconUrl={danceType?.iconUrl} name={classType} color={danceType?.color || CYAN} size={15} />
               <Text style={[styles.tagText, styles.styleTagText]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.68}>{classType}</Text>
             </View>
-            <View style={[styles.tag, { backgroundColor: levelColor(level) }]}><Text style={styles.tagText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.68}>{level}</Text></View>
-            <View style={[styles.tag, { backgroundColor: ageColor(age) }]}><Text style={styles.tagText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.68}>{age}</Text></View>
+            <View style={[styles.tag, { backgroundColor: levelTagColor(level) }]}><Text style={styles.tagText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.68}>{level}</Text></View>
+            <View style={[styles.tag, { backgroundColor: ageTagColor(cls?.ageGroup || "All Ages") }]}><Text style={styles.tagText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.68}>{age}</Text></View>
           </View>
         </View>
       </View>
@@ -328,6 +318,7 @@ export default function BookingDetailsView({ booking, participantImage, onClose,
             style={[styles.cancelButton, !canCancel && styles.cancelDisabled]}
             disabled={!canCancel}
             onPress={() => {
+              if (!canCancel) return;
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
               onCancel?.();
             }}
@@ -348,11 +339,11 @@ const styles = StyleSheet.create({
   back: { position: "absolute", left: 16, zIndex: 10 },
   mainCard: { flexShrink: 0, marginTop: -35, borderTopLeftRadius: 26, borderTopRightRadius: 26, borderBottomLeftRadius: 25, borderBottomRightRadius: 25, backgroundColor: CARD, paddingHorizontal: 19, paddingTop: 26, paddingBottom: 26, zIndex: 3 },
   titleRow: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 12 },
-  title: { flex: 1, color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 34, lineHeight: 38, textTransform: "uppercase" },
+  title: { flex: 1, color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 34, lineHeight: 38, ...iosDisplayTextStyle(34, 38), textTransform: "uppercase" },
   paymentPill: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, minHeight: 30, paddingHorizontal: 13, borderRadius: 999, marginTop: 2 },
   paymentText: { color: "#FFFFFF", fontFamily: "Archivo_700Bold", fontSize: 11.5 },
   description: { marginTop: 4, color: "#D2D7DC", fontFamily: "Archivo_400Regular", fontSize: 14, lineHeight: 20 },
-  schedulePanel: { height: 80, borderRadius: 15, overflow: "hidden", marginTop: 16, backgroundColor: "rgba(255,255,255,0.08)", borderWidth: 1, borderColor: "rgba(255,255,255,0.25)" },
+  schedulePanel: { minHeight: 80, borderRadius: 15, overflow: "hidden", marginTop: 16, backgroundColor: "rgba(255,255,255,0.08)", borderWidth: 1, borderColor: "rgba(255,255,255,0.25)" },
   scheduleContent: { flex: 1, flexDirection: "row", paddingHorizontal: 7, paddingVertical: 9 },
   scheduleCell: { flex: 1, minWidth: 0, alignItems: "center", justifyContent: "center", gap: 2 },
   separator: { width: 1, marginVertical: 3, backgroundColor: "rgba(255,255,255,0.28)" },
@@ -364,12 +355,12 @@ const styles = StyleSheet.create({
   instructor: { width: 122, flexDirection: "row", alignItems: "center", flexShrink: 0 },
   instructorCopy: { flex: 1, minWidth: 0, marginLeft: 7 },
   instructorLabel: { color: "#7F8892", fontFamily: "Archivo_400Regular", fontSize: 10.5, lineHeight: 13 },
-  instructorName: { color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 19, lineHeight: 22 },
+  instructorName: { color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 19, lineHeight: 22, ...iosDisplayTextStyle(19, 22) },
   tags: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 4 },
   tag: { height: 32, minWidth: 0, maxWidth: "32%", paddingHorizontal: 9, borderRadius: 999, alignItems: "center", justifyContent: "center", flexShrink: 1 },
-  styleTag: { maxWidth: "40%", backgroundColor: "#FFFFFF", flexDirection: "row", gap: 4 },
+  styleTag: { maxWidth: "40%", backgroundColor: classTagColors.danceBackground, flexDirection: "row", gap: 4 },
   tagText: { color: "#FFFFFF", fontFamily: "Archivo_700Bold", fontSize: 10.5 },
-  styleTagText: { color: CYAN },
+  styleTagText: { color: classTagColors.danceText },
   actionCard: { flexShrink: 0, borderTopLeftRadius: 46, borderTopRightRadius: 46, backgroundColor: CARD, paddingHorizontal: 19, paddingTop: 30 },
   actionTitle: { color: "#FFFFFF", fontFamily: "Archivo_700Bold", fontSize: 16, lineHeight: 21 },
   actionDescription: { color: "#D2D7DC", fontFamily: "Archivo_400Regular", fontSize: 14, lineHeight: 20, marginTop: 7, marginBottom: 20 },

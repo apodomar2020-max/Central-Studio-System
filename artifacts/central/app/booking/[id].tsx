@@ -8,6 +8,7 @@ import CentralBackButton from "@/components/CentralBackButton";
 import { useAppContext } from "@/contexts/AppContext";
 import { useCentralAlert } from "@/hooks/useCentralAlert";
 import { presentUserFacingError } from "@/utils/userFacingError";
+import { isSelfCancellableBookingStatus } from "@/utils/bookingStatus";
 
 const INK = "#050607";
 const CYAN = "#00B6D7";
@@ -34,7 +35,7 @@ export default function BookingDetailsScreen() {
   }, [booking, bookingId, refreshBookings]);
 
   function confirmCancel() {
-    if (!booking) return;
+    if (!booking || booking.sourceUnavailable || !isSelfCancellableBookingStatus(booking.bookingStatus)) return;
     alert.show({
       tone: "destructive",
       title: "Cancel booking?",
@@ -45,6 +46,7 @@ export default function BookingDetailsScreen() {
           label: "Cancel booking",
           tone: "danger",
           onPress: async () => {
+            if (!isSelfCancellableBookingStatus(booking.bookingStatus) || booking.sourceUnavailable) return;
             try {
               await cancelBooking(booking.id);
               router.back();

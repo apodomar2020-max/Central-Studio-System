@@ -17,16 +17,18 @@ import {
 import Svg, { Defs, Path, RadialGradient, Rect, Stop } from "react-native-svg";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { normalizeMediaUrl, useGetMyPackages } from "@workspace/api-client-react";
+import { getGetMyPackagesQueryKey, normalizeMediaUrl, useGetMyPackages } from "@workspace/api-client-react";
 import type { PackageOrder } from "@workspace/api-client-react";
+import PackageEmptyAnimation from "@/components/PackageEmptyAnimation";
 import AvailablePackagesSection from "@/components/AvailablePackagesSection";
 import CentralBackButton from "@/components/CentralBackButton";
 import { useAppContext } from "@/contexts/AppContext";
 import { useCentralAlert } from "@/hooks/useCentralAlert";
 import { formatApiDate, isApiDatePast } from "@/utils/dateTime";
-import { iosDisplayTextStyle } from "@/utils/iosTypography";
+import { iosCapGuard, iosDisplayTextStyle } from "@/utils/iosTypography";
 import { parsePackageAgeBand } from "@/utils/packageAgeBands";
 import { presentUserFacingError } from "@/utils/userFacingError";
+import { pushOnce } from "@/utils/navigation";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const CYAN = "#00B6D7";
@@ -230,9 +232,11 @@ function StatusCard({
 function NothingYetCard() {
   return (
     <View style={[styles.statusCard, styles.nothingCard]}>
-      <Text style={styles.questionMark}>?</Text>
-      <Text style={styles.nothingTitle}>NOTHING YET</Text>
-      <Text style={styles.nothingSubtitle}>BUY A PACKAGE TO PROCEED</Text>
+      <ScrollView style={{ width: "100%" }} contentContainerStyle={styles.emptyContent} nestedScrollEnabled showsVerticalScrollIndicator={false}>
+        <PackageEmptyAnimation />
+        <Text style={styles.nothingTitle}>BUY PACKAGE</Text>
+        <Text style={styles.nothingSubtitle}>To track your package credits</Text>
+      </ScrollView>
     </View>
   );
 }
@@ -251,7 +255,7 @@ export default function PackageCenterScreen() {
   const [hiddenPackageIds, setHiddenPackageIds] = useState<Set<string>>(new Set());
   const hiddenPackageIdsRef = useRef<Set<string>>(new Set());
   const scrollX = useRef(new Animated.Value(0)).current;
-  const { data, isLoading, isError, refetch } = useGetMyPackages();
+  const { data, isLoading, isError, refetch } = useGetMyPackages({ query: { queryKey: getGetMyPackagesQueryKey(), enabled: Boolean(user) } });
   const hiddenPackagesStorageKey = `package-center:hidden:${user?.id ?? "guest"}`;
   const requestedAgeBand = parsePackageAgeBand(Array.isArray(params.ageBand) ? params.ageBand[0] : params.ageBand);
 
@@ -289,17 +293,18 @@ export default function PackageCenterScreen() {
   );
 
   useFocusEffect(useCallback(() => {
-    refetch();
-  }, [refetch]));
+    if (user) void refetch();
+  }, [refetch, user]));
 
   const refresh = useCallback(async () => {
+    if (!user) return;
     setRefreshing(true);
     try {
       await refetch();
     } finally {
       setRefreshing(false);
     }
-  }, [refetch]);
+  }, [refetch, user]);
 
   const requestCancellation = useCallback((pkg: PackageOrderWithAliases) => {
     const kind = kindOf(pkg);
@@ -390,7 +395,15 @@ export default function PackageCenterScreen() {
         </View>
 
         <View style={styles.carouselWrap}>
-          {isLoading && !refreshing ? (
+          {!user ? (
+            <View style={styles.guestState}>
+              <Text style={styles.guestTitle}>YOUR PACKAGES</Text>
+              <Text style={styles.guestDescription}>Sign in to view your packages. You can browse available packages below.</Text>
+              <TouchableOpacity style={styles.guestSignIn} onPress={() => pushOnce("/auth/login")}>
+                <Text style={styles.guestSignInText}>Sign In</Text>
+              </TouchableOpacity>
+            </View>
+          ) : isLoading && !refreshing ? (
             <View style={styles.singleCardWrap}><StatusSkeleton /></View>
           ) : isError ? (
             <View style={styles.errorWrap}>
@@ -456,6 +469,11 @@ export default function PackageCenterScreen() {
 }
 
 const styles = StyleSheet.create({
+  guestState: { marginHorizontal: 24, padding: 24, borderRadius: 24, backgroundColor: "#002B33", gap: 12, alignItems: "center" },
+  guestTitle: { color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 24 },
+  guestDescription: { color: "#D1D5DB", fontFamily: "Archivo_400Regular", fontSize: 14, lineHeight: 20, textAlign: "center" },
+  guestSignIn: { minHeight: 44, paddingHorizontal: 24, borderRadius: 22, backgroundColor: CYAN, alignItems: "center", justifyContent: "center" },
+  guestSignInText: { color: "#000000", fontFamily: "Archivo_700Bold", fontSize: 14 },
   screen: { flex: 1, backgroundColor: "#000000" },
   headerGlow: { position: "absolute", top: 0, left: 0, right: 0, height: 380 },
   header: { height: 102, alignItems: "center", justifyContent: "flex-start", paddingHorizontal: 34 },
@@ -482,13 +500,13 @@ const styles = StyleSheet.create({
   ownerCopy: { flex: 1, justifyContent: "center" },
   ownerLabel: { color: "#FFFFFF", fontFamily: "Archivo_400Regular", fontSize: 12, lineHeight: 14 },
   ownerName: {
-    color: CYAN, fontFamily: "Anton_400Regular", fontSize: 22, lineHeight: 24, textTransform: "uppercase",
+    color: CYAN, fontFamily: "Anton_400Regular", fontSize: 22, lineHeight: 24, ...iosDisplayTextStyle(22, 24), ...(Platform.OS === "ios" ? { marginBottom: -iosCapGuard(22, 24) } : {}), textTransform: "uppercase",
   },
   packageRow: { flexDirection: "row", alignItems: "center", marginTop: 15, minHeight: 60 },
   packageCopy: { flex: 1, paddingRight: 8 },
   packageLabel: { color: "#FFFFFF", fontFamily: "Archivo_400Regular", fontSize: 11, lineHeight: 13 },
   packageName: {
-    color: CYAN, fontFamily: "Anton_400Regular", fontSize: 19, lineHeight: 20, textTransform: "uppercase",
+    color: CYAN, fontFamily: "Anton_400Regular", fontSize: 19, lineHeight: 20, ...iosDisplayTextStyle(19, 20), ...(Platform.OS === "ios" ? { marginBottom: -iosCapGuard(19, 20) } : {}), textTransform: "uppercase",
   },
   packageMeta: { color: "#FFFFFF", fontFamily: "Archivo_500Medium", fontSize: 12, lineHeight: 14, marginTop: 2 },
   statusWrap: { flexDirection: "row", alignItems: "center", gap: 4, flexShrink: 0 },
@@ -496,40 +514,40 @@ const styles = StyleSheet.create({
     width: 12, height: 12, borderRadius: 6, borderWidth: 1.5, alignItems: "center", justifyContent: "center",
   },
   statusDotCore: { width: 5, height: 5, borderRadius: 3 },
-  statusText: { fontFamily: "Anton_400Regular", fontSize: 16, lineHeight: 18 },
+  statusText: { fontFamily: "Anton_400Regular", fontSize: 16, lineHeight: 18, ...iosDisplayTextStyle(16, 18), ...(Platform.OS === "ios" ? { marginBottom: -iosCapGuard(16, 18) } : {}) },
   creditHero: { height: 92, marginTop: 4, alignItems: "center", justifyContent: "center" },
   creditNumber: {
-    fontFamily: "Anton_400Regular", fontSize: 86, lineHeight: 82, ...iosDisplayTextStyle(86, 82),
+    fontFamily: "Anton_400Regular", fontSize: 86, lineHeight: 82,
+    // A single numeral gets the helper's full safe line box, not a tight clipped
+    // line plus inset. Reclaim that accommodation and tighten only its label gap.
+    ...(Platform.OS === "ios" ? { lineHeight: 82 + iosCapGuard(86, 82), paddingTop: 0, marginBottom: -iosCapGuard(86, 82) - 8 } : {}),
   },
   waitingText: {
-    fontFamily: "Anton_400Regular", fontSize: 34, lineHeight: 38, textAlign: "center", marginTop: 10,
+    fontFamily: "Anton_400Regular", fontSize: 34, lineHeight: 38, ...iosDisplayTextStyle(34, 38), textAlign: "center", marginTop: 10,
   },
   creditLabel: { color: "#FFFFFF", fontFamily: "Archivo_500Medium", fontSize: 12, marginTop: 2 },
   progressTrack: { height: 19, marginTop: 8, borderRadius: 11, backgroundColor: "#E0E3E6", overflow: "hidden" },
   progressFill: { height: "100%", borderRadius: 11 },
   progressMeta: { flexDirection: "row", justifyContent: "space-between", marginTop: 6 },
   progressText: { color: "#FFFFFF", fontFamily: "Archivo_500Medium", fontSize: 11 },
-  cardFooter: { flexDirection: "row", gap: 8, height: 54, marginTop: 12 },
+  cardFooter: { flexDirection: "row", gap: 8, height: Platform.OS === "ios" ? 60 : 54, marginTop: 12, ...(Platform.OS === "ios" ? { alignItems: "center" as const } : {}) },
   expirationBox: {
-    flex: 1, height: 54, borderRadius: 7, backgroundColor: "#3A3A3A", flexDirection: "row",
+    flex: 1, height: Platform.OS === "ios" ? 60 : 54, ...(Platform.OS === "ios" ? { paddingVertical: 4 } : {}), borderRadius: 7, backgroundColor: "#3A3A3A", flexDirection: "row",
     alignItems: "center", paddingHorizontal: 11,
   },
   expirationCopy: { marginLeft: 8, flex: 1 },
-  expirationNote: { color: "#FFFFFF", fontFamily: "Archivo_800ExtraBold", fontSize: 11, lineHeight: 12 },
-  expirationHelper: { color: "#FFFFFF", fontFamily: "Archivo_400Regular", fontSize: 8, lineHeight: 9 },
-  expirationDate: { color: RED, fontFamily: "Anton_400Regular", fontSize: 24, lineHeight: 25 },
+  expirationNote: { color: "#FFFFFF", fontFamily: "Archivo_800ExtraBold", fontSize: 11, lineHeight: 12, ...(Platform.OS === "ios" ? { marginBottom: 2 } : {}) },
+  expirationHelper: { color: "#FFFFFF", fontFamily: "Archivo_400Regular", fontSize: 8, lineHeight: 9, ...(Platform.OS === "ios" ? { marginBottom: 3 } : {}) },
+  expirationDate: { color: RED, fontFamily: "Anton_400Regular", fontSize: 24, lineHeight: 25, ...iosDisplayTextStyle(24, 25), ...(Platform.OS === "ios" ? { marginBottom: -iosCapGuard(24, 25) } : {}) },
   trashButton: {
     width: 54, height: 54, borderRadius: 7, backgroundColor: "#E6ECEE", alignItems: "center", justifyContent: "center",
   },
   trashButtonExpired: { backgroundColor: "#46585A", borderWidth: 1, borderColor: RED },
   trashButtonDisabled: { backgroundColor: "#D8DEDF", opacity: 0.52 },
   nothingCard: { alignItems: "center", justifyContent: "center", paddingTop: 0 },
-  questionMark: {
-    color: YELLOW, fontFamily: "Anton_400Regular", fontSize: 142, lineHeight: 140,
-    ...iosDisplayTextStyle(142, 140),
-  },
-  nothingTitle: { color: YELLOW, fontFamily: "Anton_400Regular", fontSize: 39, lineHeight: 42 },
-  nothingSubtitle: { color: "#FFFFFF", fontFamily: "Archivo_400Regular", fontSize: 11, marginTop: -3 },
+  emptyContent: { flexGrow: 1, alignItems: "center", justifyContent: "center", paddingVertical: 18 },
+  nothingTitle: { color: YELLOW, fontFamily: "Anton_400Regular", fontSize: 39, lineHeight: 42, ...iosDisplayTextStyle(39, 42), textAlign: "center" },
+  nothingSubtitle: { color: "#FFFFFF", fontFamily: "Archivo_400Regular", fontSize: 11, marginTop: 6, textAlign: "center" },
   skeleton: { opacity: 0.45 },
   errorWrap: {
     height: CARD_HEIGHT, alignItems: "center", justifyContent: "center", marginHorizontal: 34,

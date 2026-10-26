@@ -119,7 +119,7 @@ test("notification-history UI does not depend on native push APIs", () => {
 
 test("notification tap-to-navigate wiring is intact in _layout.tsx", () => {
   const src = read(LAYOUT);
-  assert.match(src, /resolveNotificationRoute\(response\.notification\.request\.content\.data\)/);
+  assert.match(src, /dispatch\(\{ type: "receive", key: notificationResponseKey\(response\), data: response\.notification\.request\.content\.data \}\)/);
   assert.match(src, /addNotificationResponseReceivedListener/);
   assert.match(src, /getLastNotificationResponse\(\)/);
   assert.match(src, /<NotificationRoutingGate \/>/);

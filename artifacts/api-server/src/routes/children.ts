@@ -34,6 +34,7 @@ import {
 import { insertChildSchema, updateChildSchema } from "@workspace/db";
 import { requireStudentAuth, requireVerifiedStudent } from "../middlewares/studentAuth";
 import { logger } from "../lib/logger";
+import { AccountCapacityError, assertChildProfileCapacity, lockAccountCapacity } from "../lib/accountCapacity";
 
 /**
  * Profile Completion Engine (Phase 4) — best-effort resume hint only; never
@@ -120,13 +121,25 @@ router.post("/children", async (req, res): Promise<void> => {
     return;
   }
 
-  const [row] = await db
-    .insert(childrenTable)
-    .values({
-      ...parsed.data,
-      parentId: studentId, // always injected server-side, never trusted from client
-    })
-    .returning();
+  let row: typeof childrenTable.$inferSelect | undefined;
+  try {
+    row = await db.transaction(async (tx) => {
+      await lockAccountCapacity(tx, studentId);
+      await assertChildProfileCapacity(tx, studentId);
+      const [created] = await tx.insert(childrenTable)
+        .values({ ...parsed.data, parentId: studentId }).returning();
+      await tx.update(studentsTable)
+        .set({ lastCompletionStep: "children", updatedAt: new Date().toISOString() })
+        .where(eq(studentsTable.id, studentId));
+      return created;
+    }, { isolationLevel: "read committed" });
+  } catch (error) {
+    if (error instanceof AccountCapacityError) {
+      res.status(422).json(error.toResponse());
+      return;
+    }
+    throw error;
+  }
 
   if (!row) {
     res.status(500).json({ error: "Failed to create child" });
@@ -134,8 +147,6 @@ router.post("/children", async (req, res): Promise<void> => {
   }
 
   logger.info({ childId: row.id, parentId: studentId }, "Child created");
-  await stampLastCompletionStep(studentId, "children");
-
   const { qrToken: _qt, ...safe } = row;
   res.status(201).json({ child: safe });
 });

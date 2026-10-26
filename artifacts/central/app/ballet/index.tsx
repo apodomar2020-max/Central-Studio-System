@@ -1,9 +1,10 @@
+import { canCreateChildProfile, canStartBalletApplication } from "@/services/accountCapacity";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useFocusEffect } from "expo-router";
 import { pushOnce } from "@/utils/navigation";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Image, ImageBackground, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from "react-native";
+import { AppState, Image, ImageBackground, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Path } from "react-native-svg";
 
@@ -13,6 +14,7 @@ import { selectAuthoritativeBalletApplications, selectCurrentBalletStudents, sel
 import { useAppContext } from "@/contexts/AppContext";
 import { ACTIVE_APPLICATION_STATUSES, fetchBalletApplicationDetail, fetchBalletGroups, fetchBalletLevels, fetchBalletPackages, fetchBalletSettings, fetchMyApplications, type BalletApplicationDetail } from "@/services/balletAssessmentService";
 import { showAuthRequiredPrompt, showParentAccountRequiredPrompt } from "@/utils/authRequired";
+import { iosCapGuard, iosDisplayTextStyle } from "@/utils/iosTypography";
 
 const CYAN = "#03B6D7";
 const BALLET_LOGO = require("@/assets/images/central-ballet-logo.png");
@@ -36,12 +38,13 @@ function MenuTile({ kind, title, route, width, height }: MenuTileProps) {
   const [firstLine, secondLine] = title.split("\n");
   const isCentered = kind === "levels" || kind === "instructors" || kind === "faq";
   const isBottom = kind === "levels" || kind === "faq" || kind === "requirements";
+  const compactTitleStyle = kind === "instructors" ? styles.menuTitleNarrowCompact : styles.menuTitleCompact;
   return <TouchableOpacity onPress={() => { void Haptics.selectionAsync(); pushOnce(route as never); }} style={[styles.menuTile, { width, height }]} activeOpacity={0.85}>
     <View pointerEvents="none" style={styles.menuClip}>
       <Image source={MENU_ART[kind]} style={styles.menuBackground} resizeMode="stretch" />
       <View style={[styles.menuTitleBlock, isCentered && styles.menuTitleCentered, isBottom && styles.menuTitleBottom, kind === "instructors" && styles.menuTitleInstructors, kind === "requirements" && styles.menuTitleRequirements]}>
-        <Text numberOfLines={1} style={[styles.menuTitleLine, styles.menuTitleCyan, kind === "instructors" && styles.menuTitleNarrowLine]}>{firstLine}</Text>
-        <Text numberOfLines={1} style={[styles.menuTitleLine, styles.menuTitleWhite, kind === "instructors" && styles.menuTitleNarrowLine]}>{secondLine}</Text>
+        <Text numberOfLines={1} style={[styles.menuTitleLine, styles.menuTitleCyan, kind === "instructors" && styles.menuTitleNarrowLine, compactTitleStyle]}>{firstLine}</Text>
+        <Text numberOfLines={1} style={[styles.menuTitleLine, styles.menuTitleWhite, kind === "instructors" && styles.menuTitleNarrowLine, compactTitleStyle]}>{secondLine}</Text>
       </View>
       {(kind === "classes" || kind === "performance") ? <View style={styles.menuArrowBox}><MenuArrow /></View> : null}
       {kind === "requirements" ? <View style={styles.requirementsArrowBox}><MenuArrow down /></View> : null}
@@ -54,7 +57,10 @@ export default function BalletProgramScreen() {
   const { width: viewportWidth } = useWindowDimensions();
   const topPad = Platform.OS === "web" ? 20 : insets.top;
   const heroHeight = topPad + 202;
-  const { user, children } = useAppContext();
+  const { user, children, childrenReady, refreshChildren } = useAppContext();
+  const [applicationOwner, setApplicationOwner] = useState<string | null>(null);
+  const [refreshRevision, setRefreshRevision] = useState(0);
+  const canCreateProfile = canCreateChildProfile(children.length, childrenReady);
   const [hasActiveApplication, setHasActiveApplication] = useState<boolean | null>(null);
   const [balletStudents, setBalletStudents] = useState<BalletStudentPreview[]>([]);
   const [eligibleBalletChildIds, setEligibleBalletChildIds] = useState<number[]>([]);
@@ -63,6 +69,15 @@ export default function BalletProgramScreen() {
   const [heroImageFailed, setHeroImageFailed] = useState(false);
 
   useFocusEffect(useCallback(() => {
+    if (user?.accountType === "parent") void refreshChildren();
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") { void refreshChildren(); setRefreshRevision((value) => value + 1); }
+    });
+    return () => subscription.remove();
+  }, [user?.id, refreshChildren]));
+
+  useFocusEffect(useCallback(() => {
+    setApplicationOwner(null);
     if (!user) { setHasActiveApplication(false); setBalletStudents([]); setEligibleBalletChildIds([]); setBalletStudentsLoading(false); return undefined; }
     const controller = new AbortController();
     setBalletStudentsLoading(user.accountType === "parent");
@@ -71,7 +86,7 @@ export default function BalletProgramScreen() {
       setHasActiveApplication(applications.some((application) => ACTIVE_APPLICATION_STATUSES.has(application.status)));
       setEligibleBalletChildIds(selectEligibleBalletChildren({ children, applications, blockingStatuses: ACTIVE_APPLICATION_STATUSES }).map((child) => Number(child.id)).filter((id) => Number.isInteger(id) && id > 0));
       const currentApplications = selectAuthoritativeBalletApplications(applications);
-      if (user.accountType !== "parent" || currentApplications.length === 0) { setBalletStudents([]); return; }
+      if (user.accountType !== "parent" || currentApplications.length === 0) { setBalletStudents([]); setApplicationOwner(user.id); return; }
       const [detailResults, levels, groups, packages] = await Promise.all([
         Promise.allSettled(currentApplications.map((application) => fetchBalletApplicationDetail(application.id, controller.signal))),
         fetchBalletLevels(controller.signal).catch(() => []),
@@ -81,10 +96,11 @@ export default function BalletProgramScreen() {
       if (controller.signal.aborted) return;
       const detailsByApplicationId = new Map<number, BalletApplicationDetail | null>();
       detailResults.forEach((result, index) => detailsByApplicationId.set(currentApplications[index]!.id, result.status === "fulfilled" ? result.value : null));
+      setApplicationOwner(user.id);
       setBalletStudents(selectCurrentBalletStudents({ applications: currentApplications, detailsByApplicationId, levelNameById: new Map(levels.map((level) => [level.id, level.name])), groupNameById: new Map(groups.map((group) => [group.id, group.name])), packageNameById: new Map(packages.map((pkg) => [pkg.id, pkg.name])) }));
     }).catch(() => { if (!controller.signal.aborted) { setHasActiveApplication(null); setBalletStudents([]); setEligibleBalletChildIds([]); } }).finally(() => { if (!controller.signal.aborted) setBalletStudentsLoading(false); });
     return () => controller.abort();
-  }, [children, user]));
+  }, [children, user, refreshRevision]));
 
   useEffect(() => {
     const controller = new AbortController();
@@ -109,7 +125,11 @@ export default function BalletProgramScreen() {
     pushOnce((hasActiveApplication ? "/ballet/application-status" : "/ballet/assessment") as never);
   }
 
+  const eligibilityReady = applicationOwner === user?.id && childrenReady && !balletStudentsLoading;
+  const canApply = canStartBalletApplication(balletStudents.length, eligibleBalletChildIds.length, canCreateProfile, eligibilityReady);
+
   function handleAddAnotherChild() {
+    if (!canApply) return;
     pushOnce(eligibleBalletChildIds.length
       ? { pathname: "/ballet/assessment" as never, params: { eligibleChildIds: eligibleBalletChildIds.join(",") } }
       : "/ballet/assessment" as never);
@@ -136,7 +156,7 @@ export default function BalletProgramScreen() {
     </View>
 
     <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-      {user?.accountType === "parent" ? <BalletStudentPreviewSection students={balletStudents} loading={balletStudentsLoading} eligibleChildCount={eligibleBalletChildIds.length} onAddAnotherChild={handleAddAnotherChild} onOpenStudent={handleOpenStudent} /> : <TouchableOpacity style={styles.applyButton} onPress={handleApply}><Text style={styles.applyText}>Apply Now</Text></TouchableOpacity>}
+      {user?.accountType === "parent" ? <BalletStudentPreviewSection students={applicationOwner === user.id ? balletStudents : []} loading={balletStudentsLoading} eligibleChildCount={eligibleBalletChildIds.length} canCreateProfile={canCreateProfile} eligibilityReady={eligibilityReady} onAddAnotherChild={handleAddAnotherChild} onOpenStudent={handleOpenStudent} /> : <TouchableOpacity style={styles.applyButton} onPress={handleApply}><Text style={styles.applyText}>Apply Now</Text></TouchableOpacity>}
       <View style={styles.menuSection}>
         <Text style={styles.menuHeading}>Ballet Menu</Text>
         <View style={[styles.menuRow, { height: primaryRowHeight }]}><MenuTile kind="classes" title={"Ballet\nClasses"} route="/ballet/classes" width={primaryWideWidth} height={primaryRowHeight} /><MenuTile kind="levels" title={"Ballet\nLevels"} route="/ballet/levels" width={primaryNarrowWidth} height={primaryRowHeight} /></View>
@@ -158,7 +178,7 @@ const styles = StyleSheet.create({
   balletLogoFrame: { width: 120, height: 78, overflow: "hidden" },
   balletLogo: { position: "absolute", width: 140, height: 140, left: -10, top: -32 },
   balletLockupDivider: { width: 1, height: 68, marginHorizontal: 10, backgroundColor: "rgba(255,255,255,0.82)" },
-  balletProgramTitle: { color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 36, lineHeight: 35, textTransform: "uppercase", includeFontPadding: false },
+  balletProgramTitle: { color: "#FFFFFF", fontFamily: "Anton_400Regular", fontSize: 36, lineHeight: 35, ...iosDisplayTextStyle(36, 35), ...(Platform.OS === "ios" ? { marginBottom: -iosCapGuard(36, 35) } : {}), textTransform: "uppercase", includeFontPadding: false },
   description: { color: "#D6D6D6", fontFamily: "Archivo_400Regular", fontSize: 12.5, lineHeight: 17, maxWidth: 355 },
   scroll: { flex: 1, backgroundColor: "#000000" },
   scrollContent: { paddingTop: 0 },
@@ -175,8 +195,10 @@ const styles = StyleSheet.create({
   menuTitleBottom: { top: undefined, bottom: 17 },
   menuTitleInstructors: { top: 26, bottom: undefined },
   menuTitleRequirements: { left: 15, right: undefined, alignItems: "flex-start" },
-  menuTitleLine: { fontFamily: "Anton_400Regular", fontSize: 25, lineHeight: 25, textTransform: "uppercase", includeFontPadding: false },
-  menuTitleNarrowLine: { fontSize: 20, lineHeight: 21 },
+  menuTitleLine: { fontFamily: "Anton_400Regular", fontSize: 25, ...(Platform.OS === "ios" ? {} : { lineHeight: 25 }), textTransform: "uppercase", includeFontPadding: false },
+  menuTitleNarrowLine: { fontSize: 20, ...(Platform.OS === "ios" ? {} : { lineHeight: 21 }) },
+  menuTitleCompact: Platform.OS === "ios" ? { ...iosDisplayTextStyle(25, 25), marginBottom: -iosCapGuard(25, 25) } : {},
+  menuTitleNarrowCompact: Platform.OS === "ios" ? { ...iosDisplayTextStyle(20, 21), marginBottom: -iosCapGuard(20, 21) } : {},
   menuTitleCyan: { color: "#006578" },
   menuTitleWhite: { color: "#FFFFFF" },
   menuArrowBox: { position: "absolute", left: 15, bottom: 15, width: 44, height: 31, overflow: "hidden" },

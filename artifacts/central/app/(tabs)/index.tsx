@@ -997,6 +997,7 @@ export default function StudioHomeScreen() {
                   : danceTypeIcons.byName.get(normalizeStyleName(cls.categoryName));
                 return (
                   <DiscoveryClassCard
+                    presentation="bookingReference"
                     key={`${cls.id}-${cls.date}`}
                     item={cls}
                     instructor={instructorMap.get(cls.instructorId)}
