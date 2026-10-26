@@ -196,7 +196,6 @@ interface AppContextType {
     name: string;
     sessions: number | null;
     validityMonths: number;
-    promoCode?: string | null;
     participant: PackageParticipantSelection;
     paymentMode?: "pay_at_studio" | "online_payment";
   }) => Promise<void>;
@@ -867,7 +866,6 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
       name: string;
       sessions: number | null;
       validityMonths: number;
-      promoCode?: string | null;
       participant: PackageParticipantSelection;
       paymentMode?: "pay_at_studio" | "online_payment";
     }): Promise<void> => {
@@ -877,7 +875,6 @@ export function AppContextProvider({ children: childrenNodes }: { children: Reac
         method: "POST",
         body: JSON.stringify({
           packageId: pkg.id,
-          promoCode: pkg.promoCode ?? null,
           participantType: pkg.participant.participantType,
           ...(pkg.participant.participantType === "child"
             ? { participantChildId: pkg.participant.participantChildId }

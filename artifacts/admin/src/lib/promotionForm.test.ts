@@ -3,11 +3,11 @@ import { test } from "node:test";
 import { promotionSummary, validatePromotionForm, type PromotionFormState } from "./promotionForm";
 const base: PromotionFormState = {name:"Welcome",description:"",type:"automatic",discountType:"percentage",discountValue:"10",priority:"0",isExclusive:false,isStackable:false,isActive:true,startDate:"",endDate:"",code:"",maxUses:"",usesPerUser:"",rulesConfig:"{}"};
 test("simple automatic form has no restrictions or validation errors",()=>{
- assert.deepEqual(validatePromotionForm(base),{});const text=promotionSummary(base).join(" ");assert.match(text,/For everyone/);assert.match(text,/direct-class purchases/);assert.match(text,/Starts immediately; no end date/);
+ assert.deepEqual(validatePromotionForm(base),{});const text=promotionSummary(base).join(" ");assert.match(text,/For everyone/);assert.match(text,/Direct Single Class purchases/);assert.match(text,/Starts immediately; no end date/);
 });
-test("summary explains combined eligibility and actual order semantics",()=>{
- const text=promotionSummary({...base,rulesConfig:JSON.stringify({verifiedStudentOnly:true,firstPackagePurchaseOnly:true,packageIds:[7],branches:["Main"],maxGlobalUses:5,maxUsesPerUser:1})},new Map([[7,"Studio Package"]])).join(" ");
- for(const part of [/verified student/,/including unpaid orders/,/Studio Package/,/Direct-class purchases do not qualify/,/without a branch do not qualify/,/5 total/,/1 redemptions per customer/])assert.match(text,part);
+test("summary explains class-only eligibility and matching branch restrictions",()=>{
+ const text=promotionSummary({...base,rulesConfig:JSON.stringify({verifiedStudentOnly:true,branches:["Main"],maxGlobalUses:5,maxUsesPerUser:1})}).join(" ");
+ for(const part of [/verified student/,/Direct Single Class purchases only/,/Packages and package-credit bookings are excluded/,/without a matching branch do not qualify/,/5 total/,/1 redemptions per customer/])assert.match(text,part);
 });
 test("summary distinguishes code limits, stacking, priority and non-enforced exclusive flag",()=>{
  const text=promotionSummary({...base,type:"manual",code:"WELCOME",discountType:"fixed_amount",discountValue:"25.5",maxUses:"3",usesPerUser:"1",isExclusive:true,isStackable:true,priority:"2",rulesConfig:'{"maxGlobalUses":4}'}).join(" ");
@@ -27,7 +27,7 @@ test("advanced validation retains exact legacy types and rejects invalid limits"
  assert.ok(validatePromotionForm({...base,priority:"1.5"}).priority);
 });
 test("unknown and malformed conditions cannot be summarized as unrestricted",()=>{
- for(const rulesConfig of ['{"legacy":true}',"null","[]","{broken"]){assert.ok(Object.keys(validatePromotionForm({...base,rulesConfig})).length);assert.match(promotionSummary({...base,rulesConfig}).join(" "),/need review/);}
+ for(const rulesConfig of ['{"packageIds":[7]}','{"firstPackagePurchaseOnly":true}','{"legacy":true}',"null","[]","{broken"]){assert.ok(Object.keys(validatePromotionForm({...base,rulesConfig})).length);assert.match(promotionSummary({...base,rulesConfig}).join(" "),/need review/);}
 });
 test("summary preserves inactive and scheduled meaning without assuming eligibility",()=>{
  assert.match(promotionSummary({...base,isActive:false}).join(" "),/Inactive — not available/);

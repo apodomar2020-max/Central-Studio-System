@@ -11,10 +11,10 @@ export function validatePromotionConditions(raw: string): Record<string, unknown
   for (const [key, value] of Object.entries(rules)) {
     let valid = false;
     switch (key) {
-      case "verifiedStudentOnly": case "firstPackagePurchaseOnly": valid = typeof value === "boolean"; break;
+      case "verifiedStudentOnly": valid = typeof value === "boolean"; break;
       case "minimumBasketAmount": valid = typeof value === "number" && Number.isFinite(value) && value >= 0 && Number.isSafeInteger(Math.round(value * 100)); break;
       case "maxGlobalUses": case "maxUsesPerUser": valid = integer(value); break;
-      case "packageIds": valid = Array.isArray(value) && value.every(integer); break;
+      case "packageIds": case "firstPackagePurchaseOnly": throw Error("Saved package-specific conditions are preserved and incompatible with Direct Single Class promotions. Deactivate this promotion and create a new one.");
       case "branches": valid = Array.isArray(value) && value.every(v => typeof v === "string" && v.trim().length > 0 && !v.includes("\0")); break;
       default: throw Error(`The saved condition “${key}” is unsupported. Review this legacy configuration before saving; it has not been removed.`);
     }

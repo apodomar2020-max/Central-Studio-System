@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Edit, Trash2 } from "lucide-react";
 import { PromotionForm } from "@/components/promotion-form";
 import { validatePromotionForm, type PromotionFormState as FormState } from "@/lib/promotionForm";
-import { readPromotionConditions, validatePromotionConditions } from "@/lib/promotionConditions";
+import { validatePromotionConditions } from "@/lib/promotionConditions";
 
 type PromotionCode = {
   id: number;
@@ -109,7 +109,6 @@ export default function PromotionsPage() {
   const [form, setForm] = useState<FormState>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [validationAttempted, setValidationAttempted] = useState(false);
-  const [specificPackages, setSpecificPackages] = useState(false);
   const formErrors = validationAttempted ? validatePromotionForm(form) : {};
   const [pending, setPending] = useState<PendingPromotionOperation | null>(null);
   const pendingRef = useRef<PendingPromotionOperation | null>(null);
@@ -121,7 +120,7 @@ export default function PromotionsPage() {
     pendingRef.current = operation;
     setPending(operation);
     if (operation) {
-      if (operation.form) { const recovered = operation.form as FormState; setForm(recovered); try { const ids = readPromotionConditions(recovered.rulesConfig).packageIds; setSpecificPackages(Array.isArray(ids) && ids.length > 0); } catch { setSpecificPackages(false); } setEditing(operation.editing as Promotion | null); setOpen(true); }
+      if (operation.form) { const recovered = operation.form as FormState; setForm(recovered); setEditing(operation.editing as Promotion | null); setOpen(true); }
       setError("A previous promotion operation needs reconciliation. Check its status before saving again.");
     }
   }, [user?.id,token]);
@@ -217,7 +216,7 @@ export default function PromotionsPage() {
     setError(null);
     setEditing(null);
     setValidationAttempted(false);
-    setSpecificPackages(false);
+
     setForm(emptyForm);
     setOpen(true);
   }
@@ -227,7 +226,6 @@ export default function PromotionsPage() {
     setError(null);
     setEditing(row);
     setValidationAttempted(false);
-    setSpecificPackages(Array.isArray(row.rulesConfig?.packageIds) && row.rulesConfig.packageIds.length > 0);
     setForm(promotionToForm(row));
     setOpen(true);
   }
@@ -241,7 +239,6 @@ export default function PromotionsPage() {
     let rulesConfig: Record<string, unknown>;
     try {
       rulesConfig = validatePromotionConditions(form.rulesConfig);
-      if (specificPackages && !(Array.isArray(rulesConfig.packageIds) && rulesConfig.packageIds.length)) { setError("Select at least one package, or choose All eligible purchases."); return; }
     } catch (error) {
       setError(error instanceof Error ? error.message : "Review the eligibility conditions.");
       return;
@@ -371,7 +368,7 @@ export default function PromotionsPage() {
           </DialogHeader>
           {errorNotice}
           <fieldset disabled={Boolean(pending) || saving} className="contents">
-          <PromotionForm form={form} update={update} generateCode={generateCode} errors={formErrors} specificPackages={specificPackages} setSpecificPackages={setSpecificPackages} />
+          <PromotionForm form={form} update={update} generateCode={generateCode} errors={formErrors} />
           </fieldset>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>

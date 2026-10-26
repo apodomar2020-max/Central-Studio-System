@@ -56,7 +56,7 @@ async function makeStudent(label: string): Promise<{ id: number; email: string }
   studentCounter += 1;
   const email = `booking-security-${Date.now()}-${studentCounter}-${label}@example.com`;
   const result = await pool.query(
-    `INSERT INTO students (name, email, phone, account_type, date_of_birth, email_verified) VALUES ($1, $2, '0100000000', 'student', '1990-01-01', true) RETURNING id`,
+    `INSERT INTO students (name, email, phone, account_type, date_of_birth, email_verified) VALUES ($1, $2, NULL, 'student', '1990-01-01', true) RETURNING id`,
     [`Booking Security Test ${label}`, email],
   );
   return { id: result.rows[0].id as number, email };
@@ -205,6 +205,7 @@ test("normal package_credit booking: pending/not_required, correct credit deduct
     [student.email, student.id, pkg.rows[0].id],
   );
   const packageOrderId = order.rows[0].id as number;
+  await pool.query("update package_orders set allowed_dance_type_ids_snapshot=ARRAY[]::integer[], dance_type_restriction_state_snapshot='unrestricted' where id=$1",[packageOrderId]);
   await pool.query(
     `INSERT INTO credit_transactions (package_order_id, student_id, participant_type, type, delta, balance_before, balance_after, created_by)
      VALUES ($1, $2, 'self', 'package_activated', 8, 0, 8, 'test')`,

@@ -352,7 +352,7 @@ async function evaluate(
   return validate(
     {
       student: { id: studentId, emailVerified: true },
-      package: { id: packageId, name: "Test", priceEgp: 100, isActive: true },
+      booking: { classId: 1, scheduleId: 1 },
       subtotal: 100,
       ...extra,
     },
@@ -566,7 +566,7 @@ test("legacy package references: deleted target denies unmatched context; inacti
     assert.equal(
       (await request("PATCH", `/promotions/${id}`, { description: "blocked" }))
         .status,
-      400,
+      409,
     );
     const inactive = (
       await pool.query(
@@ -593,10 +593,11 @@ for (const [label, fields, expected] of [
     isolate(async () => {
       const p = await create({ isActive: true, ...fields });
       assert.equal((await evaluate(p.id, p.codes[0].code)).eligible, expected);
+      const fixture = await checkoutFixture("class");
       const check = await request<{ eligible: boolean }>(
         "POST",
         "/promotions/validate",
-        { packageId, promoCode: p.codes[0].code },
+        { scheduleId: fixture.body.scheduleId, promoCode: p.codes[0].code },
         null,
         studentToken,
       );
@@ -630,48 +631,22 @@ for (const [label, rules, context, expected] of [
         ).rows[0].id;
         effectiveRules = { packageIds: [other] };
       }
-      const p = await create({ isActive: true, rulesConfig: effectiveRules });
+      const p = await create({ isActive: true });
+      await pool.query("update promotions set rules_config=$2 where id=$1",[p.id,effectiveRules]);
       assert.equal(
         (await evaluate(p.id, p.codes[0].code, { ...context })).eligible,
         expected,
       );
     }));
 }
-test("first-package semantics include unpaid orders, exclude cancelled, and bind to account owner", async () =>
-  isolate(async () => {
-    const p = await create({
-        isActive: true,
-        rulesConfig: { firstPackagePurchaseOnly: true },
-      }),
-      code = p.codes[0].code;
-    const sid = (
-      await pool.query(
-        "insert into students(name,email,email_verified) values('First',$1,true) returning id",
-        [unique() + "@example.invalid"],
-      )
-    ).rows[0].id;
-    const context = { student: { id: sid, emailVerified: true } };
-    assert.equal((await evaluate(p.id, code, context)).eligible, true);
-    const order = (
-      await pool.query(
-        "insert into package_orders(student_name,student_email,student_id,package_name,status,total_credits,remaining_credits) values('Test','synthetic@example.invalid',$1,'Test','pending',1,1) returning id",
-        [sid],
-      )
-    ).rows[0].id;
-    try {
-      assert.equal((await evaluate(p.id, code, context)).eligible, false);
-      await pool.query(
-        "update package_orders set status='cancelled' where id=$1",
-        [order],
-      );
-      assert.equal((await evaluate(p.id, code, context)).eligible, true);
-    } finally {
-      await pool.query(
-        "update package_orders set status='cancelled' where id=$1",
-        [order],
-      );
-    }
-  }));
+test("historical first-package rules are preserved, reject both purchase contexts, and allow audited deactivation", async()=>isolate(async()=>{
+ const id=await legacy("manual",[unique()],{rulesConfig:{firstPackagePurchaseOnly:true}});const code=(await codes(id))[0];
+ assert.equal((await evaluate(id,code.code)).eligible,false);
+ assert.equal((await evaluate(id,code.code,{package:{id:packageId,name:"Test",priceEgp:100,isActive:true}})).eligible,false);
+ assert.equal((await request("PATCH",`/promotions/${id}`,{rulesConfig:{}})).status,409);
+ assert.equal((await request("DELETE",`/promotions/${id}`)).status,204);
+ assert.deepEqual((await snapshot(id)).promotion[0].rules_config,{firstPackagePurchaseOnly:true});
+}));
 for (const [discountType, discountValue, expected] of [
   ["percentage", 25, 25],
   ["fixed_amount", 35, 35],
@@ -727,7 +702,7 @@ test("legacy automatic attached code can double a stackable candidate; no new ru
     assert.equal(result.discountAmount, 20);
     assert.deepEqual(result.appliedPromotionIds, [id, id]);
   }));
-for (const kind of ["package", "class"] as const) {
+for (const kind of ["class"] as const) {
   test(`${kind} purchase server price, rejection, immutable Finance and durable Admin replay`, async () =>
     isolate(async () => {
       const f = await checkoutFixture(kind);
@@ -784,7 +759,7 @@ for (const kind of ["package", "class"] as const) {
     }));
 }
 // Permanent accounting invariant: applied attributions reconcile to Finance.
-for (const kind of ["package", "class"] as const)
+for (const kind of ["class"] as const)
   test(`CRITICAL ${kind} capped stacking: redemption discounts must reconcile with the Finance discount`, async () =>
     isolate(async () => {
       const f = await checkoutFixture(kind);
@@ -813,26 +788,13 @@ for (const kind of ["package", "class"] as const)
       );
       assert.equal(bought.status, 201, JSON.stringify(bought.data));
       const h = await financeHistory(f.promotion.id);
-      const all =
-        kind === "package"
-          ? (
-              await pool.query(
-                "select discount_amount from promotion_redemptions where package_order_id=$1",
-                [h.orders[0].id],
-              )
-            ).rows
-          : (
-              await pool.query(
-                "select discount_amount from promotion_redemptions where booking_id=$1",
-                [h.bookings[0].id],
-              )
-            ).rows;
+      const all = (await pool.query("select discount_amount from promotion_redemptions where booking_id=$1",[h.bookings[0].id])).rows;
       assert.equal(
         all.reduce((s, r) => s + Number(r.discount_amount), 0) * 100,
         h.payments[0].discount_amount_minor,
       );
       assert.deepEqual(all.map(r => Math.round(Number(r.discount_amount) * 100)),
-        kind === "package" ? [20000, 20000] : [15000, 15000]);
+        [15000, 15000]);
       assert.equal(h.payments[0].gross_amount_minor, f.gross * 100);
       assert.equal(h.payments[0].final_payable_amount_minor, 0);
     }));
@@ -857,7 +819,7 @@ for (const limit of [
       assert.equal((await evaluate(p.id, p.codes[0].code)).eligible, false);
     }));
 }
-test("automatic discounts apply to package purchases; direct-class without a code keeps existing full-price semantics", async () =>
+test("automatic discounts exclude packages and apply to direct-class without a code", async () =>
   isolate(async () => {
     const p = await create({
       type: "automatic",
@@ -878,7 +840,9 @@ test("automatic discounts apply to package purchases; direct-class without a cod
     );
     assert.equal(bought.status, 201);
     const h = await financeHistory(p.id);
-    assert.equal(h.payments[0].discount_amount_minor, 10000);
+    assert.equal(h.redemptions.length,0);
+    const payment=(await pool.query("select * from payment_records where student_id=$1",[f.studentId])).rows[0];
+    assert.equal(payment.gross_amount_minor,40000);assert.equal(payment.discount_amount_minor,0);assert.equal(payment.final_payable_amount_minor,40000);
     const cls = await checkoutFixture("class");
     await request("DELETE", `/promotions/${cls.promotion.id}`);
     const {
@@ -894,7 +858,7 @@ test("automatic discounts apply to package purchases; direct-class without a cod
         [cls.studentId],
       )
     ).rows;
-    assert.equal(rows[0].discount_amount_minor, 0);
+    assert.equal(rows[0].discount_amount_minor, 7500);
     assert.equal(rows[0].gross_amount_minor, 30000);
   }));
 test("tampered package prices are rejected and direct-class expected prices cannot override server values", async () =>
@@ -964,6 +928,7 @@ test("class branch restriction uses stored schedule context, not supplied custom
 test("package-credit bookings ignore Promo Codes and create no promotion/Finance rows", async () =>
   isolate(async () => {
     const f = await checkoutFixture("class");
+    await create({type:"automatic",code:"",maxUses:null,usesPerUser:null,isActive:true,discountValue:80});
     const pkg = (
       await pool.query(
         "insert into price_packages(name,type,price_egp,sessions,validity_months,is_active,allow_all_ages) values($1,'per_class',1000,8,6,true,true) returning id",
@@ -1007,12 +972,12 @@ test("package-credit bookings ignore Promo Codes and create no promotion/Finance
     );
   }));
 
-test("class expected-final safeguard rejects a quote whose activation code was omitted",async()=>isolate(async()=>{
+test("class automatic quote remains valid without a manual activation code",async()=>isolate(async()=>{
  const f=await checkoutFixture("class");await create({type:"automatic",code:"",maxUses:null,usesPerUser:null,isActive:true,discountValue:20});
- const quote=await request<{eligible:boolean;promotionCode:string|null;finalSubtotal:number}>("POST","/promotions/validate",{scheduleId:(f.body as Record<string,unknown>).scheduleId,promoCode:f.promotion.codes[0].code},null,f.token);assert.equal(quote.data.eligible,true);assert.equal(quote.data.promotionCode,null);assert.equal(quote.data.finalSubtotal,240);
+ const quote=await request<{eligible:boolean;promotionCode:string|null;finalSubtotal:number}>("POST","/promotions/validate",{scheduleId:(f.body as Record<string,unknown>).scheduleId},null,f.token);assert.equal(quote.data.eligible,true);assert.equal(quote.data.promotionCode,null);assert.equal(quote.data.finalSubtotal,240);
  const {promoCode:_code,...body}=f.body;
  const response=await request("POST",f.path,{...body,expectedFinalPriceEgp:quote.data.finalSubtotal},null,f.token);
- assert.equal(response.status,409);assert.equal(Number((await pool.query("select count(*) from payment_records where student_id=$1",[f.studentId])).rows[0].count),0);
+ assert.equal(response.status,201);assert.equal(Number((await pool.query("select count(*) from payment_records where student_id=$1",[f.studentId])).rows[0].count),1);
 }));
 test("class keeps the entered activation code when an automatic candidate wins the quote",async()=>isolate(async()=>{
  const f=await checkoutFixture("class");const automatic=await create({type:"automatic",code:"",maxUses:null,usesPerUser:null,isActive:true,discountValue:20});
@@ -1083,7 +1048,7 @@ const allocationCases = [
     expected: [],
   },
 ];
-for (const kind of ["package", "class"] as const)
+for (const kind of ["class"] as const)
   for (const originalScenario of allocationCases) {
     // Schedule catalog prices are integer EGP; retain that existing contract.
     const scenario =
@@ -1113,12 +1078,6 @@ for (const kind of ["package", "class"] as const)
       isolate(async () => {
         const f = await checkoutFixture(kind);
         const subtotal = scenario.subtotal ?? 400;
-        if (kind === "package")
-          await pool.query(
-            "update price_packages set price_egp=$1 where id=$2",
-            [subtotal, f.body.packageId],
-          );
-        else
           await pool.query("update schedules set price_egp=$1 where id=$2", [
             subtotal,
             (f.body as Record<string, unknown>).scheduleId,
@@ -1278,7 +1237,7 @@ async function assertReconciles(student: number) {
   assert.equal(payment.final_payable_amount_minor, 0);
   return rows;
 }
-for (const kind of ["package", "class"] as const) {
+for (const kind of ["class"] as const) {
   test(`${kind} capped allocation persistence failure rolls back all financial writes`, async () =>
     isolate(async () => {
       const f = await cappedFixture(kind);
@@ -1394,13 +1353,13 @@ for (const kind of ["package", "class"] as const) {
 }
 test("legacy duplicate automatic/manual candidate keeps one row and existing code-count semantics", async () =>
   isolate(async () => {
-    const f = await checkoutFixture("package");
+    const f = await checkoutFixture("class");
     await pool.query(
       "update promotions set type='automatic',is_stackable=true,discount_value=80 where id=$1",
       [f.promotion.id],
     );
     assert.equal(
-      (await request("POST", f.path, f.body, null, f.token)).status,
+      (await request("POST", f.path, {...f.body,expectedFinalPriceEgp:0}, null, f.token)).status,
       201,
     );
     const h = await financeHistory(f.promotion.id);
@@ -1410,6 +1369,45 @@ test("legacy duplicate automatic/manual candidate keeps one row and existing cod
       Math.round(Number(h.redemptions[0].discount_amount) * 100),
       h.payments[0].discount_amount_minor,
     );
-    assert.equal(h.payments[0].discount_amount_minor, 40000);
+    assert.equal(h.payments[0].discount_amount_minor, 30000);
     assert.equal((await codes(f.promotion.id))[0].current_uses, 0);
   }));
+
+for (const suppliedCode of ["valid", "invalid", "automatic", "empty"] as const) {
+ test(`single-class policy: package ${suppliedCode} request never discounts or consumes usage`, async()=>isolate(async()=>{
+  const f=await checkoutFixture("package");
+  const automatic=await create({type:"automatic",code:"",maxUses:null,usesPerUser:null,isActive:true,discountValue:80,isStackable:true});
+  const beforeManual=await snapshot(f.promotion.id),beforeAuto=await snapshot(automatic.id);
+  const promoCode=suppliedCode==="valid"?f.promotion.codes[0].code:suppliedCode==="invalid"?"INVALID-EXPLICIT":suppliedCode==="empty"?"  ":undefined;
+  const preview=await request<{eligible:boolean;discountAmount:number;finalSubtotal:number}>("POST","/promotions/validate",{packageId:f.body.packageId,promoCode:promoCode?.trim()||undefined},null,f.token);
+  assert.equal(preview.status,200);assert.equal(preview.data.eligible,false);assert.equal(preview.data.discountAmount,0);assert.equal(preview.data.finalSubtotal,400);
+  const result=await request("POST",f.path,{packageId:f.body.packageId,promoCode},null,f.token);
+  const rejected=suppliedCode==="valid"||suppliedCode==="invalid";
+  assert.equal(result.status,rejected?409:201,JSON.stringify(result.data));
+  const payments=(await pool.query("select * from payment_records where student_id=$1",[f.studentId])).rows;
+  assert.equal(payments.length,rejected?0:1);
+  if(!rejected){assert.equal(payments[0].gross_amount_minor,40000);assert.equal(payments[0].discount_amount_minor,0);assert.equal(payments[0].final_payable_amount_minor,40000);}
+  assert.equal((await pool.query("select id from package_orders where student_id=$1",[f.studentId])).rowCount,rejected?0:1);
+  assert.deepEqual(await snapshot(f.promotion.id),beforeManual);assert.deepEqual(await snapshot(automatic.id),beforeAuto);
+ }));
+}
+test("single-class policy: invalid explicit class code never falls back to Automatic",async()=>isolate(async()=>{
+ const f=await checkoutFixture("class");const p=await create({type:"automatic",code:"",maxUses:null,usesPerUser:null,isActive:true,discountValue:80});
+ const result=await request("POST",f.path,{...f.body,promoCode:"INVALID-EXPLICIT",expectedFinalPriceEgp:60},null,f.token);
+ assert.equal(result.status,409);assert.equal((await pool.query("select id from bookings where account_owner_student_id=$1",[f.studentId])).rowCount,0);assert.equal((await financeHistory(p.id)).payments.length,0);
+}));
+test("single-class policy: package history still consumes class limits without rewriting history",async()=>isolate(async()=>{
+ const p=await create({isActive:true,maxUses:1});await addRedemption(p,"package");const before=await snapshot(p.id);
+ assert.equal((await evaluate(p.id,p.codes[0].code)).eligible,false);assert.deepEqual(await snapshot(p.id),before);
+}));
+test("single-class policy: persistence refuses package-linked redemptions before any write",async()=>isolate(async()=>{
+ const p=await create({isActive:true});const evaluation=await evaluate(p.id,p.codes[0].code);const before=await snapshot(p.id);
+ const {createPromotionRedemptions}=await import("../lib/promotionService");
+ await assert.rejects(()=>database.transaction(tx=>createPromotionRedemptions(tx,evaluation,{studentId,packageOrderId:1})),/Package promotion redemptions are prohibited/);
+ assert.deepEqual(await snapshot(p.id),before);
+}));
+for(const rules of [{packageIds:[1]},{packageIds:[]},{firstPackagePurchaseOnly:true},{firstPackagePurchaseOnly:false}]){
+ test(`single-class policy: Admin refuses obsolete condition ${JSON.stringify(rules)} without writes`,async()=>{
+  const result=await request("POST","/promotions",payload({rulesConfig:rules}));assert.equal(result.status,409);
+ });
+}

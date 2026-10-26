@@ -1275,7 +1275,8 @@ router.post(
       }
 
       const normalizedPromoCode = promoCode?.trim() || null;
-      if (normalizedPromoCode) {
+      // Scheduled direct classes evaluate Automatic promotions even without a code.
+      if (normalizedPromoCode || (promotionClassId != null && normalized.scheduleId != null)) {
         const [promotionStudent] = await tx
           .select({ id: studentsTable.id, emailVerified: studentsTable.emailVerified })
           .from(studentsTable)
@@ -1300,7 +1301,7 @@ router.post(
           paymentMethod: normalized.paymentMode,
         }, normalizedPromoCode, tx, { lockRedemptionScope: true });
 
-        if (!promotionEvaluation.eligible) {
+        if (normalizedPromoCode && !promotionEvaluation.eligible) {
           return {
             kind: "promotion_not_eligible" as const,
             reason: promotionEvaluation.reason ?? "Promo code is not eligible.",
@@ -1315,12 +1316,8 @@ router.post(
             currentPriceEgp: promotionEvaluation.finalSubtotal,
           };
         }
-      } else if (
-        expectedFinalPriceEgp != null
-        && egpToMinor(expectedFinalPriceEgp) !== egpToMinor(priceEgp)
-      ) {
-        // A quote may have activated Automatic candidates via an entered code.
-        // If that activation is omitted, never silently charge a higher total.
+      } else if (expectedFinalPriceEgp != null && egpToMinor(expectedFinalPriceEgp) !== egpToMinor(priceEgp)) {
+        // Preserve legacy unscheduled booking compatibility at its full catalog price.
         return { kind: "promotion_changed" as const, currentPriceEgp: priceEgp };
       }
     }

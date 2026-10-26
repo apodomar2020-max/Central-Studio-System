@@ -26,7 +26,8 @@ async function fixture(mode) {
   if(mode==="automatic") {row.type="automatic";row.codes=[];}
   if(mode==="legacy-limit") row.rulesConfig={maxGlobalUses:"2"};
   if(mode==="legacy-rules") row.rulesConfig={legacyRule:true,packageIds:[99]};
-  if(mode==="stored-rules") row.rulesConfig={verifiedStudentOnly:false,firstPackagePurchaseOnly:true,minimumBasketAmount:0,maxGlobalUses:4,maxUsesPerUser:2,packageIds:[8,99],branches:["Main","Giza"]};
+  if(mode==="stored-rules") row.rulesConfig={verifiedStudentOnly:false,minimumBasketAmount:0,maxGlobalUses:4,maxUsesPerUser:2,branches:["Main","Giza"]};
+  if(mode==="package-rules") row.rulesConfig={packageIds:[8,99],firstPackagePurchaseOnly:true};
   const mutations=[];
   let actorId=1;
   await page.route("**/*",async route=>{
@@ -77,17 +78,14 @@ test("structured conditions submit the existing exact API keys and numeric value
     const d=f.page.getByRole("dialog");
     assert.equal(await d.getByText("Rules Config JSON",{exact:true}).count(),0);
     await d.getByRole("switch",{name:"Verified students only",exact:true}).check();
-    await d.getByRole("switch",{name:"First package purchase only",exact:true}).check();
     await d.getByRole("button",{name:/Additional settings/}).click();
     await d.getByLabel("Minimum purchase (EGP)",{exact:true}).fill("123.45");
     await d.getByLabel("Total promotion redemptions",{exact:true}).fill("4");
     await d.getByLabel("Promotion redemptions per customer",{exact:true}).fill("2");
-    await d.getByRole("radio",{name:"Specific packages",exact:true}).check();
-    await d.getByRole("checkbox",{name:"Studio Package",exact:true}).check();
     await d.getByLabel("Eligible branches (one per line)",{exact:true}).fill("Main\nGiza");
     await d.getByRole("button",{name:"Save Promotion",exact:true}).click();
     await d.waitFor({state:"hidden"});
-    assert.deepEqual(f.mutations[0].body.rulesConfig,{verifiedStudentOnly:true,firstPackagePurchaseOnly:true,minimumBasketAmount:123.45,maxGlobalUses:4,maxUsesPerUser:2,packageIds:[7],branches:["Main","Giza"]});
+    assert.deepEqual(f.mutations[0].body.rulesConfig,{verifiedStudentOnly:true,minimumBasketAmount:123.45,maxGlobalUses:4,maxUsesPerUser:2,branches:["Main","Giza"]});
     assert.equal(f.mutations[0].body.code,"REVIEW10");assert.equal(f.mutations[0].body.type,"manual");
   } finally {await f.context.close();}
 });
@@ -114,16 +112,14 @@ test("unsupported legacy conditions are preserved and cannot silently be saved",
     assert.match(await d.locator("pre").innerText(),/legacyRule/);
   } finally {await f.context.close();}
 });
-test("name-only edits preserve stored conditions, inactive and missing package references",async()=>{
+test("name-only edits preserve stored class conditions",async()=>{
   const f=await fixture("stored-rules");
   try {
     await f.page.getByRole("button",{name:"Edit promotion Review fixture",exact:true}).click();
     const d=f.page.getByRole("dialog");
-    assert.equal(await d.getByRole("checkbox",{name:"Unavailable package #99 (inactive or unavailable)",exact:true}).isChecked(),true);
-    assert.equal(await d.getByRole("checkbox",{name:"Retired Package (inactive or unavailable)",exact:true}).isChecked(),true);
     await d.locator("input").first().fill("Name only");
     await d.getByRole("button",{name:"Save Promotion",exact:true}).click();await d.waitFor({state:"hidden"});
-    assert.deepEqual(f.mutations[0].body.rulesConfig,{verifiedStudentOnly:false,firstPackagePurchaseOnly:true,minimumBasketAmount:0,maxGlobalUses:4,maxUsesPerUser:2,packageIds:[8,99],branches:["Main","Giza"]});
+    assert.deepEqual(f.mutations[0].body.rulesConfig,{verifiedStudentOnly:false,minimumBasketAmount:0,maxGlobalUses:4,maxUsesPerUser:2,branches:["Main","Giza"]});
   } finally {await f.context.close();}
 });
 test("clearing a numeric restriction removes only that restriction",async()=>{
@@ -256,8 +252,8 @@ test("one-minute automatic creation defaults to everyone with no schedule or adv
   await f.page.getByRole("button",{name:"Add Promotion",exact:true}).click();const d=f.page.getByRole("dialog");
   await d.getByLabel("Promotion name",{exact:true}).fill("Simple offer");
   assert.equal(await d.getByRole("switch",{name:"Verified students only",exact:true}).isChecked(),false);
-  assert.equal(await d.getByRole("switch",{name:"First package purchase only",exact:true}).isChecked(),false);
-  assert.equal(await d.getByRole("radio",{name:"All eligible purchases",exact:true}).isChecked(),true);
+  assert.equal(await d.getByRole("switch",{name:"First package purchase only",exact:true}).count(),0);
+  assert.equal(await d.getByRole("radio",{name:"All eligible purchases",exact:true}).count(),0);
   assert.equal(await d.getByLabel("Total promotion redemptions",{exact:true}).isVisible(),false);
   assert.equal(await d.getByLabel("Promo code",{exact:true}).count(),0);
   assert.match(await d.getByRole("region",{name:"Promotion summary"}).innerText(),/10%.*For everyone[\s\S]*Starts immediately; no end date/s);
@@ -280,8 +276,8 @@ test("manual fixed-amount creation preserves distinct code and promotion limits 
 test("saved verified-only eligibility survives editing while new forms default to everyone",async()=>{
  const f=await fixture("verified-rules");try{await f.page.getByRole("button",{name:"Edit promotion Review fixture",exact:true}).click();const d=f.page.getByRole("dialog");assert.equal(await d.getByRole("switch",{name:"Verified students only",exact:true}).isChecked(),true);await d.getByRole("button",{name:"Save Promotion",exact:true}).click();await d.waitFor({state:"hidden"});assert.deepEqual(f.mutations[0].body.rulesConfig,{verifiedStudentOnly:true});}finally{await f.context.close();}
 });
-test("empty specific selection cannot silently save an unrestricted promotion",async()=>{
- const f=await fixture("success");try{await f.page.getByRole("button",{name:"Edit promotion Review fixture",exact:true}).click();const d=f.page.getByRole("dialog");await d.getByRole("radio",{name:"Specific packages",exact:true}).check();assert.equal(await d.getByRole("checkbox",{name:/Retired Package/}).count(),0);await d.getByRole("button",{name:"Save Promotion",exact:true}).click();assert.equal(f.mutations.length,0);await d.getByRole("checkbox",{name:"Studio Package",exact:true}).check();assert.match(await d.getByRole("region",{name:"Promotion summary"}).innerText(),/Direct-class purchases do not qualify/);await d.getByRole("radio",{name:"All eligible purchases",exact:true}).check();await d.getByRole("button",{name:"Save Promotion",exact:true}).click();await d.waitFor({state:"hidden"});assert.equal("packageIds" in f.mutations[0].body.rulesConfig,false);}finally{await f.context.close();}
+test("package targeting is absent and class-only summary is explicit",async()=>{
+ const f=await fixture("success");try{await f.page.getByRole("button",{name:"Edit promotion Review fixture",exact:true}).click();const d=f.page.getByRole("dialog");assert.equal(await d.getByRole("radio",{name:"Specific packages",exact:true}).count(),0);assert.match(await d.getByRole("region",{name:"Promotion summary"}).innerText(),/Direct Single Class purchases only/);await d.getByRole("button",{name:"Save Promotion",exact:true}).click();await d.waitFor({state:"hidden"});assert.equal("packageIds" in f.mutations[0].body.rulesConfig,false);}finally{await f.context.close();}
 });
 test("advanced errors reopen collapsed controls and invalid discounts and dates stay inline",async()=>{
  const f=await fixture("success");try{await f.page.getByRole("button",{name:"Edit promotion Review fixture",exact:true}).click();const d=f.page.getByRole("dialog");await d.getByRole("button",{name:/Additional settings/}).click();await d.getByLabel("Total promotion redemptions").fill("0");await d.getByRole("button",{name:/Additional settings/}).click();await d.getByLabel("Discount (%)").fill("110");await d.getByLabel("Start date (optional)").fill("2026-12-02T12:00");await d.getByLabel("End date (optional)").fill("2026-12-01T12:00");await d.getByRole("button",{name:"Save Promotion",exact:true}).click();await d.getByLabel("Total promotion redemptions").waitFor({state:"visible"});assert.equal(await d.getByLabel("Discount (%)").getAttribute("aria-invalid"),"true");await d.getByText("End date cannot precede start date.",{exact:true}).waitFor();assert.equal(f.mutations.length,0);}finally{await f.context.close();}
@@ -289,8 +285,8 @@ test("advanced errors reopen collapsed controls and invalid discounts and dates 
 for(const mode of ["null-rules","legacy-limit"]){test(`legacy safety: ${mode} is preserved and rejected without normalizing`,async()=>{
  const f=await fixture(mode);try{await f.page.getByRole("button",{name:"Edit promotion Review fixture",exact:true}).click();const d=f.page.getByRole("dialog");await d.getByRole("button",{name:"Save Promotion",exact:true}).click();assert.equal(f.mutations.length,0);if(mode==="null-rules"){await d.getByText("View preserved legacy conditions").click();assert.equal(await d.locator("pre").innerText(),"null");}else assert.equal(await d.getByLabel("Total promotion redemptions").inputValue(),"2");}finally{await f.context.close();}
 });}
-test("package catalog failures remain visible with retry and preserve stored selections",async()=>{
- const f=await fixture("package-error");try{await f.page.getByRole("button",{name:"Edit promotion Review fixture",exact:true}).click();const d=f.page.getByRole("dialog");await d.getByRole("radio",{name:"Specific packages",exact:true}).check();await d.getByRole("button",{name:"Retry packages"}).waitFor({timeout:20000});assert.equal(f.mutations.length,0);}finally{await f.context.close();}
+test("obsolete package conditions cannot be silently saved or stripped",async()=>{
+ const f=await fixture("package-rules");try{await f.page.getByRole("button",{name:"Edit promotion Review fixture",exact:true}).click();const d=f.page.getByRole("dialog");await d.getByRole("button",{name:"Save Promotion",exact:true}).click();assert.equal(f.mutations.length,0);await d.getByText("View preserved legacy conditions").click();const rules=JSON.parse(await d.locator("pre").innerText());assert.deepEqual(rules,{packageIds:[8,99],firstPackagePurchaseOnly:true});}finally{await f.context.close();}
 });
 test("view-only permissions expose no creation, editing or deactivation controls",async()=>{
  const f=await fixture("readonly");try{assert.equal(await f.page.getByRole("button",{name:"Add Promotion",exact:true}).count(),0);assert.equal(await f.page.getByRole("button",{name:/Edit promotion/}).count(),0);assert.equal(await f.page.getByRole("button",{name:/Deactivate promotion/}).count(),0);assert.equal(f.mutations.length,0);}finally{await f.context.close();}

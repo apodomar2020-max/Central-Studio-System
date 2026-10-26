@@ -57,7 +57,7 @@ function apiUrl(path: string): string {
 async function makeStudent(run: string, label: string): Promise<{ id: number; email: string }> {
   const email = `pkg-capture-${run}-${label}@example.com`;
   const result = await pool.query(
-    `INSERT INTO students (name, email, phone, account_type, date_of_birth, email_verified) VALUES ($1, $2, '0100000000', 'student', '2000-01-01', true) RETURNING id`,
+    `INSERT INTO students (name, email, phone, account_type, date_of_birth, email_verified) VALUES ($1, $2, NULL, 'student', '2000-01-01', true) RETURNING id`,
     [`Package Capture Test ${label}`, email],
   );
   return { id: result.rows[0].id as number, email };
@@ -67,7 +67,7 @@ async function makeParent(run: string, label: string): Promise<{ id: number; ema
   const email = `pkg-capture-${run}-${label}@example.com`;
   const result = await pool.query(
     `INSERT INTO students (name, email, phone, account_type, date_of_birth, email_verified)
-     VALUES ($1, $2, '0100000000', 'parent', '1985-01-01', true) RETURNING id`,
+     VALUES ($1, $2, NULL, 'parent', '1985-01-01', true) RETURNING id`,
     [`Package Parent ${label}`, email],
   );
   return { id: result.rows[0].id as number, email };
@@ -625,66 +625,12 @@ test("the creation response contract is unchanged: only package-order fields, no
   assert.equal(order.status, "pendingPayment", "the operational package-order status is untouched by this change");
 });
 
-// ─── Category G: successful non-zero promotion capture ──────────────────────
-
-test("an eligible non-zero promotion discount is captured correctly across payment_records, payment_events, and promotion_redemptions", async () => {
-  const run = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const student = await makeStudent(run, "promo-capture");
-  const token = studentToken(student.id, student.email);
-
-  const res = await asStudent(token, "/api/package-orders", {
-    method: "POST",
-    body: JSON.stringify({ packageId, promoCode: promotionCode }),
-  });
-  assert.equal(res.status, 201);
-  const order = await jsonBody(res);
-
-  const expectedGrossMinor = Math.round(packagePriceEgp * 100);
-  const expectedDiscountMinor = Math.round(expectedGrossMinor * 0.10);
-  const expectedFinalMinor = expectedGrossMinor - expectedDiscountMinor;
-  assert.ok(expectedDiscountMinor > 0, "test fixture sanity: discount must be non-zero");
-
-  const record = await paymentRecordFor(order.id as number);
-  assert.ok(record, "a payment_records row must exist");
-  assert.equal(record!.gross_amount_minor, expectedGrossMinor);
-  assert.equal(record!.discount_amount_minor, expectedDiscountMinor);
-  assert.equal(record!.final_payable_amount_minor, expectedFinalMinor);
-  assert.equal(record!.flow_type, "package_purchase");
-  assert.equal(record!.capture_origin, "live_capture");
-  assert.equal(record!.evidence_class, "confirmed");
-  assert.equal(record!.amount_availability, "exact");
-  assert.equal(record!.amount_source, "creation_snapshot");
-  assert.equal(record!.status, "pending_confirmation");
-  assert.equal(record!.paid_amount_minor, 0);
-  assert.equal(record!.refunded_amount_minor, 0);
-
-  const events = await paymentEventsFor(record!.id as number);
-  assert.equal(events.length, 1, "exactly one payment_events row");
-  assert.equal(events[0].event_type, "created");
-  assert.equal(events[0].new_status, "pending_confirmation");
-
-  const redemptions = await pool.query(
-    `SELECT * FROM promotion_redemptions WHERE package_order_id = $1`,
-    [order.id],
-  );
-  assert.equal(redemptions.rowCount, 1, "exactly one promotion redemption");
-  const redemption = redemptions.rows[0];
-  assert.equal(redemption.student_id, student.id, "redemption must belong to the requesting student");
-  assert.equal(redemption.package_order_id, order.id, "redemption must belong to the created package order");
-  const redeemedDiscountMinor = Math.round(Number(redemption.discount_amount) * 100);
-  assert.equal(redeemedDiscountMinor, expectedDiscountMinor, "the recorded payment_records discount and the redeemed promotion discount must not disagree");
-
-  const creditRows = await pool.query(`SELECT count(*)::int AS n FROM credit_transactions WHERE package_order_id = $1`, [order.id]);
-  assert.equal(creditRows.rows[0].n, 0, "no credit transaction may exist yet");
-  const refundRows = await pool.query(`SELECT count(*)::int AS n FROM payment_refunds WHERE payment_record_id = $1`, [record!.id]);
-  assert.equal(refundRows.rows[0].n, 0, "no payment_refund row may exist");
-
-  const expectedKeys = [
-    "id", "studentName", "studentEmail", "studentPhone", "packageId",
-    "packageName", "totalCredits", "remainingCredits", "status", "notes",
-    "activatedAt", "expiresAt", "createdAt", "updatedAt", "participantType",
-    "participantChildId", "participantName", "participantAgeAtPurchase",
-    "purchaseEligibilityConfigurationState", "ownershipState",
-  ].sort();
-  assert.deepEqual(Object.keys(order).sort(), expectedKeys, "response contract must remain unchanged even with a promotion applied");
+// Explicit legacy-client codes are now rejected before any financial write.
+test("package code attempts are rejected without order, payment, event or redemption writes", async () => {
+ const run=`${Date.now()}-${Math.random()}`;const student=await makeStudent(run,"package-code-rejected");const token=studentToken(student.id,student.email);
+ const before=(await pool.query("select count(*) from payment_events")).rows[0].count;
+ const res=await asStudent(token,"/api/package-orders",{method:"POST",body:JSON.stringify({packageId,promoCode:promotionCode})});
+ assert.equal(res.status,409);assert.equal((await jsonBody(res)).code,"promotion_not_eligible");
+ for(const table of ["package_orders","payment_records","promotion_redemptions"]){assert.equal((await pool.query(`select id from ${table} where student_id=$1`,[student.id])).rowCount,0);}
+ assert.equal((await pool.query("select count(*) from payment_events")).rows[0].count,before);
 });

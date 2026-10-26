@@ -163,7 +163,7 @@ async function injectFailure(table: string, event: string, operation: ()=>Promis
     await pool.query(`drop trigger phase1b_fail on ${table}`); await pool.query("drop function phase1b_fail()");
   }
 }
-for (const kind of ["package","class"] as const) {
+for (const kind of ["class"] as const) {
   test(`${kind}: redemption wins; waiting Admin rename rejects actual usage`,async()=>{
     const f=await checkoutFixture(kind);
     const [checkout,rename]=await orderedRace(f.promotion.id,
@@ -182,7 +182,7 @@ for (const kind of ["package","class"] as const) {
     assert.equal(rename.status,200);assert.equal(checkout.status,409,JSON.stringify(checkout.data));
     assert.match(checkout.data.error,/changed during checkout/);
     assert.equal((await codes(f.promotion.id))[0].id,f.promotion.codes[0].id);
-    const table=kind==="package"?"package_orders":"bookings",column=kind==="package"?"student_id":"account_owner_student_id";
+    const table="bookings",column="account_owner_student_id";
     assert.equal((await pool.query(`select id from ${table} where ${column}=$1`,[f.studentId])).rowCount,0);
     assert.deepEqual(await financeHistory(f.promotion.id),{redemptions:[],payments:[],events:[],orders:[],bookings:[]});
     assert.equal((await request("POST",f.path,{...f.body,promoCode:newCode},null,f.token)).status,201);
@@ -190,7 +190,7 @@ for (const kind of ["package","class"] as const) {
 }
 for (const [label,patch] of [["eligibility",{rulesConfig:{minimumBasketAmount:1000}}],["code limit",{maxUses:1}],["deactivation",{isActive:false}],["discount",{discountValue:20}]] as const) {
   test(`checkout rejects a concurrent ${label} change instead of using its stale snapshot`,async()=>{
-    const f=await checkoutFixture("package");
+    const f=await checkoutFixture("class");
     const [edit,purchase]=await orderedRace(f.promotion.id,
       ()=>request("PATCH",`/promotions/${f.promotion.id}`,patch),
       ()=>request("POST",f.path,f.body,null,f.token));
@@ -205,33 +205,33 @@ test("DELETE deactivation shares the checkout lock and prevents stale redemption
     ()=>request("POST",f.path,f.body,null,f.token));
   assert.equal(deactivate.status,204);assert.equal(purchase.status,409);
 });
-test("automatic changes reject a waiting no-code package checkout without charging an altered amount",async()=>{
-  const f=await checkoutFixture("package");
+test("automatic changes reject a waiting no-code class checkout without charging an altered amount",async()=>{
+  const f=await checkoutFixture("class");
   const auto=await create({type:"automatic",code:"",maxUses:null,usesPerUser:null,isActive:true});
   try {
     const [edit,purchase]=await orderedRace(auto.id,
       ()=>request("PATCH",`/promotions/${auto.id}`,{discountValue:25}),
-      ()=>request("POST",f.path,{packageId:f.body.packageId},null,f.token));
+      ()=>request("POST",f.path,{...f.body,promoCode:undefined},null,f.token));
     assert.equal(edit.status,200);assert.equal(purchase.status,409);
-    assert.equal((await pool.query("select id from package_orders where student_id=$1",[f.studentId])).rowCount,0);
+    assert.equal((await pool.query("select id from bookings where account_owner_student_id=$1",[f.studentId])).rowCount,0);
   } finally { await request("DELETE",`/promotions/${auto.id}`); }
 });
 test("multiple automatic/manual candidates retain stacking arithmetic and locked identities",async()=>{
-  const f=await checkoutFixture("package");
+  const f=await checkoutFixture("class");
   await request("PATCH",`/promotions/${f.promotion.id}`,{isStackable:true});
   const a=await create({type:"automatic",code:"",maxUses:null,usesPerUser:null,isActive:true,isStackable:true});
   const b=await create({type:"automatic",code:"",maxUses:null,usesPerUser:null,isActive:true,isStackable:true});
   try {
-    assert.equal((await request("POST",f.path,f.body,null,f.token)).status,201);
+    assert.equal((await request("POST",f.path,{...f.body,expectedFinalPriceEgp:210},null,f.token)).status,201);
     const h=await financeHistory(f.promotion.id);
-    assert.equal(h.payments[0].gross_amount_minor,40000);assert.equal(h.payments[0].discount_amount_minor,12000);assert.equal(h.payments[0].final_payable_amount_minor,28000);
-    const ids=(await pool.query("select promotion_id from promotion_redemptions where package_order_id=$1 order by promotion_id",[h.orders[0].id])).rows.map(r=>r.promotion_id);
+    assert.equal(h.payments[0].gross_amount_minor,30000);assert.equal(h.payments[0].discount_amount_minor,9000);assert.equal(h.payments[0].final_payable_amount_minor,21000);
+    const ids=(await pool.query("select promotion_id from promotion_redemptions where booking_id=$1 order by promotion_id",[h.bookings[0].id])).rows.map(r=>r.promotion_id);
     assert.deepEqual(ids,[f.promotion.id,a.id,b.id].sort((x,y)=>x-y));
   } finally { await request("DELETE",`/promotions/${a.id}`);await request("DELETE",`/promotions/${b.id}`); }
 });
 test("simultaneous cap-one purchases cannot both redeem",async()=>{
-  const f=await checkoutFixture("package");await request("PATCH",`/promotions/${f.promotion.id}`,{maxUses:1});
-  const other=await checkoutFixture("package");
+  const f=await checkoutFixture("class");await request("PATCH",`/promotions/${f.promotion.id}`,{maxUses:1});
+  const other=await checkoutFixture("class");
   const firstLock=Number((await pool.query("select min(id) as id from promotions where type='automatic' or id=$1",[f.promotion.id])).rows[0].id);
   const results=await orderedRace(firstLock,
     ()=>request("POST",f.path,f.body,null,f.token),()=>request("POST",other.path,{...other.body,promoCode:f.promotion.codes[0].code},null,other.token));
@@ -280,7 +280,7 @@ test("two actual Admins editing stale different fields cannot overwrite newer co
   assert.equal(r.status,409);assert.deepEqual(await allState(p),prior);
 });
 test("redemption counters do not invalidate an otherwise current configuration revision",async()=>{
-  const f=await checkoutFixture("package");assert.equal((await request("POST",f.path,f.body,null,f.token)).status,201);
+  const f=await checkoutFixture("class");assert.equal((await request("POST",f.path,f.body,null,f.token)).status,201);
   const h=await financeHistory(f.promotion.id);
   assert.equal((await request("PATCH",`/promotions/${f.promotion.id}`,{description:"after purchase"},adminToken,undefined,f.promotion.revision)).status,200);
   assert.deepEqual(await financeHistory(f.promotion.id),h);
@@ -318,12 +318,12 @@ for (const table of ["promotion_audit_logs","admin_activity_logs"]) {
   });
 }
 test("unchanged legacy automatic-with-code eligibility is not silently disabled by Phase 1B",async()=>{
-  const f=await checkoutFixture("package");
+  const f=await checkoutFixture("class");
   const p=await create({type:"automatic",code:"",maxUses:null,usesPerUser:null,isActive:true});
   await pool.query("insert into promotion_codes(promotion_id,code,max_uses) values ($1,$2,1)",[p.id,unique()]);
   const priorCodes=await codes(p.id);
   try {
-    assert.equal((await request("POST",f.path,{packageId:f.body.packageId},null,f.token)).status,201);
+    assert.equal((await request("POST",f.path,{...f.body,promoCode:undefined},null,f.token)).status,201);
     const history=await financeHistory(p.id);assert.equal(history.redemptions.length,1);assert.equal(history.redemptions[0].promotion_code_id,null);
     assert.deepEqual(await codes(p.id),priorCodes);
   } finally { await request("DELETE",`/promotions/${p.id}`); }

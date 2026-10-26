@@ -179,7 +179,7 @@ export default function PackagesScreen() {
     }
   }, [purchaseId, packages]);
 
-  async function confirmPurchase(participant: PackageParticipantSelection, promoCode?: string | null) {
+  async function confirmPurchase(participant: PackageParticipantSelection) {
     if (!confirmPkg) return;
     setPurchasing(true);
     try {
@@ -188,7 +188,6 @@ export default function PackagesScreen() {
         name: confirmPkg.name,
         sessions: confirmPkg.sessions ?? 1,
         validityMonths: 0,
-        promoCode,
         participant,
         // Online Payment is disabled in this UI (Coming Soon) — Pay at
         // Studio / Cash is the only enabled path today. Must match the
