@@ -3,6 +3,7 @@
  * Supply PLAYWRIGHT_MODULE_PATH when using an external existing Playwright runtime.
  */
 import assert from "node:assert/strict";
+import { mkdir } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { beforeEach, afterEach, test } from "node:test";
 const require=createRequire(import.meta.url);
@@ -20,6 +21,10 @@ async function fixture(mode) {
   const page=await context.newPage();
   const row={id:1,name:"Review fixture",description:null,type:"manual",discountType:"percentage",discountValue:10,priority:0,isActive:true,isExclusive:false,isStackable:false,startDate:null,endDate:null,rulesConfig:{},revision:"a".repeat(64),codes:[{id:1,promotionId:1,code:"REVIEW10",maxUses:null,usesPerUser:null,currentUses:0}]};
   if(mode==="dates") {row.startDate="2026-11-01 12:00:00.123456+02";row.endDate="2026-12-01 12:00:00.123456+02";}
+  if(mode==="null-rules") row.rulesConfig=null;
+  if(mode==="verified-rules") row.rulesConfig={verifiedStudentOnly:true};
+  if(mode==="automatic") {row.type="automatic";row.codes=[];}
+  if(mode==="legacy-limit") row.rulesConfig={maxGlobalUses:"2"};
   if(mode==="legacy-rules") row.rulesConfig={legacyRule:true,packageIds:[99]};
   if(mode==="stored-rules") row.rulesConfig={verifiedStudentOnly:false,firstPackagePurchaseOnly:true,minimumBasketAmount:0,maxGlobalUses:4,maxUsesPerUser:2,packageIds:[8,99],branches:["Main","Giza"]};
   const mutations=[];
@@ -29,8 +34,9 @@ async function fixture(mode) {
     if(url.origin!==new URL(base).origin) return route.abort();
     if(!url.pathname.startsWith("/api/")) return route.continue();
     const reply=(status,body)=>route.fulfill({status,contentType:"application/json",body:body==null?undefined:JSON.stringify(body)});
-    if(url.pathname==="/api/admin/auth/me") return reply(200,{id:actorId,username:"review",fullName:"Review Admin",email:"review@example.invalid",isSuperAdmin:true,roleId:null,role:null});
+    if(url.pathname==="/api/admin/auth/me") return reply(200,{id:actorId,username:"review",fullName:"Review Admin",email:"review@example.invalid",isSuperAdmin:mode!=="readonly",roleId:mode==="readonly"?2:null,role:mode==="readonly"?{id:2,name:"Read only",permissions:{promotions:{view:true}}}:null});
     if(url.pathname==="/api/promotions/save-protocol") return reply(200,mode==="unsupported" ? {} : {version:1,idempotency:true});
+    if(url.pathname==="/api/price-packages" && mode==="package-error") return reply(503,{error:"Unavailable"});
     if(url.pathname==="/api/price-packages") return reply(200,[{id:7,name:"Studio Package",isActive:true},{id:8,name:"Retired Package",isActive:false}]);
     if(url.pathname.startsWith("/api/promotions/operations/")) {
       if(mode==="lost" || mode==="malformed") return reply(200,{state:"succeeded",status:200,promotionId:1,response:row});
@@ -41,6 +47,7 @@ async function fixture(mode) {
       if(mode==="refresh-failure" && mutations.length) return reply(503,{error:"List unavailable"});
       return reply(200,[row]);
     }
+    if(url.pathname==="/api/promotions" && req.method()==="POST") {mutations.push({operation:req.headers()["idempotency-key"],method:"POST",body:req.postDataJSON()});return reply(201,{...row,...req.postDataJSON(),id:2});}
     if(url.pathname==="/api/promotions/1" && ["PATCH","DELETE"].includes(req.method())) {
       mutations.push({operation:req.headers()["idempotency-key"],method:req.method(),revision:req.headers()["if-match"],body:req.method()==="PATCH"?req.postDataJSON():null});
       if(mode==="stale") {row.name="Newer configuration";row.revision="b".repeat(64);return reply(409,{code:"PROMOTION_CHANGED",error:"Another Admin modified this promotion."});}
@@ -58,7 +65,8 @@ async function fixture(mode) {
     return reply(200,[]);
   });
   await page.goto(`${base}/promotions`);
-  await page.getByRole("button",{name:"Edit promotion Review fixture",exact:true}).waitFor();
+  if(mode==="readonly") await page.getByRole("heading",{name:"Promotions",exact:true}).waitFor();
+  else await page.getByRole("button",{name:"Edit promotion Review fixture",exact:true}).waitFor();
   return {page,context,mutations,setActor:(id)=>{actorId=id;}};
 }
 
@@ -70,9 +78,11 @@ test("structured conditions submit the existing exact API keys and numeric value
     assert.equal(await d.getByText("Rules Config JSON",{exact:true}).count(),0);
     await d.getByRole("switch",{name:"Verified students only",exact:true}).check();
     await d.getByRole("switch",{name:"First package purchase only",exact:true}).check();
+    await d.getByRole("button",{name:/Additional settings/}).click();
     await d.getByLabel("Minimum purchase (EGP)",{exact:true}).fill("123.45");
     await d.getByLabel("Total promotion redemptions",{exact:true}).fill("4");
-    await d.getByLabel("Promotion redemptions per account",{exact:true}).fill("2");
+    await d.getByLabel("Promotion redemptions per customer",{exact:true}).fill("2");
+    await d.getByRole("radio",{name:"Specific packages",exact:true}).check();
     await d.getByRole("checkbox",{name:"Studio Package",exact:true}).check();
     await d.getByLabel("Eligible branches (one per line)",{exact:true}).fill("Main\nGiza");
     await d.getByRole("button",{name:"Save Promotion",exact:true}).click();
@@ -87,9 +97,9 @@ test("Manual and Automatic controls change presentation without losing existing 
     await f.page.getByRole("button",{name:"Edit promotion Review fixture",exact:true}).click();
     const d=f.page.getByRole("dialog");
     await d.getByText("Customers enter this promotion’s code",{exact:false}).waitFor();
-    await d.getByRole("combobox").first().click();await f.page.getByRole("option",{name:"Automatic",exact:true}).click();
+    await d.getByRole("combobox").first().click();await f.page.getByRole("option",{name:"Automatic discount",exact:true}).click();
     await d.getByText("Eligible purchases receive this promotion automatically",{exact:false}).waitFor();
-    assert.equal(await d.getByText("Promo Code",{exact:true}).count(),0);
+    assert.equal(await d.getByLabel("Promo code",{exact:true}).count(),0);
     await d.getByRole("button",{name:"Save Promotion",exact:true}).click();await d.waitFor({state:"hidden"});
     assert.equal(f.mutations[0].body.type,"automatic");assert.equal(f.mutations[0].body.code,"");
   } finally {await f.context.close();}
@@ -98,7 +108,7 @@ test("unsupported legacy conditions are preserved and cannot silently be saved",
   const f=await fixture("legacy-rules");
   try {
     await f.page.getByRole("button",{name:"Edit promotion Review fixture",exact:true}).click();
-    const d=f.page.getByRole("dialog");await d.getByText(/saved condition.*legacyRule/).waitFor();
+    const d=f.page.getByRole("dialog");await d.getByText(/Saved conditions need review/).first().waitFor();
     await d.getByRole("button",{name:"Save Promotion",exact:true}).click();
     assert.equal(f.mutations.length,0);await d.getByText("View preserved legacy conditions").click();
     assert.match(await d.locator("pre").innerText(),/legacyRule/);
@@ -129,7 +139,7 @@ test("invalid limits are rejected before a durable mutation is admitted",async()
   const f=await fixture("success");
   try {
     await f.page.getByRole("button",{name:"Edit promotion Review fixture",exact:true}).click();
-    const d=f.page.getByRole("dialog");await d.getByLabel("Total promotion redemptions",{exact:true}).fill("0");
+    const d=f.page.getByRole("dialog");await d.getByRole("button",{name:/Additional settings/}).click();await d.getByLabel("Total promotion redemptions",{exact:true}).fill("0");
     await d.getByRole("button",{name:"Save Promotion",exact:true}).click();
     await d.getByRole("alert").first().waitFor();assert.equal(f.mutations.length,0);
   } finally {await f.context.close();}
@@ -240,3 +250,60 @@ test("Admin fails before mutation if recovery context cannot be retained",async(
   const {dialog,name}=await edit(f.page);await dialog.getByRole("alert").filter({hasText:/Recovery storage unavailable/}).waitFor();assert.equal(f.mutations.length,0);assert.equal(await name.inputValue(),"Unsaved review values");
  }finally{await f.context.close();}
 });
+
+test("one-minute automatic creation defaults to everyone with no schedule or advanced restrictions",async()=>{
+ const f=await fixture("success");try{
+  await f.page.getByRole("button",{name:"Add Promotion",exact:true}).click();const d=f.page.getByRole("dialog");
+  await d.getByLabel("Promotion name",{exact:true}).fill("Simple offer");
+  assert.equal(await d.getByRole("switch",{name:"Verified students only",exact:true}).isChecked(),false);
+  assert.equal(await d.getByRole("switch",{name:"First package purchase only",exact:true}).isChecked(),false);
+  assert.equal(await d.getByRole("radio",{name:"All eligible purchases",exact:true}).isChecked(),true);
+  assert.equal(await d.getByLabel("Total promotion redemptions",{exact:true}).isVisible(),false);
+  assert.equal(await d.getByLabel("Promo code",{exact:true}).count(),0);
+  assert.match(await d.getByRole("region",{name:"Promotion summary"}).innerText(),/10%.*For everyone[\s\S]*Starts immediately; no end date/s);
+  await d.getByRole("button",{name:"Save Promotion",exact:true}).click();await d.waitFor({state:"hidden"});
+  assert.equal(f.mutations.length,1);assert.equal(f.mutations[0].method,"POST");
+  assert.deepEqual(f.mutations[0].body.rulesConfig,{});assert.equal(f.mutations[0].body.startDate,null);assert.equal(f.mutations[0].body.endDate,null);
+ }finally{await f.context.close();}
+});
+test("manual fixed-amount creation preserves distinct code and promotion limits and immediate summary",async()=>{
+ const f=await fixture("success");try{
+  await f.page.getByRole("button",{name:"Add Promotion",exact:true}).click();const d=f.page.getByRole("dialog");
+  await d.getByLabel("Promotion name",{exact:true}).fill("Welcome");await d.getByLabel("How customers receive it").click();await f.page.getByRole("option",{name:"Promo code",exact:true}).click();
+  await d.getByLabel("Promo code",{exact:true}).fill("WELCOME25");await d.getByLabel("Discount type",{exact:true}).click();await f.page.getByRole("option",{name:"Fixed EGP amount off",exact:true}).click();await d.getByLabel("Discount (EGP)").fill("25");
+  await d.getByRole("button",{name:/Additional settings/}).click();await d.getByLabel("Total code uses").fill("3");await d.getByLabel("Code uses per customer").fill("1");await d.getByLabel("Total promotion redemptions").fill("5");
+  assert.match(await d.getByRole("region",{name:"Promotion summary"}).innerText(),/EGP 25[\s\S]*WELCOME25[\s\S]*Promotion limit: 5[\s\S]*Code limit: 3/);
+  await d.getByRole("button",{name:/Additional settings/}).click();await d.getByRole("button",{name:"Save Promotion",exact:true}).click();await d.waitFor({state:"hidden"});
+  assert.equal(f.mutations[0].body.maxUses,3);assert.equal(f.mutations[0].body.usesPerUser,1);assert.equal(f.mutations[0].body.rulesConfig.maxGlobalUses,5);
+ }finally{await f.context.close();}
+});
+test("saved verified-only eligibility survives editing while new forms default to everyone",async()=>{
+ const f=await fixture("verified-rules");try{await f.page.getByRole("button",{name:"Edit promotion Review fixture",exact:true}).click();const d=f.page.getByRole("dialog");assert.equal(await d.getByRole("switch",{name:"Verified students only",exact:true}).isChecked(),true);await d.getByRole("button",{name:"Save Promotion",exact:true}).click();await d.waitFor({state:"hidden"});assert.deepEqual(f.mutations[0].body.rulesConfig,{verifiedStudentOnly:true});}finally{await f.context.close();}
+});
+test("empty specific selection cannot silently save an unrestricted promotion",async()=>{
+ const f=await fixture("success");try{await f.page.getByRole("button",{name:"Edit promotion Review fixture",exact:true}).click();const d=f.page.getByRole("dialog");await d.getByRole("radio",{name:"Specific packages",exact:true}).check();assert.equal(await d.getByRole("checkbox",{name:/Retired Package/}).count(),0);await d.getByRole("button",{name:"Save Promotion",exact:true}).click();assert.equal(f.mutations.length,0);await d.getByRole("checkbox",{name:"Studio Package",exact:true}).check();assert.match(await d.getByRole("region",{name:"Promotion summary"}).innerText(),/Direct-class purchases do not qualify/);await d.getByRole("radio",{name:"All eligible purchases",exact:true}).check();await d.getByRole("button",{name:"Save Promotion",exact:true}).click();await d.waitFor({state:"hidden"});assert.equal("packageIds" in f.mutations[0].body.rulesConfig,false);}finally{await f.context.close();}
+});
+test("advanced errors reopen collapsed controls and invalid discounts and dates stay inline",async()=>{
+ const f=await fixture("success");try{await f.page.getByRole("button",{name:"Edit promotion Review fixture",exact:true}).click();const d=f.page.getByRole("dialog");await d.getByRole("button",{name:/Additional settings/}).click();await d.getByLabel("Total promotion redemptions").fill("0");await d.getByRole("button",{name:/Additional settings/}).click();await d.getByLabel("Discount (%)").fill("110");await d.getByLabel("Start date (optional)").fill("2026-12-02T12:00");await d.getByLabel("End date (optional)").fill("2026-12-01T12:00");await d.getByRole("button",{name:"Save Promotion",exact:true}).click();await d.getByLabel("Total promotion redemptions").waitFor({state:"visible"});assert.equal(await d.getByLabel("Discount (%)").getAttribute("aria-invalid"),"true");await d.getByText("End date cannot precede start date.",{exact:true}).waitFor();assert.equal(f.mutations.length,0);}finally{await f.context.close();}
+});
+for(const mode of ["null-rules","legacy-limit"]){test(`legacy safety: ${mode} is preserved and rejected without normalizing`,async()=>{
+ const f=await fixture(mode);try{await f.page.getByRole("button",{name:"Edit promotion Review fixture",exact:true}).click();const d=f.page.getByRole("dialog");await d.getByRole("button",{name:"Save Promotion",exact:true}).click();assert.equal(f.mutations.length,0);if(mode==="null-rules"){await d.getByText("View preserved legacy conditions").click();assert.equal(await d.locator("pre").innerText(),"null");}else assert.equal(await d.getByLabel("Total promotion redemptions").inputValue(),"2");}finally{await f.context.close();}
+});}
+test("package catalog failures remain visible with retry and preserve stored selections",async()=>{
+ const f=await fixture("package-error");try{await f.page.getByRole("button",{name:"Edit promotion Review fixture",exact:true}).click();const d=f.page.getByRole("dialog");await d.getByRole("radio",{name:"Specific packages",exact:true}).check();await d.getByRole("button",{name:"Retry packages"}).waitFor({timeout:20000});assert.equal(f.mutations.length,0);}finally{await f.context.close();}
+});
+test("view-only permissions expose no creation, editing or deactivation controls",async()=>{
+ const f=await fixture("readonly");try{assert.equal(await f.page.getByRole("button",{name:"Add Promotion",exact:true}).count(),0);assert.equal(await f.page.getByRole("button",{name:/Edit promotion/}).count(),0);assert.equal(await f.page.getByRole("button",{name:/Deactivate promotion/}).count(),0);assert.equal(f.mutations.length,0);}finally{await f.context.close();}
+});
+for(const theme of ["dark","light"]){for(const width of [390,1280]){test(`visual and keyboard verification: ${theme}, ${width}px`,async()=>{
+ const f=await fixture("success");try{
+  await f.page.setViewportSize({width,height:900});await f.page.evaluate(theme=>{document.documentElement.classList.toggle("night",theme==="light");document.documentElement.setAttribute("data-theme",theme==="light"?"night":"dark");},theme);
+  await f.page.getByRole("button",{name:"Add Promotion",exact:true}).click();const d=f.page.getByRole("dialog");await d.getByLabel("Promotion name",{exact:true}).fill("Weekend welcome");
+  await d.getByRole("switch",{name:"Verified students only",exact:true}).focus();await f.page.keyboard.press("Space");assert.equal(await d.getByRole("switch",{name:"Verified students only",exact:true}).isChecked(),true);
+  const toggle=d.getByRole("button",{name:/Additional settings/});await toggle.focus();await f.page.keyboard.press("Enter");await d.getByLabel("Minimum purchase (EGP)").waitFor({state:"visible"});await d.getByLabel("Minimum purchase (EGP)").fill("100");assert.match(await d.getByRole("region",{name:"Promotion summary"}).innerText(),/Minimum purchase: EGP 100/);await toggle.click();
+  assert.equal(await d.evaluate(el=>el.scrollWidth<=el.clientWidth+1),true);
+  await d.getByRole("button",{name:"Save Promotion",exact:true}).scrollIntoViewIfNeeded();const box=await d.getByRole("button",{name:"Save Promotion",exact:true}).boundingBox();assert.ok(box && box.x>=0 && box.x+box.width<=width+1);
+  if(process.env.PROMOTIONS_UX_SCREENSHOTS){await mkdir(process.env.PROMOTIONS_UX_SCREENSHOTS,{recursive:true});await d.evaluate(el=>{el.scrollTop=0;});await f.page.screenshot({path:`${process.env.PROMOTIONS_UX_SCREENSHOTS}/promotion-${theme}-${width}.png`});await d.getByRole("region",{name:"Promotion summary"}).scrollIntoViewIfNeeded();await f.page.screenshot({path:`${process.env.PROMOTIONS_UX_SCREENSHOTS}/summary-${theme}-${width}.png`});}
+  await f.page.keyboard.press("Escape");await d.waitFor({state:"hidden"});assert.equal(f.mutations.length,0);
+ }finally{await f.context.close();}
+});}}
