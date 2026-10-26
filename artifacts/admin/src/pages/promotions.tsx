@@ -7,16 +7,12 @@ import { PageHeader } from "@/components/layout/page-header";
 import { useAdminConfirm } from "@/components/admin/admin-confirm";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Switch } from "@/components/ui/switch";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Edit, Trash2 } from "lucide-react";
-import { PromotionConditions } from "@/components/promotion-conditions";
-import { validatePromotionConditions } from "@/lib/promotionConditions";
+import { PromotionForm } from "@/components/promotion-form";
+import { validatePromotionForm, type PromotionFormState as FormState } from "@/lib/promotionForm";
+import { readPromotionConditions, validatePromotionConditions } from "@/lib/promotionConditions";
 
 type PromotionCode = {
   id: number;
@@ -44,24 +40,6 @@ type Promotion = {
   codes?: PromotionCode[];
 };
 
-type FormState = {
-  name: string;
-  description: string;
-  type: "automatic" | "manual";
-  discountType: "percentage" | "fixed_amount";
-  discountValue: string;
-  priority: string;
-  isExclusive: boolean;
-  isStackable: boolean;
-  isActive: boolean;
-  startDate: string;
-  endDate: string;
-  code: string;
-  maxUses: string;
-  usesPerUser: string;
-  rulesConfig: string;
-};
-
 const emptyForm: FormState = {
   name: "",
   description: "",
@@ -77,7 +55,7 @@ const emptyForm: FormState = {
   code: "",
   maxUses: "",
   usesPerUser: "",
-  rulesConfig: JSON.stringify({ verifiedStudentOnly: true }, null, 2),
+  rulesConfig: JSON.stringify({}),
 };
 
 function toDateInput(value: string | null): string {
@@ -112,7 +90,7 @@ function promotionToForm(row: Promotion): FormState {
     code: code?.code ?? "",
     maxUses: code?.maxUses != null ? String(code.maxUses) : "",
     usesPerUser: code?.usesPerUser != null ? String(code.usesPerUser) : "",
-    rulesConfig: JSON.stringify(row.rulesConfig ?? {}, null, 2),
+    rulesConfig: JSON.stringify(row.rulesConfig, null, 2) ?? "null",
   };
 }
 
@@ -130,6 +108,9 @@ export default function PromotionsPage() {
   const [editing, setEditing] = useState<Promotion | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm);
   const [saving, setSaving] = useState(false);
+  const [validationAttempted, setValidationAttempted] = useState(false);
+  const [specificPackages, setSpecificPackages] = useState(false);
+  const formErrors = validationAttempted ? validatePromotionForm(form) : {};
   const [pending, setPending] = useState<PendingPromotionOperation | null>(null);
   const pendingRef = useRef<PendingPromotionOperation | null>(null);
   const busy = useRef(false);
@@ -140,7 +121,7 @@ export default function PromotionsPage() {
     pendingRef.current = operation;
     setPending(operation);
     if (operation) {
-      if (operation.form) { setForm(operation.form as FormState); setEditing(operation.editing as Promotion | null); setOpen(true); }
+      if (operation.form) { const recovered = operation.form as FormState; setForm(recovered); try { const ids = readPromotionConditions(recovered.rulesConfig).packageIds; setSpecificPackages(Array.isArray(ids) && ids.length > 0); } catch { setSpecificPackages(false); } setEditing(operation.editing as Promotion | null); setOpen(true); }
       setError("A previous promotion operation needs reconciliation. Check its status before saving again.");
     }
   }, [user?.id,token]);
@@ -235,6 +216,8 @@ export default function PromotionsPage() {
     if (pendingRef.current) { setError("Reconcile the previous operation before starting another save."); return; }
     setError(null);
     setEditing(null);
+    setValidationAttempted(false);
+    setSpecificPackages(false);
     setForm(emptyForm);
     setOpen(true);
   }
@@ -243,6 +226,8 @@ export default function PromotionsPage() {
     if (pendingRef.current) { setError("Reconcile the previous operation before starting another save."); return; }
     setError(null);
     setEditing(row);
+    setValidationAttempted(false);
+    setSpecificPackages(Array.isArray(row.rulesConfig?.packageIds) && row.rulesConfig.packageIds.length > 0);
     setForm(promotionToForm(row));
     setOpen(true);
   }
@@ -250,9 +235,13 @@ export default function PromotionsPage() {
   async function save() {
     if (pendingRef.current) { await reconcilePending(); return; }
     if (busy.current || !user) return;
+    setValidationAttempted(true);
+    const errors = validatePromotionForm(form);
+    if (Object.keys(errors).length) { setError("Please review the highlighted fields before saving."); return; }
     let rulesConfig: Record<string, unknown>;
     try {
       rulesConfig = validatePromotionConditions(form.rulesConfig);
+      if (specificPackages && !(Array.isArray(rulesConfig.packageIds) && rulesConfig.packageIds.length)) { setError("Select at least one package, or choose All eligible purchases."); return; }
     } catch (error) {
       setError(error instanceof Error ? error.message : "Review the eligibility conditions.");
       return;
@@ -376,86 +365,13 @@ export default function PromotionsPage() {
       </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="max-w-3xl" aria-describedby={undefined}>
           <DialogHeader>
             <DialogTitle>{editing ? "Edit Promotion" : "Add Promotion"}</DialogTitle>
           </DialogHeader>
           {errorNotice}
-          <fieldset disabled={Boolean(pending)} className="contents">
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2 md:col-span-2">
-              <Label>Name</Label>
-              <Input value={form.name} onChange={(event) => update("name", event.target.value)} />
-            </div>
-            <div className="space-y-2 md:col-span-2">
-              <Label>Description</Label>
-              <Textarea value={form.description} onChange={(event) => update("description", event.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label>Type</Label>
-              <Select value={form.type} onValueChange={(value: "automatic" | "manual") => update("type", value)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="automatic">Automatic</SelectItem>
-                  <SelectItem value="manual">Manual Code</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Discount Type</Label>
-              <Select value={form.discountType} onValueChange={(value: "percentage" | "fixed_amount") => update("discountType", value)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="percentage">Percentage</SelectItem>
-                  <SelectItem value="fixed_amount">Fixed Amount</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Value</Label>
-              <Input type="number" value={form.discountValue} onChange={(event) => update("discountValue", event.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label>Priority</Label>
-              <Input type="number" value={form.priority} onChange={(event) => update("priority", event.target.value)} />
-            </div>
-            {form.type === "manual" && (
-              <>
-                <div className="space-y-2">
-                  <Label>Promo Code</Label>
-                  <div className="flex gap-2">
-                    <Input value={form.code} onChange={(event) => update("code", event.target.value.toUpperCase())} />
-                    <Button type="button" variant="outline" onClick={generateCode}>Generate</Button>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-2">
-                    <Label>Max Uses</Label>
-                    <Input type="number" value={form.maxUses} onChange={(event) => update("maxUses", event.target.value)} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Per User</Label>
-                    <Input type="number" value={form.usesPerUser} onChange={(event) => update("usesPerUser", event.target.value)} />
-                  </div>
-                </div>
-              </>
-            )}
-            <div className="space-y-2">
-              <Label>Start</Label>
-              <Input type="datetime-local" value={form.startDate} onChange={(event) => update("startDate", event.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label>End</Label>
-              <Input type="datetime-local" value={form.endDate} onChange={(event) => update("endDate", event.target.value)} />
-            </div>
-            <div className="flex items-center gap-6 md:col-span-2">
-              <label className="flex items-center gap-2 text-sm"><Switch checked={form.isActive} onCheckedChange={(value) => update("isActive", value)} /> Active</label>
-              <label className="flex items-center gap-2 text-sm"><Switch checked={form.isExclusive} onCheckedChange={(value) => update("isExclusive", value)} /> Exclusive</label>
-              <label className="flex items-center gap-2 text-sm"><Switch checked={form.isStackable} onCheckedChange={(value) => update("isStackable", value)} /> Stackable</label>
-            </div>
-            <p className="text-sm text-muted-foreground md:col-span-2">{form.type === "manual" ? "Customers enter this promotion’s code at checkout. Code limits are separate from promotion-wide limits below." : "Eligible purchases receive this promotion automatically. No promo code is required."}</p>
-            <PromotionConditions value={form.rulesConfig} onChange={value => update("rulesConfig", value)} />
-          </div>
+          <fieldset disabled={Boolean(pending) || saving} className="contents">
+          <PromotionForm form={form} update={update} generateCode={generateCode} errors={formErrors} specificPackages={specificPackages} setSpecificPackages={setSpecificPackages} />
           </fieldset>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>

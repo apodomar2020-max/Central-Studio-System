@@ -272,3 +272,29 @@ test("full stack: successful edit and deactivation use durable identities and cu
     await f.context.close();
   }
 });
+
+test("full stack: simplified manual creation and unused-code rename preserve identity, rules, limits and audits", async () => {
+  const f = await fixture(), name = `UX manual ${randomUUID()}`, code = `UX${randomUUID().replaceAll("-", "").slice(0,12).toUpperCase()}`;
+  try {
+    await f.page.getByRole("button", {name:"Add Promotion",exact:true}).click();
+    let d = f.page.getByRole("dialog");
+    await d.getByLabel("Promotion name",{exact:true}).fill(name);
+    await d.getByLabel("How customers receive it").click(); await f.page.getByRole("option",{name:"Promo code",exact:true}).click();
+    await d.getByLabel("Promo code",{exact:true}).fill(code);
+    await d.getByRole("switch",{name:"Verified students only",exact:true}).check();
+    await d.getByRole("switch",{name:"First package purchase only",exact:true}).check();
+    await d.getByRole("button",{name:/Additional settings/}).click();
+    await d.getByLabel("Total promotion redemptions").fill("5");await d.getByLabel("Total code uses").fill("3");await d.getByLabel("Code uses per customer").fill("1");
+    await d.getByRole("button",{name:"Save Promotion",exact:true}).click();await d.waitFor({state:"hidden"});
+    const original=(await pool.query("select p.id,p.rules_config,c.id as code_id,c.max_uses,c.uses_per_user from promotions p join promotion_codes c on c.promotion_id=p.id where p.name=$1",[name])).rows[0];
+    assert.deepEqual(original.rules_config,{verifiedStudentOnly:true,firstPackagePurchaseOnly:true,maxGlobalUses:5});assert.equal(original.max_uses,3);assert.equal(original.uses_per_user,1);
+    await f.page.getByRole("button",{name:`Edit promotion ${name}`,exact:true}).click();d=f.page.getByRole("dialog");
+    await d.getByLabel("Promo code",{exact:true}).fill(`${code}R`);await d.getByRole("button",{name:"Save Promotion",exact:true}).click();await d.waitFor({state:"hidden"});
+    const renamed=(await pool.query("select id,promotion_id,code,max_uses,uses_per_user,current_uses from promotion_codes where promotion_id=$1",[original.id])).rows;
+    assert.equal(renamed.length,1);assert.equal(renamed[0].id,original.code_id);assert.equal(renamed[0].promotion_id,original.id);assert.equal(renamed[0].code,`${code}R`);assert.equal(renamed[0].max_uses,3);assert.equal(renamed[0].uses_per_user,1);assert.equal(renamed[0].current_uses,0);
+    assert.equal(f.writes.length,2);assert.notEqual(f.writes[0].key,f.writes[1].key);
+    assert.deepEqual((await pool.query("select action,entity_type from admin_activity_logs where module='promotions' and ((entity_type='promotion' and entity_id=$1) or (entity_type='promotion_code' and entity_id=$2)) order by id",[original.id,original.code_id])).rows,[{action:"create",entity_type:"promotion"},{action:"create",entity_type:"promotion_code"},{action:"update",entity_type:"promotion_code"}]);
+    assert.deepEqual((await pool.query("select action from promotion_audit_logs where promotion_id=$1 order by id",[original.id])).rows.map(r=>r.action),["promotion.created","promotion.updated"]);
+    assert.deepEqual(f.errors,[]);
+  } finally {await f.context.unrouteAll({behavior:"wait"});await f.context.close();}
+});
