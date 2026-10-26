@@ -15,6 +15,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Edit, Trash2 } from "lucide-react";
+import { PromotionConditions } from "@/components/promotion-conditions";
+import { validatePromotionConditions } from "@/lib/promotionConditions";
 
 type PromotionCode = {
   id: number;
@@ -250,9 +252,9 @@ export default function PromotionsPage() {
     if (busy.current || !user) return;
     let rulesConfig: Record<string, unknown>;
     try {
-      rulesConfig = form.rulesConfig.trim() ? JSON.parse(form.rulesConfig) : {};
-    } catch {
-      setError("Rules config must be valid JSON.");
+      rulesConfig = validatePromotionConditions(form.rulesConfig);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Review the eligibility conditions.");
       return;
     }
     busy.current=true; setSaving(true);
@@ -451,13 +453,8 @@ export default function PromotionsPage() {
               <label className="flex items-center gap-2 text-sm"><Switch checked={form.isExclusive} onCheckedChange={(value) => update("isExclusive", value)} /> Exclusive</label>
               <label className="flex items-center gap-2 text-sm"><Switch checked={form.isStackable} onCheckedChange={(value) => update("isStackable", value)} /> Stackable</label>
             </div>
-            <div className="space-y-2 md:col-span-2">
-              <Label>Rules Config JSON</Label>
-              <Textarea className="min-h-44 font-mono text-xs" value={form.rulesConfig} onChange={(event) => update("rulesConfig", event.target.value)} />
-              <p className="text-xs text-muted-foreground">
-                Supported keys: verifiedStudentOnly, firstPackagePurchaseOnly, minimumBasketAmount, packageIds, branches, maxGlobalUses, maxUsesPerUser.
-              </p>
-            </div>
+            <p className="text-sm text-muted-foreground md:col-span-2">{form.type === "manual" ? "Customers enter this promotion’s code at checkout. Code limits are separate from promotion-wide limits below." : "Eligible purchases receive this promotion automatically. No promo code is required."}</p>
+            <PromotionConditions value={form.rulesConfig} onChange={value => update("rulesConfig", value)} />
           </div>
           </fieldset>
           <DialogFooter>
