@@ -41,6 +41,15 @@
         "EXPO_PUBLIC_API_URL": "https://supportive-magic-production-b800.up.railway.app",
         "EXPO_PUBLIC_FACEBOOK_APP_ID": "891752636548494"
       }
+    },
+    "android-internal-sdk57": {
+      "extends": "production",
+      "distribution": "internal",
+      "developmentClient": false,
+      "channel": "android-internal-sdk57",
+      "android": {
+        "buildType": "apk"
+      }
     }
   },
   "submit": {
